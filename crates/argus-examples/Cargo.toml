@@ -1,0 +1,15 @@
+[package]
+name = "argus-examples"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ia-core = { path = "../ia-core" }
+dsfs = { path = "../dsfs" }
+
+ark-ff.workspace = true
+ark-ec.workspace = true
+ark-serialize.workspace = true
+ark-std.workspace = true
+ark-bls12-381.workspace = true
+ark-poly.workspace = true

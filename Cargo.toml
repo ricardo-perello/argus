@@ -1,0 +1,16 @@
+[workspace]
+members = [
+    "crates/ia-core",
+    "crates/dsfs",
+    "crates/ibcs",
+    "crates/argus-examples"]
+resolver = "2"
+
+[workspace.dependencies]
+ark-ff = "0.5.0"
+ark-ec = "0.5.0"
+ark-serialize = "0.5.0"
+ark-std = "0.5.0"
+ark-poly = "0.5.0"
+ark-bls12-381 = "0.5.0"
+spongefish = { git = "https://github.com/arkworks-rs/spongefish", rev = "c9f6aa72091f14442d24f6950178ab8c22269469" }

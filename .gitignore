@@ -1,0 +1,10 @@
+/target/
+**/target/
+
+.DS_Store
+
+# If you use direnv / nix etc (optional, harmless)
+.direnv/
+.envrc
+.cursor/
+
