@@ -1,3 +1,3 @@
 fn main() {
-    println!("Hello, world!");
+    eprintln!("Run `cargo run -p argus-examples --bin schnorr`.");
 }

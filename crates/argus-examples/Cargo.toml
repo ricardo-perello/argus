@@ -2,6 +2,7 @@
 name = "argus-examples"
 version = "0.1.0"
 edition = "2024"
+default-run = "argus-examples"
 
 [dependencies]
 ia-core = { path = "../ia-core" }
@@ -13,3 +14,9 @@ ark-serialize.workspace = true
 ark-std.workspace = true
 ark-bls12-381.workspace = true
 ark-poly.workspace = true
+ark-curve25519.workspace = true
+spongefish = { workspace = true, features = ["ark-ec", "ark-ff", "curve25519-dalek", "derive"] }
+ark-crypto-primitives = { version = "0.5.0", features = ["crh", "merkle_tree"] }
+curve25519-dalek = { version = "4", features = ["rand_core"] }
+rand = "0.8"
+hex = "0.4"
