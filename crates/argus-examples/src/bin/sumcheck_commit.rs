@@ -14,6 +14,7 @@ use ark_curve25519::Fr;
 use ark_ff::Zero;
 use ark_std::UniformRand;
 use rand::rngs::OsRng;
+use std::io::Cursor;
 
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
@@ -21,38 +22,44 @@ use spongefish::{protocol_id, DomainSeparator, Encoding, ProverState, VerifierSt
 use spongefish::{VerificationError, VerificationResult};
 
 use ark_crypto_primitives::crh::sha256::Sha256;
-use ark_crypto_primitives::crh::{CRHScheme, TwoToOneCRHScheme};
-use ark_crypto_primitives::merkle_tree::{Config, DigestConverter, MerkleTree, Path};
+use ark_crypto_primitives::merkle_tree::{
+    Config, DigestConverter, LeafParam, MerkleTree, Path, TwoToOneParam,
+};
 
 struct CommittedSumcheck;
 
-/// Length-delimited byte blob for transcript messages.
-#[derive(Clone, Default, PartialEq, Eq)]
-struct Blob(Vec<u8>);
+/// Canonical-framed byte string for transcript messages.
+///
+/// Refactor note:
+/// - We use arkworks canonical serialization (compressed form) to frame variable-length bytes.
+/// - This avoids ad-hoc length-prefix parsing and keeps prover/verifier framing symmetric.
+#[derive(Clone, Default, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
+struct Bytes(Vec<u8>);
 
-impl Encoding for Blob {
+impl Encoding for Bytes {
     fn encode(&self) -> impl AsRef<[u8]> {
-        let mut out = Vec::with_capacity(4 + self.0.len());
-        out.extend_from_slice(&(self.0.len() as u32).to_le_bytes());
-        out.extend_from_slice(&self.0);
-        out
+        canonical_to_bytes(self)
     }
 }
 
-impl spongefish::NargDeserialize for Blob {
+impl spongefish::NargDeserialize for Bytes {
     fn deserialize_from_narg(buf: &mut &[u8]) -> VerificationResult<Self> {
-        if buf.len() < 4 {
-            return Err(VerificationError);
-        }
-        let (len_bytes, rest) = buf.split_at(4);
-        let len = u32::from_le_bytes(len_bytes.try_into().map_err(|_| VerificationError)?) as usize;
-        if rest.len() < len {
-            return Err(VerificationError);
-        }
-        let (payload, tail) = rest.split_at(len);
-        *buf = tail;
-        Ok(Self(payload.to_vec()))
+        canonical_from_narg(buf)
     }
+}
+
+fn canonical_to_bytes<T: CanonicalSerialize>(value: &T) -> Vec<u8> {
+    let mut out = Vec::new();
+    value.serialize_compressed(&mut out).expect("canonical serialization must succeed");
+    out
+}
+
+fn canonical_from_narg<T: CanonicalDeserialize>(buf: &mut &[u8]) -> VerificationResult<T> {
+    let mut cursor = Cursor::new(*buf);
+    let value = T::deserialize_compressed(&mut cursor).map_err(|_| VerificationError)?;
+    let consumed = cursor.position() as usize;
+    *buf = &buf[consumed..];
+    Ok(value)
 }
 
 /// Public instance: root commitment + claimed sum.
@@ -61,7 +68,7 @@ struct Instance {
     /// Number of variables n for f : {0,1}^n -> F.
     n: u32,
     /// Merkle root committing to the evaluation table.
-    root: Blob,
+    root: Bytes,
     /// Claimed sum S = Σ_{x∈{0,1}^n} f(x).
     claimed_sum: Fr,
 }
@@ -72,7 +79,7 @@ struct Instance {
 struct OpeningProof {
     idx: u32,
     value: Fr,
-    path_bytes: Blob,
+    path_bytes: Bytes,
 }
 
 /// Merkle configuration for SHA-256.
@@ -109,27 +116,23 @@ impl CommittedSumcheck {
     }
 
     fn fr_to_leaf_bytes(x: &Fr) -> Vec<u8> {
-        let mut v = Vec::new();
-        x.serialize_compressed(&mut v).unwrap();
-        v
+        canonical_to_bytes(x)
     }
 
-    fn build_merkle_tree(evals: &[Fr]) -> (Vec<Vec<u8>>, MerkleTree<Sha256MerkleConfig>, Vec<u8>) {
-        // Leaf bytes for the Merkle tree.
-        let leaves: Vec<Vec<u8>> = evals.iter().map(Self::fr_to_leaf_bytes).collect();
+    fn merkle_params() -> (LeafParam<Sha256MerkleConfig>, TwoToOneParam<Sha256MerkleConfig>) {
+        // Refactor note: SHA-256 CRH params in ark-crypto-primitives are unit values.
+        ((), ())
+    }
 
-        // For Sha256 CRH schemes in ark-crypto-primitives, Parameters are `()`.
-        // Still, we obtain them via setup() for consistency.
-        let mut rng = OsRng;
-        let leaf_params = <Sha256 as CRHScheme>::setup(&mut rng).unwrap();
-        let two_to_one_params = <Sha256 as TwoToOneCRHScheme>::setup(&mut rng).unwrap();
+    fn build_merkle_tree(evals: &[Fr]) -> (MerkleTree<Sha256MerkleConfig>, Vec<u8>) {
+        let leaves: Vec<Vec<u8>> = evals.iter().map(Self::fr_to_leaf_bytes).collect();
+        let (leaf_params, two_to_one_params) = Self::merkle_params();
 
         let tree =
-            MerkleTree::<Sha256MerkleConfig>::new(&leaf_params, &two_to_one_params, leaves.clone())
-                .unwrap();
+            MerkleTree::<Sha256MerkleConfig>::new(&leaf_params, &two_to_one_params, leaves).unwrap();
 
         let root = tree.root().to_vec();
-        (leaves, tree, root)
+        (tree, root)
     }
 
     fn squeeze_bit_from_prover(ps: &mut ProverState) -> u8 {
@@ -153,14 +156,15 @@ impl CommittedSumcheck {
         assert_eq!(evals.len(), expected, "evals must have length 2^n");
 
         // Build Merkle commitment from witness.
-        let (_leaves, tree, root) = Self::build_merkle_tree(evals);
+        let (tree, root) = Self::build_merkle_tree(evals);
         assert_eq!(
             root.as_slice(),
             instance.root.0.as_slice(),
             "instance.root must match witness evals"
         );
 
-        // Commit phase: send root as a prover message and absorb it into transcript.
+        // We model "commit" as an explicit IA prover move (commit phase),
+        // so the Merkle root is sent as a prover message in the transcript.
         prover_state.prover_message(&instance.root);
 
         // Sumcheck with bit challenges.
@@ -211,7 +215,7 @@ impl CommittedSumcheck {
         let opening = OpeningProof {
             idx,
             value,
-            path_bytes: Blob(path_bytes),
+            path_bytes: Bytes(path_bytes),
         };
         prover_state.prover_message(&opening);
 
@@ -226,7 +230,7 @@ impl CommittedSumcheck {
         let n = instance.n as usize;
 
         // Read commitment root from proof and compare to instance.root
-        let root = verifier_state.prover_message::<Blob>()?;
+        let root = verifier_state.prover_message::<Bytes>()?;
         if root != instance.root {
             return Err(VerificationError);
         }
@@ -259,14 +263,11 @@ impl CommittedSumcheck {
         }
 
         // Verify Merkle membership proof
-        let path =
-            Path::<Sha256MerkleConfig>::deserialize_compressed(opening.path_bytes.0.as_slice())
-                .unwrap();
+        let mut path_reader = opening.path_bytes.0.as_slice();
+        let path = Path::<Sha256MerkleConfig>::deserialize_compressed(&mut path_reader)
+            .map_err(|_| VerificationError)?;
 
-        // Recreate params for SHA-256 (they are `()` under the hood, but we follow the API)
-        let mut rng = OsRng;
-        let leaf_params = <Sha256 as CRHScheme>::setup(&mut rng).unwrap();
-        let two_to_one_params = <Sha256 as TwoToOneCRHScheme>::setup(&mut rng).unwrap();
+        let (leaf_params, two_to_one_params) = Self::merkle_params();
 
         let leaf_bytes = Self::fr_to_leaf_bytes(&opening.value);
 
@@ -297,12 +298,12 @@ fn main() {
     let claimed_sum = evals.iter().copied().sum::<Fr>();
 
     // Commit to evals via Merkle
-    let (_leaves, _tree, root) = CommittedSumcheck::build_merkle_tree(&evals);
+    let (_tree, root) = CommittedSumcheck::build_merkle_tree(&evals);
 
     // Public instance
     let instance = Instance {
         n,
-        root: Blob(root),
+        root: Bytes(root),
         claimed_sum,
     };
 
