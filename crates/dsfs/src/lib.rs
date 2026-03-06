@@ -12,8 +12,7 @@ use alloc::vec::Vec;
 
 use ia_core::{InteractiveArgument, Round, Transcript};
 use spongefish::{
-    Decoding, DomainSeparator, Encoding, NargDeserialize, NargSerialize, VerificationError,
-    VerificationResult,
+    Decoding, DomainSeparator, Encoding, NargDeserialize, VerificationError, VerificationResult,
 };
 
 /// Non-interactive prover: drives the IA round-by-round through spongefish.
@@ -30,7 +29,7 @@ pub fn prove<IA>(
 where
     IA: InteractiveArgument,
     IA::Instance: Encoding<[u8]>,
-    IA::ProverMessage: Encoding<[u8]> + NargSerialize,
+    IA::ProverMessage: Encoding<[u8]>,
     IA::VerifierChallenge: Decoding<[u8]>,
 {
     let domsep = DomainSeparator::new(IA::protocol_id())
