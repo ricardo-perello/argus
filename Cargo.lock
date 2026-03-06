@@ -348,8 +348,6 @@ dependencies = [
 name = "dsfs"
 version = "0.1.0"
 dependencies = [
- "ark-serialize",
- "ark-std",
  "ia-core",
  "spongefish",
 ]
@@ -452,11 +450,6 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 [[package]]
 name = "ia-core"
 version = "0.1.0"
-dependencies = [
- "ark-crypto-primitives",
- "ark-serialize",
- "ark-std",
-]
 
 [[package]]
 name = "ibcs"
