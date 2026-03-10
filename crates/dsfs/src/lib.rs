@@ -7,7 +7,7 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-use ia_core::{Prove, ReadProverMessage, ReadVerifierChallenge, SendProverMessage, SendVerifierChallenge, Verify};
+use ia_core::{Prove, ReadProverMessage, ReadVerifierMessage, SendProverMessage, SendVerifierMessage, Verify};
 use spongefish::{Decoding, DomainSeparator, Encoding, NargDeserialize, ProverState, VerifierState};
 
 // ---------------------------------------------------------------------------
@@ -25,8 +25,8 @@ impl<M: Encoding<[u8]>> SendProverMessage<M> for SpongeProver {
     }
 }
 
-impl<C: Decoding<[u8]>> ReadVerifierChallenge<C> for SpongeProver {
-    fn read_verifier_challenge(&mut self) -> C {
+impl<C: Decoding<[u8]>> ReadVerifierMessage<C> for SpongeProver {
+    fn read_verifier_message(&mut self) -> C {
         self.state.verifier_message()
     }
 }
@@ -48,8 +48,8 @@ impl<M: Encoding<[u8]> + NargDeserialize> ReadProverMessage<M> for SpongeVerifie
     }
 }
 
-impl<C: Decoding<[u8]>> SendVerifierChallenge<C> for SpongeVerifier<'_> {
-    fn send_verifier_challenge(&mut self) -> C {
+impl<C: Decoding<[u8]>> SendVerifierMessage<C> for SpongeVerifier<'_> {
+    fn send_verifier_message(&mut self) -> C {
         self.state.verifier_message()
     }
 }

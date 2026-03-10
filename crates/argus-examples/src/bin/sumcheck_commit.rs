@@ -15,8 +15,8 @@ use std::io::Cursor;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
 use ia_core::{
-    InteractiveArgument, Prove, ReadProverMessage, ReadVerifierChallenge, SendProverMessage,
-    SendVerifierChallenge, Verify, VerificationError, VerificationResult,
+    InteractiveArgument, Prove, ReadProverMessage, ReadVerifierMessage, SendProverMessage,
+    SendVerifierMessage, Verify, VerificationError, VerificationResult,
 };
 
 use spongefish::Encoding;
@@ -136,7 +136,7 @@ impl<P> Prove<P> for CommittedSumcheck
 where
     P: SendProverMessage<Bytes>
         + SendProverMessage<Fr>
-        + ReadVerifierChallenge<u8>
+        + ReadVerifierMessage<u8>
         + SendProverMessage<OpeningProof>,
 {
     #[allow(non_snake_case)]
@@ -163,7 +163,7 @@ where
             ch.send_prover_message(&s0);
             ch.send_prover_message(&s1);
 
-            let x: u8 = ch.read_verifier_challenge();
+            let x: u8 = ch.read_verifier_message();
             let b = x & 1;
             if b == 1 {
                 idx |= 1u32 << round;
@@ -198,7 +198,7 @@ impl<V> Verify<V> for CommittedSumcheck
 where
     V: ReadProverMessage<Bytes>
         + ReadProverMessage<Fr>
-        + SendVerifierChallenge<u8>
+        + SendVerifierMessage<u8>
         + ReadProverMessage<OpeningProof>,
 {
     fn verify(ch: &mut V, instance: &Instance) -> VerificationResult<()> {
@@ -220,7 +220,7 @@ where
                 return Err(VerificationError);
             }
 
-            let x: u8 = ch.send_verifier_challenge();
+            let x: u8 = ch.send_verifier_message();
             let b = x & 1;
             if b == 1 {
                 idx |= 1u32 << round;

@@ -26,13 +26,14 @@ pub trait ReadProverMessage<M> {
     fn read_prover_message(&mut self) -> VerificationResult<M>;
 }
 
-/// Both sides derive a verifier message (challenge) of type `C`.
-pub trait SendVerifierChallenge<C> {
-    fn send_verifier_challenge(&mut self) -> C;
+/// Verifier derives a message (challenge) of type `C`.
+pub trait SendVerifierMessage<C> {
+    fn send_verifier_message(&mut self) -> C;
 }
 
-pub trait ReadVerifierChallenge<C> {
-    fn read_verifier_challenge(&mut self) -> C;
+/// Prover receives a verifier message (challenge) of type `C`.
+pub trait ReadVerifierMessage<C> {
+    fn read_verifier_message(&mut self) -> C;
 }
 
 // ---------------------------------------------------------------------------

@@ -13,8 +13,8 @@ use ark_std::UniformRand;
 use rand::rngs::OsRng;
 
 use ia_core::{
-    InteractiveArgument, Prove, ReadProverMessage, ReadVerifierChallenge, SendProverMessage,
-    SendVerifierChallenge, Verify, VerificationError, VerificationResult,
+    InteractiveArgument, Prove, ReadProverMessage, ReadVerifierMessage, SendProverMessage,
+    SendVerifierMessage, Verify, VerificationError, VerificationResult,
 };
 
 // ---------------------------------------------------------------------------
@@ -43,7 +43,7 @@ impl<G: CurveGroup> InteractiveArgument for Schnorr<G> {
 impl<G, P> Prove<P> for Schnorr<G>
 where
     G: CurveGroup + PrimeGroup,
-    P: SendProverMessage<G> + SendProverMessage<G::ScalarField> + ReadVerifierChallenge<G::ScalarField>,
+    P: SendProverMessage<G> + SendProverMessage<G::ScalarField> + ReadVerifierMessage<G::ScalarField>,
 {
     #[allow(non_snake_case)]
     fn prove(ch: &mut P, instance: &[G; 2], witness: &G::ScalarField) {
@@ -51,7 +51,7 @@ where
         let K = instance[0] * k;
 
         ch.send_prover_message(&K);
-        let c: G::ScalarField = ch.read_verifier_challenge();
+        let c: G::ScalarField = ch.read_verifier_message();
         let r = k + c * witness;
         ch.send_prover_message(&r);
     }
@@ -66,14 +66,14 @@ where
     G: CurveGroup + PrimeGroup,
     V: ReadProverMessage<G>
         + ReadProverMessage<G::ScalarField>
-        + SendVerifierChallenge<G::ScalarField>,
+        + SendVerifierMessage<G::ScalarField>,
 {
     #[allow(non_snake_case)]
     fn verify(ch: &mut V, instance: &[G; 2]) -> VerificationResult<()> {
         let (G_gen, X) = (instance[0], instance[1]);
 
         let K: G = ch.read_prover_message()?;
-        let c: G::ScalarField = ch.send_verifier_challenge();
+        let c: G::ScalarField = ch.send_verifier_message();
         let r: G::ScalarField = ch.read_prover_message()?;
 
         if G_gen * r == K + X * c {
