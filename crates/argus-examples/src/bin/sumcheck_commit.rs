@@ -1,12 +1,8 @@
-//! Committed Boolean Sumcheck (warmup IARG-ish protocol)
+//! Committed Boolean Sumcheck via the InteractiveArgument + DSFS stack (v2).
 //!
-//! Tools:
-//! - spongefish: DSFS transcript (absorb prover msgs, squeeze verifier challenges)
-//! - ark-crypto-primitives: Merkle tree commitment + opening + verification
-//!
-//! Protocol idea:
+//! Protocol:
 //! - Prover commits to the full evaluation table evals via a Merkle root.
-//! - Run “sumcheck” with *bit* challenges b_i ∈ {0,1} (derived via spongefish).
+//! - Run "sumcheck" with bit challenges b_i in {0,1} (derived via the channel).
 //!   This collapses the claim to a single table entry evals[idx].
 //! - Prover opens the Merkle tree at idx and verifier checks opening + value == claim.
 
@@ -18,21 +14,23 @@ use std::io::Cursor;
 
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
-use spongefish::{protocol_id, DomainSeparator, Encoding, ProverState, VerifierState};
-use spongefish::{VerificationError, VerificationResult};
+use ia_core::{
+    InteractiveArgument, Prove, ReadProverMessage, ReadVerifierChallenge, SendProverMessage,
+    SendVerifierChallenge, Verify, VerificationError, VerificationResult,
+};
+
+use spongefish::Encoding;
 
 use ark_crypto_primitives::crh::sha256::Sha256;
 use ark_crypto_primitives::merkle_tree::{
     Config, DigestConverter, LeafParam, MerkleTree, Path, TwoToOneParam,
 };
 
-struct CommittedSumcheck;
+// ---------------------------------------------------------------------------
+// Codec types (Encoding/NargDeserialize impls for spongefish -- stays here)
+// ---------------------------------------------------------------------------
 
-/// Canonical-framed byte string for transcript messages.
-///
-/// Refactor note:
-/// - We use arkworks canonical serialization (compressed form) to frame variable-length bytes.
-/// - This avoids ad-hoc length-prefix parsing and keeps prover/verifier framing symmetric.
+/// Canonical-framed byte string for variable-length Merkle data.
 #[derive(Clone, Default, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
 struct Bytes(Vec<u8>);
 
@@ -43,38 +41,43 @@ impl Encoding for Bytes {
 }
 
 impl spongefish::NargDeserialize for Bytes {
-    fn deserialize_from_narg(buf: &mut &[u8]) -> VerificationResult<Self> {
+    fn deserialize_from_narg(buf: &mut &[u8]) -> spongefish::VerificationResult<Self> {
         canonical_from_narg(buf)
     }
 }
 
 fn canonical_to_bytes<T: CanonicalSerialize>(value: &T) -> Vec<u8> {
     let mut out = Vec::new();
-    value.serialize_compressed(&mut out).expect("canonical serialization must succeed");
+    value
+        .serialize_compressed(&mut out)
+        .expect("canonical serialization must succeed");
     out
 }
 
-fn canonical_from_narg<T: CanonicalDeserialize>(buf: &mut &[u8]) -> VerificationResult<T> {
+fn canonical_from_narg<T: CanonicalDeserialize>(
+    buf: &mut &[u8],
+) -> spongefish::VerificationResult<T> {
     let mut cursor = Cursor::new(*buf);
-    let value = T::deserialize_compressed(&mut cursor).map_err(|_| VerificationError)?;
+    let value =
+        T::deserialize_compressed(&mut cursor).map_err(|_| spongefish::VerificationError)?;
     let consumed = cursor.position() as usize;
     *buf = &buf[consumed..];
     Ok(value)
 }
 
+// ---------------------------------------------------------------------------
+// Protocol types
+// ---------------------------------------------------------------------------
+
 /// Public instance: root commitment + claimed sum.
 #[derive(Clone, Encoding)]
 struct Instance {
-    /// Number of variables n for f : {0,1}^n -> F.
     n: u32,
-    /// Merkle root committing to the evaluation table.
     root: Bytes,
-    /// Claimed sum S = Σ_{x∈{0,1}^n} f(x).
     claimed_sum: Fr,
 }
 
-/// Opening proof in the NARG string.
-/// We keep the Merkle path as bytes to avoid wrestling with Encoding bounds.
+/// Opening proof sent as the final prover message.
 #[derive(Clone, Encoding, spongefish::NargDeserialize)]
 struct OpeningProof {
     idx: u32,
@@ -82,15 +85,13 @@ struct OpeningProof {
     path_bytes: Bytes,
 }
 
-/// Merkle configuration for SHA-256.
-///
-/// - Leaves are raw bytes (`[u8]`) representing serialized field elements.
-/// - Digests are `Vec<u8>` (32 bytes for SHA-256).
+// ---------------------------------------------------------------------------
+// Merkle tree configuration (SHA-256)
+// ---------------------------------------------------------------------------
+
 #[derive(Clone)]
 pub struct Sha256MerkleConfig;
 
-/// Convert a leaf digest (Vec<u8>) into bytes for inner hashing.
-/// We want the raw digest bytes, not “canonical serialization of Vec<u8>”.
 pub struct VecU8DigestToBytes;
 
 impl DigestConverter<Vec<u8>, [u8]> for VecU8DigestToBytes {
@@ -110,70 +111,48 @@ impl Config for Sha256MerkleConfig {
     type TwoToOneHash = Sha256;
 }
 
-impl CommittedSumcheck {
-    pub fn protocol_id() -> [u8; 64] {
-        protocol_id(core::format_args!("committed sumcheck (bit challenges, sha256 merkle)"))
+// ---------------------------------------------------------------------------
+// InteractiveArgument: metadata
+// ---------------------------------------------------------------------------
+
+struct CommittedSumcheck;
+
+impl InteractiveArgument for CommittedSumcheck {
+    type Instance = Instance;
+    type Witness = Vec<Fr>;
+
+    fn protocol_id() -> [u8; 64] {
+        spongefish::protocol_id(core::format_args!(
+            "committed sumcheck (bit challenges, sha256 merkle)"
+        ))
     }
+}
 
-    fn fr_to_leaf_bytes(x: &Fr) -> Vec<u8> {
-        canonical_to_bytes(x)
-    }
+// ---------------------------------------------------------------------------
+// Prove: linear prover logic against an abstract channel
+// ---------------------------------------------------------------------------
 
-    fn merkle_params() -> (LeafParam<Sha256MerkleConfig>, TwoToOneParam<Sha256MerkleConfig>) {
-        // Refactor note: SHA-256 CRH params in ark-crypto-primitives are unit values.
-        ((), ())
-    }
-
-    fn build_merkle_tree(evals: &[Fr]) -> (MerkleTree<Sha256MerkleConfig>, Vec<u8>) {
-        let leaves: Vec<Vec<u8>> = evals.iter().map(Self::fr_to_leaf_bytes).collect();
-        let (leaf_params, two_to_one_params) = Self::merkle_params();
-
-        let tree =
-            MerkleTree::<Sha256MerkleConfig>::new(&leaf_params, &two_to_one_params, leaves).unwrap();
-
-        let root = tree.root().to_vec();
-        (tree, root)
-    }
-
-    fn squeeze_bit_from_prover(ps: &mut ProverState) -> u8 {
-        let x: u8 = ps.verifier_message();
-        x & 1
-    }
-
-    fn squeeze_bit_from_verifier(vs: &mut VerifierState) -> u8 {
-        let x: u8 = vs.verifier_message();
-        x & 1
-    }
-
-    /// Prover: commits to evals (root), runs bit-challenge sumcheck, then opens one leaf.
-    pub fn prove<'a>(
-        prover_state: &'a mut ProverState,
-        instance: &Instance,
-        evals: &[Fr], // witness table
-    ) -> &'a [u8] {
+impl<P> Prove<P> for CommittedSumcheck
+where
+    P: SendProverMessage<Bytes>
+        + SendProverMessage<Fr>
+        + ReadVerifierChallenge<u8>
+        + SendProverMessage<OpeningProof>,
+{
+    #[allow(non_snake_case)]
+    fn prove(ch: &mut P, instance: &Instance, evals: &Vec<Fr>) {
         let n = instance.n as usize;
-        let expected = 1usize << n;
-        assert_eq!(evals.len(), expected, "evals must have length 2^n");
-
-        // Build Merkle commitment from witness.
         let (tree, root) = Self::build_merkle_tree(evals);
-        assert_eq!(
-            root.as_slice(),
-            instance.root.0.as_slice(),
-            "instance.root must match witness evals"
-        );
+        assert_eq!(root.as_slice(), instance.root.0.as_slice());
 
-        // We model "commit" as an explicit IA prover move (commit phase),
-        // so the Merkle root is sent as a prover message in the transcript.
-        prover_state.prover_message(&instance.root);
+        // Commit phase: send Merkle root
+        ch.send_prover_message(&instance.root);
 
-        // Sumcheck with bit challenges.
+        // Sumcheck with bit challenges
         let mut table = evals.to_vec();
-        let mut claim = instance.claimed_sum;
         let mut idx: u32 = 0;
 
         for round in 0..n {
-            // s0,s1 sums over pairs (even/odd) like your original convention (x1 is LSB).
             let mut s0 = Fr::zero();
             let mut s1 = Fr::zero();
             for pair in table.chunks_exact(2) {
@@ -181,19 +160,15 @@ impl CommittedSumcheck {
                 s1 += pair[1];
             }
 
-            // Prover message: (s0,s1)
-            prover_state.prover_messages(&[s0, s1]);
+            ch.send_prover_message(&s0);
+            ch.send_prover_message(&s1);
 
-            // Verifier bit challenge derived from spongefish transcript
-            let b = Self::squeeze_bit_from_prover(prover_state);
+            let x: u8 = ch.read_verifier_challenge();
+            let b = x & 1;
             if b == 1 {
                 idx |= 1u32 << round;
             }
 
-            // Update claim = s_b
-            claim = if b == 0 { s0 } else { s1 };
-
-            // Fold table by selecting consistent half for each pair
             let mut next = Vec::with_capacity(table.len() / 2);
             for pair in table.chunks_exact(2) {
                 next.push(if b == 0 { pair[0] } else { pair[1] });
@@ -201,36 +176,35 @@ impl CommittedSumcheck {
             table = next;
         }
 
-        debug_assert_eq!(table.len(), 1);
-        debug_assert_eq!(table[0], claim);
-
-        // Opening phase: open the committed table at idx.
+        // Opening phase: open committed table at selected index
         let value = evals[idx as usize];
         let path: Path<Sha256MerkleConfig> = tree.generate_proof(idx as usize).unwrap();
-
-        // Serialize path as bytes for the NARG.
         let mut path_bytes = Vec::new();
         path.serialize_compressed(&mut path_bytes).unwrap();
 
-        let opening = OpeningProof {
+        ch.send_prover_message(&OpeningProof {
             idx,
             value,
             path_bytes: Bytes(path_bytes),
-        };
-        prover_state.prover_message(&opening);
-
-        prover_state.narg_string()
+        });
     }
+}
 
-    /// Verifier: reads root, runs checks with squeezed bit challenges, verifies Merkle opening.
-    pub fn verify(
-        mut verifier_state: VerifierState,
-        instance: &Instance,
-    ) -> VerificationResult<()> {
+// ---------------------------------------------------------------------------
+// Verify: linear verifier logic against an abstract channel
+// ---------------------------------------------------------------------------
+
+impl<V> Verify<V> for CommittedSumcheck
+where
+    V: ReadProverMessage<Bytes>
+        + ReadProverMessage<Fr>
+        + SendVerifierChallenge<u8>
+        + ReadProverMessage<OpeningProof>,
+{
+    fn verify(ch: &mut V, instance: &Instance) -> VerificationResult<()> {
         let n = instance.n as usize;
 
-        // Read commitment root from proof and compare to instance.root
-        let root = verifier_state.prover_message::<Bytes>()?;
+        let root: Bytes = ch.read_prover_message()?;
         if root != instance.root {
             return Err(VerificationError);
         }
@@ -240,12 +214,14 @@ impl CommittedSumcheck {
         let mut idx: u32 = 0;
 
         for round in 0..n {
-            let [s0, s1] = verifier_state.prover_messages::<Fr, 2>()?;
+            let s0: Fr = ch.read_prover_message()?;
+            let s1: Fr = ch.read_prover_message()?;
             if s0 + s1 != claim {
                 return Err(VerificationError);
             }
 
-            let b = Self::squeeze_bit_from_verifier(&mut verifier_state);
+            let x: u8 = ch.send_verifier_challenge();
+            let b = x & 1;
             if b == 1 {
                 idx |= 1u32 << round;
             }
@@ -253,22 +229,17 @@ impl CommittedSumcheck {
             claim = if b == 0 { s0 } else { s1 };
         }
 
-        // Read opening proof
-        let opening = verifier_state.prover_message::<OpeningProof>()?;
-        if opening.idx != idx {
-            return Err(VerificationError);
-        }
-        if opening.value != claim {
+        // Read and verify opening proof
+        let opening: OpeningProof = ch.read_prover_message()?;
+        if opening.idx != idx || opening.value != claim {
             return Err(VerificationError);
         }
 
-        // Verify Merkle membership proof
         let mut path_reader = opening.path_bytes.0.as_slice();
         let path = Path::<Sha256MerkleConfig>::deserialize_compressed(&mut path_reader)
             .map_err(|_| VerificationError)?;
 
         let (leaf_params, two_to_one_params) = Self::merkle_params();
-
         let leaf_bytes = Self::fr_to_leaf_bytes(&opening.value);
 
         let ok = path
@@ -284,44 +255,62 @@ impl CommittedSumcheck {
             return Err(VerificationError);
         }
 
-        verifier_state.check_eof()?;
         Ok(())
     }
 }
 
+// ---------------------------------------------------------------------------
+// Merkle tree helpers
+// ---------------------------------------------------------------------------
+
+impl CommittedSumcheck {
+    fn fr_to_leaf_bytes(x: &Fr) -> Vec<u8> {
+        canonical_to_bytes(x)
+    }
+
+    fn merkle_params() -> (LeafParam<Sha256MerkleConfig>, TwoToOneParam<Sha256MerkleConfig>) {
+        ((), ())
+    }
+
+    fn build_merkle_tree(evals: &[Fr]) -> (MerkleTree<Sha256MerkleConfig>, Vec<u8>) {
+        let leaves: Vec<Vec<u8>> = evals.iter().map(Self::fr_to_leaf_bytes).collect();
+        let (leaf_params, two_to_one_params) = Self::merkle_params();
+
+        let tree =
+            MerkleTree::<Sha256MerkleConfig>::new(&leaf_params, &two_to_one_params, leaves).unwrap();
+
+        let root = tree.root().to_vec();
+        (tree, root)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Main: prove and verify via DSFS
+// ---------------------------------------------------------------------------
+
 fn main() {
-    // Witness table
     let n: u32 = 4;
     let size = 1usize << (n as usize);
     let mut rng = OsRng;
-    let evals = (0..size).map(|_| Fr::rand(&mut rng)).collect::<Vec<_>>();
+    let evals: Vec<Fr> = (0..size).map(|_| Fr::rand(&mut rng)).collect();
     let claimed_sum = evals.iter().copied().sum::<Fr>();
 
-    // Commit to evals via Merkle
     let (_tree, root) = CommittedSumcheck::build_merkle_tree(&evals);
 
-    // Public instance
     let instance = Instance {
         n,
         root: Bytes(root),
         claimed_sum,
     };
 
-    // Spongefish domain separation: protocol + session + instance
-    let domain_separator = DomainSeparator::new(CommittedSumcheck::protocol_id())
-        .session(spongefish::session!("argus warmup: committed sumcheck"))
-        .instance(&instance);
+    let session = spongefish::session!("argus warmup: committed sumcheck");
 
-    // Prove
-    let mut prover_state = domain_separator.std_prover();
-    let narg_string = CommittedSumcheck::prove(&mut prover_state, &instance, &evals);
-
+    let narg_string = dsfs::prove::<CommittedSumcheck>(session, &instance, &evals);
     println!(
         "CommittedSumcheck proof bytes:\n{}",
-        hex::encode(narg_string)
+        hex::encode(&narg_string)
     );
 
-    // Verify
-    let verifier_state = domain_separator.std_verifier(narg_string);
-    CommittedSumcheck::verify(verifier_state, &instance).expect("Invalid proof");
+    dsfs::verify::<CommittedSumcheck>(session, &instance, &narg_string).expect("Invalid proof");
+    println!("Verification succeeded");
 }
