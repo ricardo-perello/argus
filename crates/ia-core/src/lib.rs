@@ -1,8 +1,9 @@
-//! Core abstractions for public-coin interactive arguments.
+//! Core abstractions for public-coin interactive arguments and reductions.
 //!
-//! Defines channel traits and the `InteractiveArgument` interface.
-//! This crate has **zero external dependencies** -- all sponge-specific
-//! bounds live on the implementation side (in `dsfs`).
+//! Defines channel traits, the `InteractiveArgument` interface, and the
+//! `InteractiveReduction` interface. This crate has **zero external
+//! dependencies** -- all sponge-specific bounds live on the implementation
+//! side (in `dsfs`).
 #![no_std]
 
 /// Verification failed.
@@ -59,4 +60,39 @@ pub trait Prove<P>: InteractiveArgument {
 /// Verifier logic: reads messages from and derives challenges from channel `V`.
 pub trait Verify<V>: InteractiveArgument {
     fn verify(ch: &mut V, instance: &Self::Instance) -> VerificationResult<()>;
+}
+
+// ---------------------------------------------------------------------------
+// Interactive Reduction traits
+// ---------------------------------------------------------------------------
+
+/// Metadata for a public-coin interactive oracle reduction.
+///
+/// Unlike an `InteractiveArgument` whose verifier outputs accept/reject,
+/// an `InteractiveReduction` verifier outputs a **new instance** of a
+/// (potentially simpler) target relation.
+pub trait InteractiveReduction {
+    /// Input instance (the claim being reduced).
+    type SourceInstance;
+    /// Output instance (the reduced claim the verifier computes).
+    type TargetInstance;
+    /// Prover's private input.
+    type Witness;
+
+    /// Unique 64-byte protocol identifier for domain separation.
+    fn protocol_id() -> [u8; 64];
+}
+
+/// Prover logic for an interactive reduction.
+pub trait ReduceProve<P>: InteractiveReduction {
+    fn prove(ch: &mut P, instance: &Self::SourceInstance, witness: &Self::Witness);
+}
+
+/// Verifier logic for an interactive reduction: returns a new instance,
+/// not accept/reject.
+pub trait ReduceVerify<V>: InteractiveReduction {
+    fn verify(
+        ch: &mut V,
+        instance: &Self::SourceInstance,
+    ) -> VerificationResult<Self::TargetInstance>;
 }

@@ -2,12 +2,15 @@
 //!
 //! Wraps spongefish's `ProverState` and `VerifierState` behind ia-core's
 //! abstract channel traits. This is the **only** layer that touches the sponge.
+//!
+//! Supports both interactive arguments (`prove`/`verify`) and interactive
+//! oracle reductions (`prove_reduction`/`verify_reduction`).
 #![no_std]
 extern crate alloc;
 
 use alloc::vec::Vec;
 
-use ia_core::{Prove, ReadProverMessage, ReadVerifierMessage, SendProverMessage, SendVerifierMessage, Verify};
+use ia_core::{Prove, ReadProverMessage, ReadVerifierMessage, ReduceProve, ReduceVerify, SendProverMessage, SendVerifierMessage, Verify};
 use spongefish::{Decoding, DomainSeparator, Encoding, NargDeserialize, ProverState, VerifierState};
 
 // ---------------------------------------------------------------------------
@@ -100,4 +103,53 @@ where
     };
     IA::verify(&mut spongefish_verifier_ch, instance)?;
     spongefish_verifier_ch.state.check_eof().map_err(|_| ia_core::VerificationError)
+}
+
+// ---------------------------------------------------------------------------
+// DSFS compiler functions for interactive reductions
+// ---------------------------------------------------------------------------
+
+/// Non-interactive prover for an IOR: creates a sponge channel, runs
+/// `IR::prove`, returns the NARG string.
+pub fn prove_reduction<IR>(
+    session: [u8; 64],
+    instance: &IR::SourceInstance,
+    witness: &IR::Witness,
+) -> Vec<u8>
+where
+    IR: ReduceProve<SpongeProver>,
+    IR::SourceInstance: Encoding<[u8]>,
+{
+    let domsep = DomainSeparator::new(IR::protocol_id())
+        .session(session)
+        .instance(instance);
+
+    let mut spongefish_prover_ch = SpongeProver {
+        state: domsep.std_prover(),
+    };
+    IR::prove(&mut spongefish_prover_ch, instance, witness);
+    spongefish_prover_ch.state.narg_string().to_vec()
+}
+
+/// Non-interactive verifier for an IOR: creates a sponge channel, runs
+/// `IR::verify`, checks EOF, returns the **target instance**.
+pub fn verify_reduction<'a, IR>(
+    session: [u8; 64],
+    instance: &IR::SourceInstance,
+    proof: &'a [u8],
+) -> ia_core::VerificationResult<IR::TargetInstance>
+where
+    IR: ReduceVerify<SpongeVerifier<'a>>,
+    IR::SourceInstance: Encoding<[u8]>,
+{
+    let domsep = DomainSeparator::new(IR::protocol_id())
+        .session(session)
+        .instance(instance);
+
+    let mut spongefish_verifier_ch = SpongeVerifier {
+        state: domsep.std_verifier(proof),
+    };
+    let target = IR::verify(&mut spongefish_verifier_ch, instance)?;
+    spongefish_verifier_ch.state.check_eof().map_err(|_| ia_core::VerificationError)?;
+    Ok(target)
 }
