@@ -1,59 +1,61 @@
+//! Core abstractions for public-coin interactive arguments.
+//!
+//! Defines channel traits and the `InteractiveArgument` interface.
+//! This crate has **zero external dependencies** -- all sponge-specific
+//! bounds live on the implementation side (in `dsfs`).
 #![no_std]
-extern crate alloc;
 
-use alloc::vec::Vec;
+/// Verification failed.
+#[derive(Debug, Clone, Copy)]
+pub struct VerificationError;
 
-/// A single round of interaction: prover message followed by verifier challenge.
-pub struct Round<M, C> {
-    pub message: M,
-    pub challenge: C,
+/// Result type for verification operations.
+pub type VerificationResult<T> = Result<T, VerificationError>;
+
+// ---------------------------------------------------------------------------
+// Channel traits -- parameterized, zero bounds on M/C
+// ---------------------------------------------------------------------------
+
+/// Prover sends a message of type `M` into the channel.
+pub trait SendProverMessage<M> {
+    fn send_prover_message(&mut self, msg: &M);
 }
 
-/// Full transcript of an interactive argument (k rounds).
-pub struct Transcript<M, C> {
-    pub rounds: Vec<Round<M, C>>,
+/// Verifier reads a prover message of type `M` from the proof.
+pub trait ReadProverMessage<M> {
+    fn read_prover_message(&mut self) -> VerificationResult<M>;
 }
 
-/// A public-coin interactive argument (Construction 4.3).
-///
-/// Describes WHAT the protocol does. DSFS handles HOW Fiat-Shamir is applied.
-/// The trait is generic and carries no sponge dependency; the DSFS layer
-/// adds `Encoding`/`Decoding` bounds when compiling to a non-interactive argument.
+/// Both sides derive a verifier message (challenge) of type `C`.
+pub trait SendVerifierChallenge<C> {
+    fn send_verifier_challenge(&mut self) -> C;
+}
+
+pub trait ReadVerifierChallenge<C> {
+    fn read_verifier_challenge(&mut self) -> C;
+}
+
+// ---------------------------------------------------------------------------
+// Interactive Argument traits
+// ---------------------------------------------------------------------------
+
+/// Metadata for a public-coin interactive argument.
 pub trait InteractiveArgument {
     /// Public statement.
     type Instance;
     /// Prover's private input.
     type Witness;
-    /// Mutable prover state across rounds.
-    type ProverState;
-    /// A single prover message (use an enum for multi-phase protocols).
-    type ProverMessage;
-    /// A single verifier challenge.
-    type VerifierChallenge;
 
     /// Unique 64-byte protocol identifier for domain separation.
     fn protocol_id() -> [u8; 64];
+}
 
-    /// Number of interaction rounds k, determined by the instance.
-    fn num_rounds(instance: &Self::Instance) -> usize;
+/// Prover logic: writes messages to and reads challenges from channel `P`.
+pub trait Prove<P>: InteractiveArgument {
+    fn prove(ch: &mut P, instance: &Self::Instance, witness: &Self::Witness);
+}
 
-    /// Initialize mutable prover state from instance and witness.
-    fn prover_init(
-        instance: &Self::Instance,
-        witness: &Self::Witness,
-    ) -> Self::ProverState;
-
-    /// Produce the prover message for the current round.
-    /// `challenge` is `None` for round 0, `Some(rho_{i-1})` for round i > 0.
-    /// The prover state advances internally.
-    fn prover_round(
-        state: &mut Self::ProverState,
-        challenge: Option<&Self::VerifierChallenge>,
-    ) -> Self::ProverMessage;
-
-    /// Verification predicate: V(x, a_1, rho_1, ..., a_k, rho_k) -> accept/reject.
-    fn verify(
-        instance: &Self::Instance,
-        transcript: &Transcript<Self::ProverMessage, Self::VerifierChallenge>,
-    ) -> bool;
+/// Verifier logic: reads messages from and derives challenges from channel `V`.
+pub trait Verify<V>: InteractiveArgument {
+    fn verify(ch: &mut V, instance: &Self::Instance) -> VerificationResult<()>;
 }
