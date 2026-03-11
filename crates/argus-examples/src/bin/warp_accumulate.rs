@@ -23,8 +23,7 @@ use ark_std::UniformRand;
 use rand::rngs::OsRng;
 
 use ia_core::{
-    InteractiveReduction, ReadProverMessage, ReadVerifierMessage, ReduceProve, ReduceVerify,
-    SendProverMessage, SendVerifierMessage, VerificationError, VerificationResult,
+    InteractiveReduction, ReduceProve, ReduceVerify, VerificationError, VerificationResult,
 };
 
 // ---------------------------------------------------------------------------
@@ -69,13 +68,10 @@ impl InteractiveReduction for Accumulate {
 }
 
 // ---------------------------------------------------------------------------
-// ReduceProve: prover sends witness values, reads nothing else
+// ReduceProve: prover sends witness values, reads challenge
 // ---------------------------------------------------------------------------
 
-impl<P> ReduceProve<P> for Accumulate
-where
-    P: SendProverMessage<Fr> + ReadVerifierMessage<Fr>,
-{
+impl<P: ia_core::ProverChannel> ReduceProve<P> for Accumulate {
     fn prove(ch: &mut P, _instance: &SourceInstance, witness: &Vec<Fr>) {
         for w_i in witness {
             ch.send_prover_message(w_i);
@@ -89,10 +85,7 @@ where
 //               accumulated (claim, value) pair
 // ---------------------------------------------------------------------------
 
-impl<V> ReduceVerify<V> for Accumulate
-where
-    V: ReadProverMessage<Fr> + SendVerifierMessage<Fr>,
-{
+impl<V: ia_core::VerifierChannel> ReduceVerify<V> for Accumulate {
     fn verify(ch: &mut V, instance: &SourceInstance) -> VerificationResult<TargetInstance> {
         let n = instance.claims.len();
 

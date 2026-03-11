@@ -13,8 +13,8 @@ use ark_std::UniformRand;
 use rand::rngs::OsRng;
 
 use ia_core::{
-    InteractiveArgument, Prove, ReadProverMessage, ReadVerifierMessage, SendProverMessage,
-    SendVerifierMessage, Verify, VerificationError, VerificationResult,
+    Decoding, Encoding, InteractiveArgument, NargDeserialize, Prove, Verify, VerificationError,
+    VerificationResult,
 };
 
 // ---------------------------------------------------------------------------
@@ -42,8 +42,9 @@ impl<G: CurveGroup> InteractiveArgument for Schnorr<G> {
 
 impl<G, P> Prove<P> for Schnorr<G>
 where
-    G: CurveGroup + PrimeGroup,
-    P: SendProverMessage<G> + SendProverMessage<G::ScalarField> + ReadVerifierMessage<G::ScalarField>,
+    G: CurveGroup + PrimeGroup + Encoding,
+    G::ScalarField: Encoding + Decoding,
+    P: ia_core::ProverChannel,
 {
     #[allow(non_snake_case)]
     fn prove(ch: &mut P, instance: &[G; 2], witness: &G::ScalarField) {
@@ -63,10 +64,9 @@ where
 
 impl<G, V> Verify<V> for Schnorr<G>
 where
-    G: CurveGroup + PrimeGroup,
-    V: ReadProverMessage<G>
-        + ReadProverMessage<G::ScalarField>
-        + SendVerifierMessage<G::ScalarField>,
+    G: CurveGroup + PrimeGroup + Encoding + NargDeserialize,
+    G::ScalarField: Encoding + Decoding + NargDeserialize,
+    V: ia_core::VerifierChannel,
 {
     #[allow(non_snake_case)]
     fn verify(ch: &mut V, instance: &[G; 2]) -> VerificationResult<()> {

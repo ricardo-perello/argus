@@ -1,9 +1,10 @@
 //! Core abstractions for public-coin interactive arguments and reductions.
 //!
 //! Defines channel traits, the `InteractiveArgument` interface, and the
-//! `InteractiveReduction` interface. This crate has **zero external
-//! dependencies** -- all sponge-specific bounds live on the implementation
-//! side (in `dsfs`).
+//! `InteractiveReduction` interface.
+//!
+//! Codec traits (`Encoding`, `Decoding`, `NargDeserialize`) are re-exported
+//! from spongefish to enable method-level generics on the channel traits.
 #![no_std]
 
 /// Verification failed.
@@ -13,28 +14,22 @@ pub struct VerificationError;
 /// Result type for verification operations.
 pub type VerificationResult<T> = Result<T, VerificationError>;
 
+pub use spongefish::{Decoding, Encoding, NargDeserialize};
+
 // ---------------------------------------------------------------------------
-// Channel traits -- parameterized, zero bounds on M/C
+// Channel traits -- method-level generics, 2 traits instead of 4
 // ---------------------------------------------------------------------------
 
-/// Prover sends a message of type `M` into the channel.
-pub trait SendProverMessage<M> {
-    fn send_prover_message(&mut self, msg: &M);
+/// Prover-side channel: send prover messages and read verifier challenges.
+pub trait ProverChannel {
+    fn send_prover_message<PM: Encoding>(&mut self, msg: &PM);
+    fn read_verifier_message<VM: Decoding>(&mut self) -> VM;
 }
 
-/// Verifier reads a prover message of type `M` from the proof.
-pub trait ReadProverMessage<M> {
-    fn read_prover_message(&mut self) -> VerificationResult<M>;
-}
-
-/// Verifier derives a message (challenge) of type `C`.
-pub trait SendVerifierMessage<C> {
-    fn send_verifier_message(&mut self) -> C;
-}
-
-/// Prover receives a verifier message (challenge) of type `C`.
-pub trait ReadVerifierMessage<C> {
-    fn read_verifier_message(&mut self) -> C;
+/// Verifier-side channel: read prover messages and derive verifier challenges.
+pub trait VerifierChannel {
+    fn read_prover_message<PM: Encoding + NargDeserialize>(&mut self) -> VerificationResult<PM>;
+    fn send_verifier_message<VM: Decoding>(&mut self) -> VM;
 }
 
 // ---------------------------------------------------------------------------
@@ -52,13 +47,13 @@ pub trait InteractiveArgument {
     fn protocol_id() -> [u8; 64];
 }
 
-/// Prover logic: writes messages to and reads challenges from channel `P`.
-pub trait Prove<P>: InteractiveArgument {
+/// Prover logic: writes messages to and reads challenges from a `ProverChannel`.
+pub trait Prove<P: ProverChannel>: InteractiveArgument {
     fn prove(ch: &mut P, instance: &Self::Instance, witness: &Self::Witness);
 }
 
-/// Verifier logic: reads messages from and derives challenges from channel `V`.
-pub trait Verify<V>: InteractiveArgument {
+/// Verifier logic: reads messages from and derives challenges from a `VerifierChannel`.
+pub trait Verify<V: VerifierChannel>: InteractiveArgument {
     fn verify(ch: &mut V, instance: &Self::Instance) -> VerificationResult<()>;
 }
 
@@ -84,13 +79,13 @@ pub trait InteractiveReduction {
 }
 
 /// Prover logic for an interactive reduction.
-pub trait ReduceProve<P>: InteractiveReduction {
+pub trait ReduceProve<P: ProverChannel>: InteractiveReduction {
     fn prove(ch: &mut P, instance: &Self::SourceInstance, witness: &Self::Witness);
 }
 
 /// Verifier logic for an interactive reduction: returns a new instance,
 /// not accept/reject.
-pub trait ReduceVerify<V>: InteractiveReduction {
+pub trait ReduceVerify<V: VerifierChannel>: InteractiveReduction {
     fn verify(
         ch: &mut V,
         instance: &Self::SourceInstance,

@@ -15,8 +15,7 @@ use std::io::Cursor;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
 use ia_core::{
-    InteractiveArgument, Prove, ReadProverMessage, ReadVerifierMessage, SendProverMessage,
-    SendVerifierMessage, Verify, VerificationError, VerificationResult,
+    InteractiveArgument, Prove, Verify, VerificationError, VerificationResult,
 };
 
 use spongefish::Encoding;
@@ -132,13 +131,7 @@ impl InteractiveArgument for CommittedSumcheck {
 // Prove: linear prover logic against an abstract channel
 // ---------------------------------------------------------------------------
 
-impl<P> Prove<P> for CommittedSumcheck
-where
-    P: SendProverMessage<Bytes>
-        + SendProverMessage<Fr>
-        + ReadVerifierMessage<u8>
-        + SendProverMessage<OpeningProof>,
-{
+impl<P: ia_core::ProverChannel> Prove<P> for CommittedSumcheck {
     #[allow(non_snake_case)]
     fn prove(ch: &mut P, instance: &Instance, evals: &Vec<Fr>) {
         let n = instance.n as usize;
@@ -194,13 +187,7 @@ where
 // Verify: linear verifier logic against an abstract channel
 // ---------------------------------------------------------------------------
 
-impl<V> Verify<V> for CommittedSumcheck
-where
-    V: ReadProverMessage<Bytes>
-        + ReadProverMessage<Fr>
-        + SendVerifierMessage<u8>
-        + ReadProverMessage<OpeningProof>,
-{
+impl<V: ia_core::VerifierChannel> Verify<V> for CommittedSumcheck {
     fn verify(ch: &mut V, instance: &Instance) -> VerificationResult<()> {
         let n = instance.n as usize;
 
