@@ -36,6 +36,7 @@ dependencies = [
  "dsfs",
  "hex",
  "ia-core",
+ "live-channel",
  "rand 0.8.5",
  "spongefish",
 ]
@@ -495,6 +496,15 @@ name = "libc"
 version = "0.2.182"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6800badb6cb2082ffd7b6a67e6125bb39f18782f793520caee8cb8846be06112"
+
+[[package]]
+name = "live-channel"
+version = "0.1.0"
+dependencies = [
+ "ia-core",
+ "rand 0.8.5",
+ "spongefish",
+]
 
 [[package]]
 name = "lock_api"
