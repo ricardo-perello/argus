@@ -1,12 +1,18 @@
-//! Schnorr proof of knowledge via the InteractiveArgument + DSFS stack (v2).
+//! Schnorr proof of knowledge.
 //!
 //! Proves knowledge of x such that X = x * G for public (G, X).
 //!
-//! Protocol (linear channel):
+//! Protocol:
 //!   Prover sends  commitment  K = k * G
 //!   Verifier sends challenge  c (scalar)
 //!   Prover sends  response    r = k + c * x
 //!   Verify: G * r == K + X * c
+//!
+//! Modes:
+//!   (default)  Non-interactive via DSFS (Fiat-Shamir)
+//!   --live     Interactive via live-channel (two threads, mpsc)
+
+use std::thread;
 
 use ark_ec::{CurveGroup, PrimeGroup};
 use ark_std::UniformRand;
@@ -22,10 +28,6 @@ use ia_core::{
 // ---------------------------------------------------------------------------
 
 struct Schnorr<G: CurveGroup>(core::marker::PhantomData<G>);
-
-// ---------------------------------------------------------------------------
-// InteractiveArgument: metadata only
-// ---------------------------------------------------------------------------
 
 impl<G: CurveGroup> InteractiveArgument for Schnorr<G> {
     type Instance = [G; 2]; // [generator, public_key]
@@ -85,7 +87,56 @@ where
 }
 
 // ---------------------------------------------------------------------------
-// Main: prove and verify via DSFS
+// DSFS mode: non-interactive prove + verify
+// ---------------------------------------------------------------------------
+
+fn run_dsfs(instance: &[ark_curve25519::EdwardsProjective; 2], sk: &ark_curve25519::Fr) {
+    type G = ark_curve25519::EdwardsProjective;
+
+    println!("=== Schnorr (DSFS / non-interactive) ===\n");
+
+    let session = spongefish::session!("spongefish examples");
+
+    let narg_string = dsfs::prove::<Schnorr<G>>(session, instance, sk);
+    println!("Proof:\n{}", hex::encode(&narg_string));
+
+    dsfs::verify::<Schnorr<G>>(session, instance, &narg_string).expect("verification failed");
+    println!("Verification succeeded");
+}
+
+// ---------------------------------------------------------------------------
+// Live mode: interactive prove + verify in two threads
+// ---------------------------------------------------------------------------
+
+fn run_live(instance: [ark_curve25519::EdwardsProjective; 2], sk: ark_curve25519::Fr) {
+    type G = ark_curve25519::EdwardsProjective;
+
+    println!("=== Schnorr (live / interactive) ===\n");
+
+    let (mut prover_ch, mut verifier_ch) = live_channel::channel_pair();
+
+    let prover_instance = instance;
+    let prover_handle = thread::spawn(move || {
+        Schnorr::<G>::prove(&mut prover_ch, &prover_instance, &sk);
+        println!("[Prover]   Done.");
+    });
+
+    let verifier_instance = instance;
+    let verifier_handle = thread::spawn(move || {
+        let result = Schnorr::<G>::verify(&mut verifier_ch, &verifier_instance);
+        match result {
+            Ok(()) => println!("[Verifier] Verification succeeded!"),
+            Err(_) => println!("[Verifier] Verification FAILED."),
+        }
+        result
+    });
+
+    prover_handle.join().unwrap();
+    verifier_handle.join().unwrap().expect("live verification failed");
+}
+
+// ---------------------------------------------------------------------------
+// Main
 // ---------------------------------------------------------------------------
 
 fn main() {
@@ -97,11 +148,11 @@ fn main() {
     let pk = generator * sk;
     let instance = [generator, pk];
 
-    let session = spongefish::session!("spongefish examples");
+    let live = std::env::args().any(|a| a == "--live");
 
-    let narg_string = dsfs::prove::<Schnorr<G>>(session, &instance, &sk);
-    println!("Schnorr proof (IA v2 + DSFS):\n{}", hex::encode(&narg_string));
-
-    dsfs::verify::<Schnorr<G>>(session, &instance, &narg_string).expect("verification failed");
-    println!("Verification succeeded");
+    if live {
+        run_live(instance, sk);
+    } else {
+        run_dsfs(&instance, &sk);
+    }
 }
