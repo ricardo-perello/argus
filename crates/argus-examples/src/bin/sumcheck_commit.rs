@@ -1,16 +1,22 @@
-//! Committed Boolean Sumcheck via the InteractiveArgument + DSFS stack (v2).
+//! Committed Boolean Sumcheck via the InteractiveArgument stack.
 //!
 //! Protocol:
 //! - Prover commits to the full evaluation table evals via a Merkle root.
 //! - Run "sumcheck" with bit challenges b_i in {0,1} (derived via the channel).
 //!   This collapses the claim to a single table entry evals[idx].
 //! - Prover opens the Merkle tree at idx and verifier checks opening + value == claim.
+//!
+//! Modes:
+//!   (default)  Non-interactive via DSFS (Fiat-Shamir)
+//!   --live     Interactive via live-channel (two threads, mpsc)
+
+use std::io::Cursor;
+use std::thread;
 
 use ark_curve25519::Fr;
 use ark_ff::Zero;
 use ark_std::UniformRand;
 use rand::rngs::OsRng;
-use std::io::Cursor;
 
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
@@ -272,7 +278,57 @@ impl CommittedSumcheck {
 }
 
 // ---------------------------------------------------------------------------
-// Main: prove and verify via DSFS
+// DSFS mode: non-interactive prove + verify
+// ---------------------------------------------------------------------------
+
+fn run_dsfs(instance: &Instance, evals: &Vec<Fr>) {
+    println!("=== Committed Sumcheck (DSFS / non-interactive) ===\n");
+
+    let session = spongefish::session!("argus warmup: committed sumcheck");
+
+    let narg_string = dsfs::prove::<CommittedSumcheck>(session, instance, evals);
+    println!(
+        "Proof ({} bytes):\n{}",
+        narg_string.len(),
+        hex::encode(&narg_string)
+    );
+
+    dsfs::verify::<CommittedSumcheck>(session, instance, &narg_string).expect("Invalid proof");
+    println!("Verification succeeded");
+}
+
+// ---------------------------------------------------------------------------
+// Live mode: interactive prove + verify in two threads
+// ---------------------------------------------------------------------------
+
+fn run_live(instance: Instance, evals: Vec<Fr>) {
+    println!("=== Committed Sumcheck (live / interactive) ===\n");
+
+    let (mut prover_ch, mut verifier_ch) = live_channel::channel_pair();
+
+    let prover_instance = instance.clone();
+    let prover_evals = evals.clone();
+    let prover_handle = thread::spawn(move || {
+        CommittedSumcheck::prove(&mut prover_ch, &prover_instance, &prover_evals);
+        println!("[Prover]   Done.");
+    });
+
+    let verifier_instance = instance;
+    let verifier_handle = thread::spawn(move || {
+        let result = CommittedSumcheck::verify(&mut verifier_ch, &verifier_instance);
+        match result {
+            Ok(()) => println!("[Verifier] Verification succeeded!"),
+            Err(_) => println!("[Verifier] Verification FAILED."),
+        }
+        result
+    });
+
+    prover_handle.join().unwrap();
+    verifier_handle.join().unwrap().expect("live verification failed");
+}
+
+// ---------------------------------------------------------------------------
+// Main
 // ---------------------------------------------------------------------------
 
 fn main() {
@@ -290,14 +346,11 @@ fn main() {
         claimed_sum,
     };
 
-    let session = spongefish::session!("argus warmup: committed sumcheck");
+    let live = std::env::args().any(|a| a == "--live");
 
-    let narg_string = dsfs::prove::<CommittedSumcheck>(session, &instance, &evals);
-    println!(
-        "CommittedSumcheck proof bytes:\n{}",
-        hex::encode(&narg_string)
-    );
-
-    dsfs::verify::<CommittedSumcheck>(session, &instance, &narg_string).expect("Invalid proof");
-    println!("Verification succeeded");
+    if live {
+        run_live(instance, evals);
+    } else {
+        run_dsfs(&instance, &evals);
+    }
 }
