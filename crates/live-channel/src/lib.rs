@@ -6,7 +6,7 @@
 
 use std::sync::mpsc;
 
-use ia_core::{Decoding, Encoding, NargDeserialize, VerificationError, VerificationResult};
+use ia_core::{Decoding, Deserialize, Encoding, VerificationError, VerificationResult};
 use rand::rngs::OsRng;
 use rand::RngCore;
 
@@ -67,12 +67,12 @@ impl LiveVerifierChannel {
 }
 
 impl ia_core::VerifierChannel for LiveVerifierChannel {
-    fn read_prover_message<M: Encoding + NargDeserialize>(
+    fn read_prover_message<M: Encoding + Deserialize>(
         &mut self,
     ) -> VerificationResult<M> {
         let bytes = self.from_prover.recv().map_err(|_| VerificationError)?;
         let mut buf = bytes.as_slice();
-        M::deserialize_from_narg(&mut buf).map_err(|_| VerificationError)
+        M::deserialize(&mut buf)
     }
 
     fn send_verifier_message<C: Decoding>(&mut self) -> C {

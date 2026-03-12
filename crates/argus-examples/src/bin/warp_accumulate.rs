@@ -58,7 +58,8 @@ struct Accumulate;
 impl InteractiveReduction for Accumulate {
     type SourceInstance = SourceInstance;
     type TargetInstance = TargetInstance;
-    type Witness = Vec<Fr>;
+    type SourceWitness = Vec<Fr>;
+    type TargetWitness = ();
 
     fn protocol_id() -> [u8; 64] {
         spongefish::protocol_id(core::format_args!(
@@ -72,11 +73,28 @@ impl InteractiveReduction for Accumulate {
 // ---------------------------------------------------------------------------
 
 impl<P: ia_core::ProverChannel> ReduceProve<P> for Accumulate {
-    fn prove(ch: &mut P, _instance: &SourceInstance, witness: &Vec<Fr>) {
+    fn prove(
+        ch: &mut P,
+        instance: &SourceInstance,
+        witness: &Vec<Fr>,
+    ) -> (TargetInstance, ()) {
+        let n = instance.claims.len();
+
         for w_i in witness {
             ch.send_prover_message(w_i);
         }
-        let _alpha: Fr = ch.read_verifier_message();
+        let alpha: Fr = ch.read_verifier_message();
+
+        let mut acc_claim = Fr::ZERO;
+        let mut acc_value = Fr::ZERO;
+        let mut power = Fr::ONE;
+        for i in 0..n {
+            acc_claim += power * instance.claims[i];
+            acc_value += power * witness[i];
+            power *= alpha;
+        }
+
+        (TargetInstance { acc_claim, acc_value }, ())
     }
 }
 

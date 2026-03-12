@@ -10,8 +10,8 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-use ia_core::{Prove, ProverChannel, ReduceProve, ReduceVerify, VerifierChannel, Verify};
-use spongefish::{Decoding, DomainSeparator, Encoding, NargDeserialize, ProverState, VerifierState};
+use ia_core::{Deserialize, Prove, ProverChannel, ReduceProve, ReduceVerify, VerifierChannel, Verify};
+use spongefish::{Decoding, DomainSeparator, Encoding, ProverState, VerifierState};
 
 // ---------------------------------------------------------------------------
 // Sponge-backed channel: prover side
@@ -42,7 +42,7 @@ pub struct SpongeVerifier<'a> {
 }
 
 impl VerifierChannel for SpongeVerifier<'_> {
-    fn read_prover_message<PM: Encoding + NargDeserialize>(
+    fn read_prover_message<PM: Encoding + Deserialize>(
         &mut self,
     ) -> ia_core::VerificationResult<PM> {
         self.state
@@ -113,7 +113,7 @@ where
 pub fn prove_reduction<IR>(
     session: [u8; 64],
     instance: &IR::SourceInstance,
-    witness: &IR::Witness,
+    witness: &IR::SourceWitness,
 ) -> Vec<u8>
 where
     IR: ReduceProve<SpongeProver>,
@@ -126,7 +126,7 @@ where
     let mut spongefish_prover_ch = SpongeProver {
         state: domsep.std_prover(),
     };
-    IR::prove(&mut spongefish_prover_ch, instance, witness);
+    let (_target_instance, _target_witness) = IR::prove(&mut spongefish_prover_ch, instance, witness);
     spongefish_prover_ch.state.narg_string().to_vec()
 }
 

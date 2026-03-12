@@ -19,7 +19,7 @@ use ark_std::UniformRand;
 use rand::rngs::OsRng;
 
 use ia_core::{
-    Decoding, Encoding, InteractiveArgument, NargDeserialize, Prove, Verify, VerificationError,
+    Decoding, Deserialize, Encoding, InteractiveArgument, Prove, Verify, VerificationError,
     VerificationResult,
 };
 
@@ -66,8 +66,8 @@ where
 
 impl<G, V> Verify<V> for Schnorr<G>
 where
-    G: CurveGroup + PrimeGroup + Encoding + NargDeserialize,
-    G::ScalarField: Encoding + Decoding + NargDeserialize,
+    G: CurveGroup + PrimeGroup + Encoding + Deserialize,
+    G::ScalarField: Encoding + Decoding + Deserialize,
     V: ia_core::VerifierChannel,
 {
     #[allow(non_snake_case)]
