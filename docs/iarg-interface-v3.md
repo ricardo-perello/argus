@@ -77,7 +77,8 @@ v2's channel traits had **no bounds** on the type parameter. This kept ia-core f
 Depends on spongefish (codec traits only). Defines:
 
 - **Error types**: `VerificationError`, `VerificationResult<T>`
-- **Re-exports**: `Encoding`, `Decoding`, `NargDeserialize` from spongefish
+- **Re-exports**: `Encoding`, `Decoding` from spongefish
+- **`Deserialize` trait**: blanket-impl'd from `spongefish::NargDeserialize`
 - **Channel traits** (method-level generics):
   - `ProverChannel` -- prover sends messages and reads challenges
     - `fn send_prover_message<PM: Encoding>(&mut self, msg: &PM)`
@@ -89,10 +90,13 @@ Depends on spongefish (codec traits only). Defines:
   - `InteractiveArgument` -- metadata: `Instance`, `Witness`, `protocol_id()`
   - `Prove<P: ProverChannel>` -- prover logic against a `ProverChannel`
   - `Verify<V: VerifierChannel>` -- verifier logic against a `VerifierChannel`
-- **IOR traits**:
-  - `InteractiveReduction` -- metadata: `SourceInstance`, `TargetInstance`, `Witness`, `protocol_id()`
-  - `ReduceProve<P: ProverChannel>` -- prover logic for a reduction
+- **IOR traits** (see [interactive-reduction-v2.md](interactive-reduction-v2.md) for details):
+  - `InteractiveReduction` -- metadata: `SourceInstance`, `TargetInstance`, `SourceWitness`, `TargetWitness`, `protocol_id()`
+  - `ReduceProve<P: ProverChannel>` -- prover logic; returns `(TargetInstance, TargetWitness)` to enable composition
   - `ReduceVerify<V: VerifierChannel>` -- verifier logic; returns a new instance, not accept/reject
+- **Composition structs**:
+  - `ChainedReduction<First, Second>` -- IR . IR -> IR (auto prover + verifier)
+  - `ReducedArgument<Reduction, Argument>` -- IR . IA -> IA (auto prover + verifier)
 
 ## dsfs: [dsfs/src/lib.rs](../crates/dsfs/src/lib.rs)
 
