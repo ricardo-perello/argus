@@ -10,26 +10,24 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-use ia_core::{Prove, ReadProverMessage, ReadVerifierMessage, ReduceProve, ReduceVerify, SendProverMessage, SendVerifierMessage, Verify};
-use spongefish::{Decoding, DomainSeparator, Encoding, NargDeserialize, ProverState, VerifierState};
+use ia_core::{Deserialize, Prove, ProverChannel, ReduceProve, ReduceVerify, VerifierChannel, Verify};
+use spongefish::{Decoding, DomainSeparator, Encoding, ProverState, VerifierState};
 
 // ---------------------------------------------------------------------------
 // Sponge-backed channel: prover side
 // ---------------------------------------------------------------------------
 
-/// Wraps `spongefish::ProverState` as an ia-core channel.
+/// Wraps `spongefish::ProverState` as an ia-core `ProverChannel`.
 pub struct SpongeProver {
     state: ProverState,
 }
 
-impl<M: Encoding<[u8]>> SendProverMessage<M> for SpongeProver {
-    fn send_prover_message(&mut self, msg: &M) {
+impl ProverChannel for SpongeProver {
+    fn send_prover_message<PM: Encoding>(&mut self, msg: &PM) {
         self.state.prover_message(msg);
     }
-}
 
-impl<C: Decoding<[u8]>> ReadVerifierMessage<C> for SpongeProver {
-    fn read_verifier_message(&mut self) -> C {
+    fn read_verifier_message<VM: Decoding>(&mut self) -> VM {
         self.state.verifier_message()
     }
 }
@@ -38,21 +36,21 @@ impl<C: Decoding<[u8]>> ReadVerifierMessage<C> for SpongeProver {
 // Sponge-backed channel: verifier side
 // ---------------------------------------------------------------------------
 
-/// Wraps `spongefish::VerifierState` as an ia-core channel.
+/// Wraps `spongefish::VerifierState` as an ia-core `VerifierChannel`.
 pub struct SpongeVerifier<'a> {
     state: VerifierState<'a>,
 }
 
-impl<M: Encoding<[u8]> + NargDeserialize> ReadProverMessage<M> for SpongeVerifier<'_> {
-    fn read_prover_message(&mut self) -> ia_core::VerificationResult<M> {
+impl VerifierChannel for SpongeVerifier<'_> {
+    fn read_prover_message<PM: Encoding + Deserialize>(
+        &mut self,
+    ) -> ia_core::VerificationResult<PM> {
         self.state
             .prover_message()
             .map_err(|_| ia_core::VerificationError)
     }
-}
 
-impl<C: Decoding<[u8]>> SendVerifierMessage<C> for SpongeVerifier<'_> {
-    fn send_verifier_message(&mut self) -> C {
+    fn send_verifier_message<VM: Decoding>(&mut self) -> VM {
         self.state.verifier_message()
     }
 }
@@ -69,14 +67,12 @@ pub fn prove<IA>(
 ) -> Vec<u8>
 where
     IA: Prove<SpongeProver>,
-    IA::Instance: Encoding<[u8]>,
+    IA::Instance: Encoding,
 {
     let domsep = DomainSeparator::new(IA::protocol_id())
         .session(session)
         .instance(instance);
 
-
-    // Wiring together abstract channel with spongefish prover channel
     let mut spongefish_prover_ch = SpongeProver {
         state: domsep.std_prover(),
     };
@@ -92,7 +88,7 @@ pub fn verify<'a, IA>(
 ) -> ia_core::VerificationResult<()>
 where
     IA: Verify<SpongeVerifier<'a>>,
-    IA::Instance: Encoding<[u8]>,
+    IA::Instance: Encoding,
 {
     let domsep = DomainSeparator::new(IA::protocol_id())
         .session(session)
@@ -102,7 +98,10 @@ where
         state: domsep.std_verifier(proof),
     };
     IA::verify(&mut spongefish_verifier_ch, instance)?;
-    spongefish_verifier_ch.state.check_eof().map_err(|_| ia_core::VerificationError)
+    spongefish_verifier_ch
+        .state
+        .check_eof()
+        .map_err(|_| ia_core::VerificationError)
 }
 
 // ---------------------------------------------------------------------------
@@ -114,11 +113,11 @@ where
 pub fn prove_reduction<IR>(
     session: [u8; 64],
     instance: &IR::SourceInstance,
-    witness: &IR::Witness,
+    witness: &IR::SourceWitness,
 ) -> Vec<u8>
 where
     IR: ReduceProve<SpongeProver>,
-    IR::SourceInstance: Encoding<[u8]>,
+    IR::SourceInstance: Encoding,
 {
     let domsep = DomainSeparator::new(IR::protocol_id())
         .session(session)
@@ -127,7 +126,7 @@ where
     let mut spongefish_prover_ch = SpongeProver {
         state: domsep.std_prover(),
     };
-    IR::prove(&mut spongefish_prover_ch, instance, witness);
+    let (_target_instance, _target_witness) = IR::prove(&mut spongefish_prover_ch, instance, witness);
     spongefish_prover_ch.state.narg_string().to_vec()
 }
 
@@ -140,7 +139,7 @@ pub fn verify_reduction<'a, IR>(
 ) -> ia_core::VerificationResult<IR::TargetInstance>
 where
     IR: ReduceVerify<SpongeVerifier<'a>>,
-    IR::SourceInstance: Encoding<[u8]>,
+    IR::SourceInstance: Encoding,
 {
     let domsep = DomainSeparator::new(IR::protocol_id())
         .session(session)
@@ -150,6 +149,9 @@ where
         state: domsep.std_verifier(proof),
     };
     let target = IR::verify(&mut spongefish_verifier_ch, instance)?;
-    spongefish_verifier_ch.state.check_eof().map_err(|_| ia_core::VerificationError)?;
+    spongefish_verifier_ch
+        .state
+        .check_eof()
+        .map_err(|_| ia_core::VerificationError)?;
     Ok(target)
 }

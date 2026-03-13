@@ -23,8 +23,7 @@ use ark_std::UniformRand;
 use rand::rngs::OsRng;
 
 use ia_core::{
-    InteractiveReduction, ReadProverMessage, ReadVerifierMessage, ReduceProve, ReduceVerify,
-    SendProverMessage, SendVerifierMessage, VerificationError, VerificationResult,
+    InteractiveReduction, ReduceProve, ReduceVerify, VerificationError, VerificationResult,
 };
 
 // ---------------------------------------------------------------------------
@@ -59,7 +58,8 @@ struct Accumulate;
 impl InteractiveReduction for Accumulate {
     type SourceInstance = SourceInstance;
     type TargetInstance = TargetInstance;
-    type Witness = Vec<Fr>;
+    type SourceWitness = Vec<Fr>;
+    type TargetWitness = ();
 
     fn protocol_id() -> [u8; 64] {
         spongefish::protocol_id(core::format_args!(
@@ -69,18 +69,32 @@ impl InteractiveReduction for Accumulate {
 }
 
 // ---------------------------------------------------------------------------
-// ReduceProve: prover sends witness values, reads nothing else
+// ReduceProve: prover sends witness values, reads challenge
 // ---------------------------------------------------------------------------
 
-impl<P> ReduceProve<P> for Accumulate
-where
-    P: SendProverMessage<Fr> + ReadVerifierMessage<Fr>,
-{
-    fn prove(ch: &mut P, _instance: &SourceInstance, witness: &Vec<Fr>) {
+impl<P: ia_core::ProverChannel> ReduceProve<P> for Accumulate {
+    fn prove(
+        ch: &mut P,
+        instance: &SourceInstance,
+        witness: &Vec<Fr>,
+    ) -> (TargetInstance, ()) {
+        let n = instance.claims.len();
+
         for w_i in witness {
             ch.send_prover_message(w_i);
         }
-        let _alpha: Fr = ch.read_verifier_message();
+        let alpha: Fr = ch.read_verifier_message();
+
+        let mut acc_claim = Fr::ZERO;
+        let mut acc_value = Fr::ZERO;
+        let mut power = Fr::ONE;
+        for i in 0..n {
+            acc_claim += power * instance.claims[i];
+            acc_value += power * witness[i];
+            power *= alpha;
+        }
+
+        (TargetInstance { acc_claim, acc_value }, ())
     }
 }
 
@@ -89,10 +103,7 @@ where
 //               accumulated (claim, value) pair
 // ---------------------------------------------------------------------------
 
-impl<V> ReduceVerify<V> for Accumulate
-where
-    V: ReadProverMessage<Fr> + SendVerifierMessage<Fr>,
-{
+impl<V: ia_core::VerifierChannel> ReduceVerify<V> for Accumulate {
     fn verify(ch: &mut V, instance: &SourceInstance) -> VerificationResult<TargetInstance> {
         let n = instance.claims.len();
 

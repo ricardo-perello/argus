@@ -7,6 +7,7 @@ default-run = "argus-examples"
 [dependencies]
 ia-core = { path = "../ia-core" }
 dsfs = { path = "../dsfs" }
+live-channel = { path = "../live-channel" }
 
 ark-ff.workspace = true
 ark-ec.workspace = true

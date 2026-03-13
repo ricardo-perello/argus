@@ -2,6 +2,7 @@
 members = [
     "crates/ia-core",
     "crates/dsfs",
+    "crates/live-channel",
     "crates/ibcs",
     "crates/argus-examples"]
 resolver = "2"
