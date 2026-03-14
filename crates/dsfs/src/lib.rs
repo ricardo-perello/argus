@@ -22,6 +22,16 @@ pub struct SpongeProver {
     state: ProverState,
 }
 
+impl SpongeProver {
+    pub fn new(state: ProverState) -> Self {
+        Self { state }
+    }
+
+    pub fn narg_string(&self) -> &[u8] {
+        self.state.narg_string()
+    }
+}
+
 impl ProverChannel for SpongeProver {
     fn send_prover_message<PM: Encoding>(&mut self, msg: &PM) {
         self.state.prover_message(msg);
@@ -39,6 +49,12 @@ impl ProverChannel for SpongeProver {
 /// Wraps `spongefish::VerifierState` as an ia-core `VerifierChannel`.
 pub struct SpongeVerifier<'a> {
     state: VerifierState<'a>,
+}
+
+impl<'a> SpongeVerifier<'a> {
+    pub fn new(state: VerifierState<'a>) -> Self {
+        Self { state }
+    }
 }
 
 impl VerifierChannel for SpongeVerifier<'_> {
@@ -73,11 +89,9 @@ where
         .session(session)
         .instance(instance);
 
-    let mut spongefish_prover_ch = SpongeProver {
-        state: domsep.std_prover(),
-    };
+    let mut spongefish_prover_ch = SpongeProver::new(domsep.std_prover());
     IA::prove(&mut spongefish_prover_ch, instance, witness);
-    spongefish_prover_ch.state.narg_string().to_vec()
+    spongefish_prover_ch.narg_string().to_vec()
 }
 
 /// Non-interactive verifier: creates a sponge channel, runs `IA::verify`, checks EOF.
@@ -94,9 +108,7 @@ where
         .session(session)
         .instance(instance);
 
-    let mut spongefish_verifier_ch = SpongeVerifier {
-        state: domsep.std_verifier(proof),
-    };
+    let mut spongefish_verifier_ch = SpongeVerifier::new(domsep.std_verifier(proof));
     IA::verify(&mut spongefish_verifier_ch, instance)?;
     spongefish_verifier_ch
         .state
@@ -123,11 +135,9 @@ where
         .session(session)
         .instance(instance);
 
-    let mut spongefish_prover_ch = SpongeProver {
-        state: domsep.std_prover(),
-    };
+    let mut spongefish_prover_ch = SpongeProver::new(domsep.std_prover());
     let (_target_instance, _target_witness) = IR::prove(&mut spongefish_prover_ch, instance, witness);
-    spongefish_prover_ch.state.narg_string().to_vec()
+    spongefish_prover_ch.narg_string().to_vec()
 }
 
 /// Non-interactive verifier for an IOR: creates a sponge channel, runs
@@ -145,9 +155,7 @@ where
         .session(session)
         .instance(instance);
 
-    let mut spongefish_verifier_ch = SpongeVerifier {
-        state: domsep.std_verifier(proof),
-    };
+    let mut spongefish_verifier_ch = SpongeVerifier::new(domsep.std_verifier(proof));
     let target = IR::verify(&mut spongefish_verifier_ch, instance)?;
     spongefish_verifier_ch
         .state
