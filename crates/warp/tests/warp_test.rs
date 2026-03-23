@@ -1,4 +1,5 @@
 use std::marker::PhantomData;
+use std::sync::Arc;
 
 use ark_bls12_381::Fr as Fp;
 use ark_codes::{
@@ -12,7 +13,7 @@ use rand::thread_rng;
 use warp::{
     config::WARPConfig,
     crypto::merkle::blake3::Blake3MerkleTreeParams,
-    protocol::warp::WARP,
+    protocol::warp::{WARP, WARPInstance, WARPWitness},
     relations::{
         r1cs::{
             hashchain::{compute_hash_chain, HashChainInstance, HashChainRelation, HashChainWitness},
@@ -22,6 +23,7 @@ use warp::{
     },
     types::{AccumulatorInstances, AccumulatorWitnesses},
     utils::poseidon,
+    FullWARP, WARPReduction,
 };
 
 use dsfs::{SpongeProver, SpongeVerifier};
@@ -261,4 +263,102 @@ fn warp_full_accumulation_cycle() {
         .decide(&acc_w, &acc_x)
         .expect("full accumulation decider failed");
     println!("Full accumulation decider: OK");
+}
+
+#[test]
+fn warp_ir_dsfs_prove_verify() {
+    let (r1cs, code, instances, witnesses) = setup();
+    let l1 = instances.len();
+
+    let warp_config = WARPConfig::new(l1, l1, 8, 7, r1cs.config(), code.code_len());
+    let warp = Arc::new(WARP::<Fp, R1CS<Fp>, _, MT>::new(
+        warp_config,
+        code.clone(),
+        r1cs.clone(),
+        (),
+        (),
+    ));
+
+    let pk = (r1cs.clone(), r1cs.m, r1cs.n, r1cs.k);
+    let (empty_inst, empty_wit) = empty_acc();
+
+    let instance = WARPInstance {
+        warp: warp.clone(),
+        pk,
+        instances,
+        acc_instances: empty_inst,
+    };
+    let witness = WARPWitness {
+        witnesses,
+        acc_witnesses: empty_wit,
+    };
+
+    let session = spongefish::session!("warp IR test");
+    let proof = dsfs::prove_reduction::<WARPReduction<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>>(
+        session,
+        &instance,
+        &witness,
+    );
+    println!("IR NARG string: {} bytes", proof.len());
+
+    let target = dsfs::verify_reduction::<WARPReduction<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>>(
+        session,
+        &instance,
+        &proof,
+    )
+    .expect("IR verification failed");
+
+    println!("IR verification: OK");
+    println!("  target root count: {}", target.acc_instance.0.len());
+    println!("  target alpha len: {}", target.acc_instance.1[0].len());
+
+    assert_eq!(target.acc_instance.0.len(), 1, "should produce one root");
+    assert_eq!(target.acc_instance.2.len(), 1, "should produce one mu");
+    assert_eq!(target.acc_instance.4.len(), 1, "should produce one eta");
+}
+
+#[test]
+fn warp_full_ia_dsfs_prove_verify() {
+    let (r1cs, code, instances, witnesses) = setup();
+    let l1 = instances.len();
+
+    let warp_config = WARPConfig::new(l1, l1, 8, 7, r1cs.config(), code.code_len());
+    let warp = Arc::new(WARP::<Fp, R1CS<Fp>, _, MT>::new(
+        warp_config,
+        code.clone(),
+        r1cs.clone(),
+        (),
+        (),
+    ));
+
+    let pk = (r1cs.clone(), r1cs.m, r1cs.n, r1cs.k);
+    let (empty_inst, empty_wit) = empty_acc();
+
+    let instance = WARPInstance {
+        warp: warp.clone(),
+        pk,
+        instances,
+        acc_instances: empty_inst,
+    };
+    let witness = WARPWitness {
+        witnesses,
+        acc_witnesses: empty_wit,
+    };
+
+    let session = spongefish::session!("warp FullWARP test");
+    let proof = dsfs::prove::<FullWARP<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>>(
+        session,
+        &instance,
+        &witness,
+    );
+    println!("FullWARP NARG string: {} bytes", proof.len());
+
+    dsfs::verify::<FullWARP<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>>(
+        session,
+        &instance,
+        &proof,
+    )
+    .expect("FullWARP verification failed");
+
+    println!("FullWARP verification: OK");
 }

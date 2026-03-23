@@ -89,6 +89,76 @@ pub struct WARPTargetWitness<F: Field, MT: Config> {
     pub acc_witness: AccumulatorWitnesses<F, MT>,
 }
 
+// -----------------------------------------------------------------------
+// Decider instance/witness (target of WARPReduction, input of WARPDecider)
+// -----------------------------------------------------------------------
+
+pub struct DeciderInstance<F: Field, P: BundledPESAT<F>, C: LinearCode<F> + Clone, MT: Config> {
+    pub warp: std::sync::Arc<WARP<F, P, C, MT>>,
+    pub acc_instance: AccumulatorInstances<F, MT>,
+}
+
+pub type DeciderWitness<F, MT> = AccumulatorWitnesses<F, MT>;
+
+// -----------------------------------------------------------------------
+// Encoding impls for DSFS domain separation
+// -----------------------------------------------------------------------
+
+impl<F, P, C, MT> spongefish::Encoding for WARPInstance<F, P, C, MT>
+where
+    F: Field + spongefish::Encoding,
+    P: BundledPESAT<F>,
+    C: LinearCode<F> + Clone,
+    MT: Config,
+    MT::InnerDigest: AsRef<[u8]>,
+{
+    fn encode(&self) -> impl AsRef<[u8]> {
+        let mut buf = Vec::new();
+        buf.extend((self.pk.1 as u64).to_le_bytes());
+        buf.extend((self.pk.2 as u64).to_le_bytes());
+        buf.extend((self.pk.3 as u64).to_le_bytes());
+        for inst in &self.instances {
+            for x in inst {
+                buf.extend_from_slice(x.encode().as_ref());
+            }
+        }
+        let (roots, alphas, mus, (taus, xs), etas) = &self.acc_instances;
+        for root in roots {
+            buf.extend_from_slice(root.as_ref());
+        }
+        for alpha in alphas {
+            for a in alpha {
+                buf.extend_from_slice(a.encode().as_ref());
+            }
+        }
+        for mu in mus {
+            buf.extend_from_slice(mu.encode().as_ref());
+        }
+        for tau in taus {
+            for t in tau {
+                buf.extend_from_slice(t.encode().as_ref());
+            }
+        }
+        for x in xs {
+            for v in x {
+                buf.extend_from_slice(v.encode().as_ref());
+            }
+        }
+        for eta in etas {
+            buf.extend_from_slice(eta.encode().as_ref());
+        }
+        buf
+    }
+}
+
+/// Auxiliary result from `verify_reduction_transcript`.
+pub struct ReductionTranscriptResult<F: Field, MT: Config> {
+    pub target: AccumulatorInstances<F, MT>,
+    pub rt_0: MT::InnerDigest,
+    pub l2_roots: Vec<MT::InnerDigest>,
+    pub shift_queries_indexes: Vec<usize>,
+}
+
 /// All proof data the verifier needs (sent out-of-band or embedded in instance).
 pub struct WARPProofData<F: Field, MT: Config> {
     pub rt_0: MT::InnerDigest,
@@ -363,6 +433,14 @@ where
             shift_queries_answers[i] = answers;
         }
 
+        // Send shift_queries_answers through the channel so the
+        // IR verifier can read them and compute nu_{s+k}.
+        for answers in &shift_queries_answers {
+            for a in answers {
+                ch.send_prover_message(a);
+            }
+        }
+
         let new_acc_instance = (
             vec![td.root()],
             vec![alpha],
@@ -385,14 +463,21 @@ where
         Ok((new_acc_instance, new_acc_witness, proof_data))
     }
 
-    /// Full WARP verifier, reading all messages from the channel.
-    pub fn verify_with_channel<'a, Ch: VerifierChannel>(
+    /// Transcript-only IOR verifier: reads all messages, performs sumcheck
+    /// checks, and **computes** the target `AccumulatorInstances` instead of
+    /// receiving it as an argument.
+    ///
+    /// Shift-query answers are read from the channel (the prover sends them
+    /// after the batching sumcheck).  Merkle auth-path verification is NOT
+    /// performed here -- that belongs to the BCS oracle layer.
+    ///
+    /// Returns the target accumulator instance plus auxiliary data needed
+    /// by the BCS oracle layer (source roots, shift query indexes).
+    pub fn verify_reduction_transcript<Ch: VerifierChannel>(
         &self,
         ch: &mut Ch,
         vk: (usize, usize, usize),
-        acc_instance: &AccumulatorInstances<F, MT>,
-        proof: &WARPProofData<F, MT>,
-    ) -> Result<(), WARPVerifierError>
+    ) -> Result<ReductionTranscriptResult<F, MT>, WARPVerifierError>
     where
         F: ia_core::Deserialize,
     {
@@ -414,7 +499,6 @@ where
             }
         }
 
-        // read accumulated instances
         let (l2_roots, l2_alphas, l2_mus, l2_taus, l2_xs, l2_etas) =
             self.read_acc_instances_verifier(ch, l2, log_n, log_M, N - k)?;
 
@@ -445,7 +529,7 @@ where
                 .map_err(|_| WARPVerifierError::SumcheckRound)?;
 
         // read new commitment and target
-        let _td_root: MT::InnerDigest = self.read_digest(ch)?;
+        let td_root: MT::InnerDigest = self.read_digest(ch)?;
         let eta: F = ch.read_prover_message().map_err(|_| WARPVerifierError::SumcheckRound)?;
         let nu_0: F = ch.read_prover_message().map_err(|_| WARPVerifierError::SumcheckRound)?;
         let mut nus = vec![nu_0];
@@ -457,7 +541,6 @@ where
             *s = ch.send_verifier_message();
         }
 
-        // OOD answers
         let mut ood_answers = vec![F::default(); self.config.s];
         for ans in ood_answers.iter_mut() {
             *ans = ch.read_prover_message().map_err(|_| WARPVerifierError::SumcheckRound)?;
@@ -482,10 +565,18 @@ where
 
         // batching sumcheck
         let (alpha_sumcheck, sums_batching_sumcheck) =
-            batching_sumcheck::verify(ch, log_n)
+            batching_sumcheck::verify::<F, Ch>(ch, log_n)
                 .map_err(|_| WARPVerifierError::SumcheckRound)?;
 
-        // ---- Phase 3: Derive values ----
+        // ---- Read shift query answers from channel (sent by prover) ----
+        let mut shift_queries_answers = vec![vec![F::default(); l]; self.config.t];
+        for answers in shift_queries_answers.iter_mut() {
+            for a in answers.iter_mut() {
+                *a = ch.read_prover_message().map_err(|_| WARPVerifierError::SumcheckRound)?;
+            }
+        }
+
+        // ---- Derive values ----
         let alpha_vecs = concat_slices(&l2_alphas, &vec![vec![F::zero(); log_n]; l1]);
         let gamma_eq_evals = compute_hypercube_eq_evals(log_l, &gamma_sumcheck);
         let zeta_0 = scale_and_sum(&alpha_vecs, &gamma_eq_evals);
@@ -503,9 +594,8 @@ where
             .map(|vals| binary_field_elements_to_usize(vals))
             .collect();
 
-        // compute nu_{s+k} from shift query answers
         let mut nu_s_t = vec![F::default(); self.config.t];
-        for (i, v_jk) in proof.shift_queries_answers.iter().enumerate() {
+        for (i, v_jk) in shift_queries_answers.iter().enumerate() {
             let res = v_jk
                 .iter()
                 .zip(&gamma_eq_evals)
@@ -514,13 +604,12 @@ where
         }
         nus.extend(nu_s_t);
 
-        // sigma_1 and sigma_2
         let tau_eq_evals = compute_hypercube_eq_evals(log_l, &tau);
-        let etas = concat_slices(&l2_etas, &vec![F::zero(); l1]);
+        let etas_all = concat_slices(&l2_etas, &vec![F::zero(); l1]);
 
         let sigma_1 = tau_eq_evals
             .into_iter()
-            .zip(l2_mus.into_iter().chain(l1_mus.to_vec()).zip(etas))
+            .zip(l2_mus.into_iter().chain(l1_mus.to_vec()).zip(etas_all))
             .fold(F::zero(), |acc, (eq_tau, (mu, eta_val))| {
                 acc + eq_tau * (mu + omega * eta_val)
             });
@@ -531,62 +620,7 @@ where
             .zip(&nus)
             .fold(F::zero(), |acc, (xi_eq, nu)| acc + *xi_eq * nu);
 
-        // ---- Phase 4: Decision ----
-        // a. new code evaluation point
-        (acc_instance.1[0] == alpha_sumcheck)
-            .ok_or_err(WARPVerifierError::CodeEvaluationPoint)?;
-
-        // b. new circuit evaluation point
-        let betas: Vec<Vec<F>> = l2_taus
-            .into_iter()
-            .chain(l1_taus)
-            .zip(l2_xs.into_iter().chain(l1_xs))
-            .map(|(tau_vec, x_vec)| concat_slices(&tau_vec, &x_vec))
-            .collect();
-        let beta = scale_and_sum(&betas, &gamma_eq_evals);
-        let expected_beta = concat_slices(&acc_instance.3 .0[0], &acc_instance.3 .1[0]);
-        (expected_beta == beta).ok_or_err(WARPVerifierError::CircuitEvaluationPoint)?;
-
-        // c. check auth paths
-        (proof.shift_queries_answers.len() == self.config.t)
-            .ok_or_err(WARPVerifierError::NumShiftQueries)?;
-
-        for (i, path) in proof.auth_0.iter().enumerate() {
-            (path.leaf_index == shift_queries_indexes[i])
-                .ok_or_err(WARPVerifierError::ShiftQueryIndex)?;
-            let is_valid = path
-                .verify(
-                    &self.mt_leaf_hash_params,
-                    &self.mt_two_to_one_hash_params,
-                    &rt_0,
-                    &proof.shift_queries_answers[i][l2..],
-                )
-                .map_err(|_| WARPVerifierError::ShiftQuery)?;
-            is_valid.ok_or_err(WARPVerifierError::ShiftQuery)?;
-        }
-
-        (proof.auth.len() == l2).ok_or_err(WARPVerifierError::NumL2Instances)?;
-        for (i, paths) in proof.auth.iter().enumerate() {
-            (paths.len() == self.config.t)
-                .ok_or_err(WARPVerifierError::NumShiftQueries)?;
-            let root = &l2_roots[i];
-            for (j, path) in paths.iter().enumerate() {
-                (path.leaf_index == shift_queries_indexes[j])
-                    .ok_or_err(WARPVerifierError::ShiftQueryIndex)?;
-                let is_valid = path
-                    .verify(
-                        &self.mt_leaf_hash_params,
-                        &self.mt_two_to_one_hash_params,
-                        root,
-                        [proof.shift_queries_answers[j][i]],
-                    )
-                    .map_err(|_| WARPVerifierError::ShiftQuery)?;
-                is_valid.ok_or_err(WARPVerifierError::ShiftQuery)?;
-            }
-        }
-
-        // d. sumcheck decisions
-        // twin constraints sumcheck
+        // ---- Sumcheck round verification ----
         (coeffs_twinc_sumcheck.len() == log_l)
             .ok_or_err(WARPVerifierError::NumSumcheckRounds)?;
 
@@ -598,7 +632,6 @@ where
             target_1 = h.evaluate(gamma);
         }
 
-        // multilinear batching sumcheck
         (sums_batching_sumcheck.len() == log_n)
             .ok_or_err(WARPVerifierError::NumSumcheckRounds)?;
         let mut target_2 = sigma_2;
@@ -611,34 +644,132 @@ where
                 + sum_0110 * alpha;
         }
 
-        // e. new target decision
-        let ood_sample_chunks: Vec<&[F]> = ood_samples.chunks(log_n).collect();
-
+        // ---- Twin sumcheck target equation ----
         (eq_poly_non_binary(&tau, &gamma_sumcheck) * (nus[0] + omega * eta) == target_1)
             .ok_or_err(WARPVerifierError::SumcheckTarget)?;
+
+        // ---- Compute target AccumulatorInstances ----
+        let ood_sample_chunks: Vec<&[F]> = ood_samples.chunks(log_n).collect();
 
         let mut zeta_eqs = vec![eq_poly_non_binary(&zeta_0, &alpha_sumcheck)];
         zeta_eqs.extend(
             ood_sample_chunks
                 .iter()
-                .map(|zeta| eq_poly_non_binary(zeta, &alpha_sumcheck))
-                .collect::<Vec<F>>(),
+                .map(|zeta| eq_poly_non_binary(zeta, &alpha_sumcheck)),
         );
         zeta_eqs.extend(
             binary_shift_query_chunks
                 .iter()
-                .map(|zeta| eq_poly_non_binary(zeta, &alpha_sumcheck))
-                .collect::<Vec<F>>(),
+                .map(|zeta| eq_poly_non_binary(zeta, &alpha_sumcheck)),
         );
         (zeta_eqs.len() == r).ok_or_err(WARPVerifierError::NumShiftQueries)?;
 
-        (acc_instance.2[0]
-            * zeta_eqs
-                .into_iter()
-                .zip(xi_eq_evals)
-                .fold(F::zero(), |acc, (a, b)| acc + a * b)
-            == target_2)
-            .ok_or_err(WARPVerifierError::SumcheckTarget)?;
+        let k_sum = zeta_eqs
+            .into_iter()
+            .zip(xi_eq_evals)
+            .fold(F::zero(), |acc, (a, b)| acc + a * b);
+        let mu_target = target_2
+            * k_sum
+                .inverse()
+                .ok_or(WARPVerifierError::SumcheckTarget)?;
+
+        let betas: Vec<Vec<F>> = l2_taus
+            .into_iter()
+            .chain(l1_taus)
+            .zip(l2_xs.into_iter().chain(l1_xs))
+            .map(|(tau_vec, x_vec)| concat_slices(&tau_vec, &x_vec))
+            .collect();
+        let beta_flat = scale_and_sum(&betas, &gamma_eq_evals);
+        let log_m = log_M;
+        let (beta_tau_part, beta_x_part) = beta_flat.split_at(log_m);
+
+        Ok(ReductionTranscriptResult {
+            target: (
+                vec![td_root],
+                vec![alpha_sumcheck],
+                vec![mu_target],
+                (vec![beta_tau_part.to_vec()], vec![beta_x_part.to_vec()]),
+                vec![eta],
+            ),
+            rt_0,
+            l2_roots,
+            shift_queries_indexes,
+        })
+    }
+
+    /// Full WARP verifier: runs `verify_reduction_transcript` to compute the
+    /// target accumulator, compares it to the provided `acc_instance`, then
+    /// checks Merkle auth paths from `proof`.
+    pub fn verify_with_channel<Ch: VerifierChannel>(
+        &self,
+        ch: &mut Ch,
+        vk: (usize, usize, usize),
+        acc_instance: &AccumulatorInstances<F, MT>,
+        proof: &WARPProofData<F, MT>,
+    ) -> Result<(), WARPVerifierError>
+    where
+        F: ia_core::Deserialize,
+    {
+        let result = self.verify_reduction_transcript(ch, vk)?;
+
+        (acc_instance.1[0] == result.target.1[0])
+            .ok_or_err(WARPVerifierError::CodeEvaluationPoint)?;
+        let expected_beta = concat_slices(&acc_instance.3 .0[0], &acc_instance.3 .1[0]);
+        let computed_beta = concat_slices(&result.target.3 .0[0], &result.target.3 .1[0]);
+        (expected_beta == computed_beta)
+            .ok_or_err(WARPVerifierError::CircuitEvaluationPoint)?;
+
+        self.verify_merkle_paths(proof, &result)?;
+        Ok(())
+    }
+
+    /// Checks Merkle auth paths from proof data against the roots derived
+    /// from the transcript.  This is the BCS oracle layer, separate from
+    /// the IOR transcript verification.
+    pub fn verify_merkle_paths(
+        &self,
+        proof: &WARPProofData<F, MT>,
+        transcript_result: &ReductionTranscriptResult<F, MT>,
+    ) -> Result<(), WARPVerifierError> {
+        let (l1, l) = (self.config.l1, self.config.l);
+        let l2 = l - l1;
+
+        (proof.shift_queries_answers.len() == self.config.t)
+            .ok_or_err(WARPVerifierError::NumShiftQueries)?;
+
+        for (i, path) in proof.auth_0.iter().enumerate() {
+            (path.leaf_index == transcript_result.shift_queries_indexes[i])
+                .ok_or_err(WARPVerifierError::ShiftQueryIndex)?;
+            let is_valid = path
+                .verify(
+                    &self.mt_leaf_hash_params,
+                    &self.mt_two_to_one_hash_params,
+                    &transcript_result.rt_0,
+                    &proof.shift_queries_answers[i][l2..],
+                )
+                .map_err(|_| WARPVerifierError::ShiftQuery)?;
+            is_valid.ok_or_err(WARPVerifierError::ShiftQuery)?;
+        }
+
+        (proof.auth.len() == l2).ok_or_err(WARPVerifierError::NumL2Instances)?;
+        for (i, paths) in proof.auth.iter().enumerate() {
+            (paths.len() == self.config.t)
+                .ok_or_err(WARPVerifierError::NumShiftQueries)?;
+            let root = &transcript_result.l2_roots[i];
+            for (j, path) in paths.iter().enumerate() {
+                (path.leaf_index == transcript_result.shift_queries_indexes[j])
+                    .ok_or_err(WARPVerifierError::ShiftQueryIndex)?;
+                let is_valid = path
+                    .verify(
+                        &self.mt_leaf_hash_params,
+                        &self.mt_two_to_one_hash_params,
+                        root,
+                        [proof.shift_queries_answers[j][i]],
+                    )
+                    .map_err(|_| WARPVerifierError::ShiftQuery)?;
+                is_valid.ok_or_err(WARPVerifierError::ShiftQuery)?;
+            }
+        }
 
         Ok(())
     }
