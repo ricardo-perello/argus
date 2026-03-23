@@ -11,13 +11,14 @@ The protocol is an Interactive Oracle Reduction (IOR): the verifier does not out
 ```
 crates/warp/
   src/
-    lib.rs              -- module declarations
+    lib.rs              -- module declarations, re-exports (FullWARP, WARPReduction, WARPDeciderIA)
     config.rs           -- WARPConfig (l, l1, s, t, etc.)
     errors.rs           -- WARPError, WARPProverError, WARPVerifierError, WARPDeciderError
     types.rs            -- all intermediate instance/witness types
     protocol/
       mod.rs            -- sub-module declarations
-      warp.rs           -- WARP struct, prove_with_channel, verify_with_channel, decide
+      warp.rs           -- WARP struct, prove/verify/decide, Encoding, DeciderInstance
+      ir.rs             -- WARPReduction (IR), WARPDeciderIA (IA), FullWARP type alias
       twin_sumcheck.rs  -- twin constraint pseudo-batching sumcheck (prover + verifier)
       batching_sumcheck.rs -- inner product sumcheck / CBBZ23 (prover + verifier)
     relations/
@@ -83,57 +84,56 @@ The decider (local check, no channel interaction) verifies that the accumulated 
 
 ## How it connects to Argus
 
-All channel operations go through `ia_core::ProverChannel` / `ia_core::VerifierChannel`:
+### Channel abstraction
+
+All channel operations go through `ia_core::ProverChannel` / `ia_core::VerifierChannel`. The prover absorbs instances and sends proof elements via `ch.send_prover_message()`. The verifier reads them via `ch.read_prover_message()`. Challenges are squeezed via `ch.read_verifier_message()` (prover) and `ch.send_verifier_message()` (verifier). The WARP code never touches a sponge directly.
+
+### IR/IA composition
+
+WARP is expressed as two composable components using the `ia-core` traits:
+
+- **`WARPReduction`** (`InteractiveReduction`): The full IOR -- runs all five phases of the protocol (parse/commit, twin sumcheck, commit/sample, batching sumcheck) and produces a target `AccumulatorInstances`. The verifier computes the target from the transcript rather than checking a provided answer.
+
+- **`WARPDeciderIA`** (`InteractiveArgument`): The decider as an IA -- the prover sends the accumulated codeword and witness through the channel; the verifier reads them back, reconstructs the Merkle tree, and checks code consistency, PESAT evaluation, and encoding correctness.
+
+These are composed via `ReducedArgument` (IR . IA -> IA):
+
+```rust
+type FullWARP<F, P, C, MT> = ReducedArgument<WARPReduction<F, P, C, MT>, WARPDeciderIA<F, P, C, MT>>;
+```
+
+This gives a single `InteractiveArgument` that can be compiled through DSFS in one call:
+
+```rust
+let proof = dsfs::prove::<FullWARP<Fp, R1CS<Fp>, RS, MT>>(session, &instance, &witness);
+dsfs::verify::<FullWARP<Fp, R1CS<Fp>, RS, MT>>(session, &instance, &proof)?;
+```
+
+The reduction can also be used standalone for IOR-level verification:
+
+```rust
+let proof = dsfs::prove_reduction::<WARPReduction<...>>(session, &instance, &witness);
+let target = dsfs::verify_reduction::<WARPReduction<...>>(session, &instance, &proof)?;
+// target.acc_instance is the new AccumulatorInstances
+```
+
+### Merkle path verification (BCS layer)
+
+Merkle auth-path verification is separate from the IR/IA composition. The IR verifier handles only transcript-based checks (sumchecks, consistency equations). Oracle opening proofs are verified by `WARP::verify_merkle_paths`, matching the IOR/BCS separation where the IOR handles the interactive protocol and the commitment scheme handles oracle openings.
+
+### Low-level API
+
+The `WARP` struct still exposes `prove_with_channel`, `verify_with_channel`, and `decide` for direct use:
 
 ```rust
 impl WARP<F, P, C, MT> {
-    pub fn prove_with_channel<Ch: ProverChannel>(
-        &self, ch: &mut Ch, pk, instances, witnesses, acc_instances, acc_witnesses,
-    ) -> Result<(AccumulatorInstances, AccumulatorWitnesses, WARPProofData), WARPProverError>;
-
-    pub fn verify_with_channel<Ch: VerifierChannel>(
-        &self, ch: &mut Ch, vk, acc_instance, proof,
-    ) -> Result<(), WARPVerifierError>;
-
-    pub fn decide(
-        &self, acc_witness, acc_instance,
-    ) -> Result<(), WARPDeciderError>;
+    pub fn prove_with_channel<Ch: ProverChannel>(...) -> Result<(AccumulatorInstances, AccumulatorWitnesses, WARPProofData), ...>;
+    pub fn verify_reduction_transcript<Ch: VerifierChannel>(...) -> Result<ReductionTranscriptResult, ...>;
+    pub fn verify_merkle_paths(...) -> Result<(), ...>;
+    pub fn verify_with_channel<Ch: VerifierChannel>(...) -> Result<(), ...>;
+    pub fn decide(...) -> Result<(), ...>;
 }
 ```
-
-The prover absorbs instances and sends proof elements via `ch.send_prover_message()`. The verifier reads them via `ch.read_prover_message()`. Challenges are squeezed via `ch.read_verifier_message()` (prover) and `ch.send_verifier_message()` (verifier). The WARP code never touches a sponge directly.
-
-This means the same protocol code runs against both backends:
-
-- **DSFS** (non-interactive): `dsfs::SpongeProver` / `dsfs::SpongeVerifier` backed by SHA-3 duplex sponge
-- **live-channel** (interactive): `LiveProverChannel` / `LiveVerifierChannel` backed by mpsc
-
-## Running the test through DSFS
-
-The integration test creates the sponge channel manually (since WARP takes `&self` parameters that don't fit the type-level `InteractiveReduction` trait directly):
-
-```rust
-let protocol_id = spongefish::protocol_id(format_args!("argus::warp::test"));
-let session = spongefish::session!("warp test session");
-let domsep = DomainSeparator::new(protocol_id).session(session).instance(b"warp-test-inst00");
-
-let mut prover_ch = SpongeProver::new(domsep.std_prover());
-let (acc_x, acc_w, proof) = warp.prove_with_channel(&mut prover_ch, &pk, ...)?;
-let narg_string = prover_ch.narg_string().to_vec();
-
-let mut verifier_ch = SpongeVerifier::new(domsep.std_verifier(&narg_string));
-warp.verify_with_channel(&mut verifier_ch, vk, &acc_x, &proof)?;
-
-warp.decide(&acc_w, &acc_x)?;
-```
-
-Prover and verifier share the same domain separator (protocol_id + session + instance tag). The prover produces a NARG string; the verifier replays it, deriving identical challenges from the sponge.
-
-## Why WARP is a single struct, not composed ChainedReductions
-
-The initial design considered decomposing WARP into five `InteractiveReduction`s composed via `ChainedReduction`. This was abandoned because the intermediate types between phases (e.g., `MerkleTree`, `R1CSConstraints`, folded evaluation tables) are not serializable via `spongefish::Encoding`. The `ChainedReduction` machinery requires `TargetInstance`/`TargetWitness` to flow through the DSFS compiler, which assumes they can be encoded.
-
-Instead, WARP is a single struct whose `prove_with_channel` and `verify_with_channel` methods internally organize the logic into the five phases, calling `twin_sumcheck::prove` / `batching_sumcheck::prove` as helper functions. This preserves the core architectural principle -- all sponge operations route through the channel traits -- while keeping implementation practical.
 
 ## Dependencies
 
@@ -160,12 +160,14 @@ The `efficient-sumcheck` dependency from the original code was removed entirely.
 
 ## Tests
 
-Two integration tests in `tests/warp_test.rs`:
+Four integration tests in `tests/warp_test.rs`:
 
 - `warp_bootstrap_prove_verify_decide` -- single proof with empty accumulator (l1=4 fresh instances, l2=0 accumulated). Proves, verifies via NARG string replay, runs decider.
 - `warp_full_accumulation_cycle` -- runs 4 bootstrap proofs to build up accumulated state, then a full proof with l1=4 fresh + l2=4 accumulated instances (l=8). Proves, verifies, decides.
+- `warp_ir_dsfs_prove_verify` -- uses `dsfs::prove_reduction` / `dsfs::verify_reduction` with `WARPReduction`. Validates that the IR interface works end-to-end through DSFS.
+- `warp_full_ia_dsfs_prove_verify` -- uses `dsfs::prove` / `dsfs::verify` with `FullWARP` (= `ReducedArgument<WARPReduction, WARPDeciderIA>`). Validates the full composed IA through DSFS.
 
-Both tests use the BLS12-381 scalar field with a Poseidon hash-chain R1CS relation, Reed-Solomon encoding, and Blake3 Merkle trees.
+All tests use the BLS12-381 scalar field with a Poseidon hash-chain R1CS relation, Reed-Solomon encoding, and Blake3 Merkle trees.
 
 ## Files changed outside `crates/warp/`
 

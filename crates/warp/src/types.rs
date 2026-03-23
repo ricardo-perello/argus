@@ -227,3 +227,5 @@ pub struct WARPOutput<F: Field, MT: Config> {
     pub acc_witness: AccumulatorWitnesses<F, MT>,
     pub proof: WARPProof<F, MT>,
 }
+
+
