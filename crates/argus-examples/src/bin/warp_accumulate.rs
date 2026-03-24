@@ -23,7 +23,8 @@ use ark_std::UniformRand;
 use rand::rngs::OsRng;
 
 use ia_core::{
-    InteractiveReduction, ReduceProve, ReduceVerify, VerificationError, VerificationResult,
+    InteractiveReduction, ReduceProve, ReduceVerify, SecurityErrorBound, SecurityProfile,
+    VerificationError, VerificationResult,
 };
 
 // ---------------------------------------------------------------------------
@@ -65,6 +66,16 @@ impl InteractiveReduction for Accumulate {
         spongefish::protocol_id(core::format_args!(
             "warp-style random linear combination accumulator"
         ))
+    }
+
+    fn security() -> SecurityProfile {
+        SecurityProfile {
+            soundness_error: SecurityErrorBound::zero(),
+            knowledge_soundness_error: SecurityErrorBound::zero(),
+            hvzk_error: SecurityErrorBound::zero(),
+            num_rounds: 1,
+            verifier_challenge_lengths: vec![1],
+        }
     }
 }
 

@@ -21,7 +21,8 @@ use rand::rngs::OsRng;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
 use ia_core::{
-    InteractiveArgument, Prove, Verify, VerificationError, VerificationResult,
+    InteractiveArgument, Prove, SecurityErrorBound, SecurityProfile, Verify, VerificationError,
+    VerificationResult,
 };
 
 use spongefish::Encoding;
@@ -130,6 +131,16 @@ impl InteractiveArgument for CommittedSumcheck {
         spongefish::protocol_id(core::format_args!(
             "committed sumcheck (bit challenges, sha256 merkle)"
         ))
+    }
+
+    fn security() -> SecurityProfile {
+        SecurityProfile {
+            soundness_error: SecurityErrorBound::zero(),
+            knowledge_soundness_error: SecurityErrorBound::zero(),
+            hvzk_error: SecurityErrorBound::zero(),
+            num_rounds: 0,
+            verifier_challenge_lengths: vec![],
+        }
     }
 }
 

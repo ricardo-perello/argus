@@ -18,7 +18,8 @@ use rand::rngs::OsRng;
 
 use ia_core::{
     ChainedReduction, InteractiveArgument, InteractiveReduction, Prove, ReduceProve, ReduceVerify,
-    ReducedArgument, Verify, VerificationError, VerificationResult,
+    ReducedArgument, SecurityErrorBound, SecurityProfile, Verify, VerificationError,
+    VerificationResult,
 };
 
 // ---------------------------------------------------------------------------
@@ -59,6 +60,16 @@ impl InteractiveReduction for FoldPairs {
 
     fn protocol_id() -> [u8; 64] {
         spongefish::protocol_id(core::format_args!("fold pairs"))
+    }
+
+    fn security() -> SecurityProfile {
+        SecurityProfile {
+            soundness_error: SecurityErrorBound::zero(),
+            knowledge_soundness_error: SecurityErrorBound::zero(),
+            hvzk_error: SecurityErrorBound::zero(),
+            num_rounds: 1,
+            verifier_challenge_lengths: vec![1],
+        }
     }
 }
 
@@ -117,6 +128,16 @@ impl InteractiveReduction for Accumulate {
 
     fn protocol_id() -> [u8; 64] {
         spongefish::protocol_id(core::format_args!("accumulate"))
+    }
+
+    fn security() -> SecurityProfile {
+        SecurityProfile {
+            soundness_error: SecurityErrorBound::zero(),
+            knowledge_soundness_error: SecurityErrorBound::zero(),
+            hvzk_error: SecurityErrorBound::zero(),
+            num_rounds: 1,
+            verifier_challenge_lengths: vec![1],
+        }
     }
 }
 
@@ -178,6 +199,16 @@ impl InteractiveArgument for EqualityCheck {
 
     fn protocol_id() -> [u8; 64] {
         spongefish::protocol_id(core::format_args!("equality check"))
+    }
+
+    fn security() -> SecurityProfile {
+        SecurityProfile {
+            soundness_error: SecurityErrorBound::zero(),
+            knowledge_soundness_error: SecurityErrorBound::zero(),
+            hvzk_error: SecurityErrorBound::zero(),
+            num_rounds: 0,
+            verifier_challenge_lengths: vec![],
+        }
     }
 }
 

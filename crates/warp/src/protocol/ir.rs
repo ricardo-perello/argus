@@ -7,8 +7,8 @@ use ark_poly::{DenseMultilinearExtension, Polynomial};
 use ark_std::log2;
 
 use ia_core::{
-    InteractiveArgument, InteractiveReduction, Prove, ProverChannel,
-    ReduceProve, ReduceVerify, ReducedArgument, Verify, VerificationResult,
+    InteractiveArgument, InteractiveReduction, Prove, ProverChannel, ReduceProve, ReduceVerify,
+    ReducedArgument, SecurityErrorBound, SecurityProfile, Verify, VerificationResult,
 };
 
 use crate::protocol::warp::{DeciderInstance, DeciderWitness, WARPInstance, WARPWitness};
@@ -36,6 +36,18 @@ where
 
     fn protocol_id() -> [u8; 64] {
         spongefish::protocol_id(core::format_args!("argus::warp::reduction"))
+    }
+
+    fn security() -> SecurityProfile {
+        // TODO : Conservative placeholder bound until a full, parameterized WARP analysis
+        // is encoded in the type-level IA metadata.
+        SecurityProfile {
+            soundness_error: SecurityErrorBound::new(|_t| 1.0),
+            knowledge_soundness_error: SecurityErrorBound::new(|_t| 1.0),
+            hvzk_error: SecurityErrorBound::new(|_t| 1.0),
+            num_rounds: 0,
+            verifier_challenge_lengths: Vec::new(),
+        }
     }
 }
 
@@ -119,6 +131,16 @@ where
 
     fn protocol_id() -> [u8; 64] {
         spongefish::protocol_id(core::format_args!("argus::warp::decider"))
+    }
+
+    fn security() -> SecurityProfile {
+        SecurityProfile {
+            soundness_error: SecurityErrorBound::zero(),
+            knowledge_soundness_error: SecurityErrorBound::zero(),
+            hvzk_error: SecurityErrorBound::zero(),
+            num_rounds: 0,
+            verifier_challenge_lengths: Vec::new(),
+        }
     }
 }
 

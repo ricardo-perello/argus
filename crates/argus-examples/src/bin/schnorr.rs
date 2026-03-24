@@ -15,12 +15,13 @@
 use std::thread;
 
 use ark_ec::{CurveGroup, PrimeGroup};
+use ark_ff::PrimeField;
 use ark_std::UniformRand;
 use rand::rngs::OsRng;
 
 use ia_core::{
-    Decoding, Deserialize, Encoding, InteractiveArgument, Prove, Verify, VerificationError,
-    VerificationResult,
+    Decoding, Deserialize, Encoding, InteractiveArgument, Prove, SecurityErrorBound,
+    SecurityProfile, Verify, VerificationError, VerificationResult,
 };
 
 // ---------------------------------------------------------------------------
@@ -29,12 +30,32 @@ use ia_core::{
 
 struct Schnorr<G: CurveGroup>(core::marker::PhantomData<G>);
 
-impl<G: CurveGroup> InteractiveArgument for Schnorr<G> {
+impl<G: CurveGroup> InteractiveArgument for Schnorr<G>
+where
+    G::ScalarField: PrimeField,
+{
     type Instance = [G; 2]; // [generator, public_key]
     type Witness = G::ScalarField;
 
     fn protocol_id() -> [u8; 64] {
         spongefish::protocol_id(core::format_args!("schnorr proof"))
+    }
+
+    fn security() -> SecurityProfile {
+        fn one_over_q<F: PrimeField>(_t: u64) -> f64 {
+            2_f64.powi(-(F::MODULUS_BIT_SIZE as i32))
+        }
+
+        SecurityProfile {
+            // Cheating prover guesses the challenge: ε^sr = 1/q.
+            soundness_error: SecurityErrorBound::new(one_over_q::<G::ScalarField>),
+            // Special soundness extractor succeeds except with prob 1/q.
+            knowledge_soundness_error: SecurityErrorBound::new(one_over_q::<G::ScalarField>),
+            // Perfect HVZK (simulator picks c first, computes K = rG - cX).
+            hvzk_error: SecurityErrorBound::zero(),
+            num_rounds: 1,
+            verifier_challenge_lengths: vec![1],
+        }
     }
 }
 
@@ -154,5 +175,86 @@ fn main() {
         run_live(instance, sk);
     } else {
         run_dsfs(&instance, &sk);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ark_ff::PrimeField;
+    use dsfs::STD_SPONGE_PARAMS;
+    use ia_core::InteractiveArgument;
+
+    type G = ark_curve25519::EdwardsProjective;
+    type F = ark_curve25519::Fr;
+
+    #[test]
+    fn schnorr_ia_soundness_is_one_over_q() {
+        let profile = Schnorr::<G>::security();
+        let eps = profile.soundness_error.evaluate(0);
+        let expected = 2_f64.powi(-(F::MODULUS_BIT_SIZE as i32));
+        assert!(
+            (eps - expected).abs() < 1e-30,
+            "IA soundness should be 1/q = 2^-{}, got {eps}",
+            F::MODULUS_BIT_SIZE,
+        );
+    }
+
+    #[test]
+    fn schnorr_ia_hvzk_is_zero() {
+        let profile = Schnorr::<G>::security();
+        assert_eq!(profile.hvzk_error.evaluate(0), 0.0);
+        assert_eq!(profile.hvzk_error.evaluate(1 << 40), 0.0);
+    }
+
+    #[test]
+    fn schnorr_narg_soundness_adds_sponge_term() {
+        let narg = dsfs::security::<Schnorr<G>>();
+
+        let t: u64 = 1 << 40;
+        let t_f = t as f64;
+
+        let eps_sr = 2_f64.powi(-(F::MODULUS_BIT_SIZE as i32));
+        let sp = STD_SPONGE_PARAMS;
+        let sponge_term = 25.0 * t_f * t_f / sp.alphabet_size.powf(sp.capacity as f64);
+        let expected = eps_sr + sponge_term;
+
+        let got = narg.soundness_error(t);
+        assert!(
+            (got - expected).abs() / expected < 1e-10,
+            "NARG soundness: expected {expected}, got {got}",
+        );
+    }
+
+    #[test]
+    fn schnorr_narg_soundness_bits_above_128() {
+        let narg = dsfs::security::<Schnorr<G>>();
+        let t: u64 = 1 << 40;
+        let bits = narg.soundness_bits(t);
+        assert!(
+            bits > 128.0,
+            "Schnorr over curve25519 with Keccak should have >128-bit soundness, got {bits:.1}",
+        );
+    }
+
+    #[test]
+    fn schnorr_narg_zk_is_purely_sponge() {
+        let narg = dsfs::security::<Schnorr<G>>();
+        let t: u64 = 1 << 40;
+        let t_f = t as f64;
+
+        let sp = STD_SPONGE_PARAMS;
+        // z_IP = 0, so z_NARG(t) = t/|Sigma|^min(delta,c) + t*ceil(l_V/r)/|Sigma|^(r+c)
+        let min_dc = sp.delta.min(sp.capacity);
+        let term1 = t_f / sp.alphabet_size.powf(min_dc as f64);
+        let ceil_lv_r = (1_u64).div_ceil(sp.rate);
+        let term2 = t_f * ceil_lv_r as f64 / sp.alphabet_size.powf((sp.rate + sp.capacity) as f64);
+        let expected = term1 + term2;
+
+        let got = narg.zk_error(t);
+        assert!(
+            (got - expected).abs() / expected < 1e-10,
+            "NARG ZK: expected {expected}, got {got}",
+        );
     }
 }
