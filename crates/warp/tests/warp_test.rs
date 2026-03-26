@@ -26,7 +26,7 @@ use warp::{
     FullWARP, WARPReduction,
 };
 
-use dsfs::{SpongeProver, SpongeVerifier};
+use dsfs::{Keccak, SpongeProver, SpongeVerifier};
 
 type MT = Blake3MerkleTreeParams<Fp>;
 
@@ -38,7 +38,7 @@ fn make_prover() -> SpongeProver {
     let domsep = spongefish::DomainSeparator::new(protocol_id)
         .session(session)
         .instance(INSTANCE_TAG);
-    SpongeProver::new(domsep.std_prover())
+    SpongeProver::new(domsep.to_prover(Keccak::default()))
 }
 
 fn make_verifier(narg_string: &[u8]) -> SpongeVerifier<'_> {
@@ -47,7 +47,7 @@ fn make_verifier(narg_string: &[u8]) -> SpongeVerifier<'_> {
     let domsep = spongefish::DomainSeparator::new(protocol_id)
         .session(session)
         .instance(INSTANCE_TAG);
-    SpongeVerifier::new(domsep.std_verifier(narg_string))
+    SpongeVerifier::new(domsep.to_verifier(Keccak::default(), narg_string))
 }
 
 fn setup() -> (

@@ -471,6 +471,7 @@ name = "dsfs"
 version = "0.1.0"
 dependencies = [
  "ia-core",
+ "rand_core 0.6.4",
  "spongefish",
 ]
 
@@ -1078,6 +1079,7 @@ dependencies = [
  "ark-serialize",
  "curve25519-dalek",
  "digest",
+ "keccak",
  "p3-koala-bear",
  "rand 0.8.5",
  "sha2",

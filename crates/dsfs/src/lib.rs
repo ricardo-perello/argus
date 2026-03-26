@@ -10,11 +10,14 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
+use rand_core::RngCore;
 use ia_core::{
     Deserialize, InteractiveArgument, InteractiveReduction, Prove, ProverChannel, ReduceProve,
     ReduceVerify, SecurityProfile, VerifierChannel, Verify,
 };
-use spongefish::{Decoding, DomainSeparator, Encoding, ProverState, VerifierState};
+use spongefish::{
+    Decoding, DomainSeparator, Encoding, Permutation, ProverState, VerifierState,
+};
 
 /// Sponge parameters needed to evaluate DSFS security bounds.
 #[derive(Debug, Clone, Copy)]
@@ -29,13 +32,30 @@ pub struct SpongeParams {
     pub delta: u64,
 }
 
-/// Parameters for the standard sponge (`StdHash = Shake128`, Keccak-f[1600]).
+/// Parameters for the standard sponge used by this crate (`Keccak-f[1600]`, rate 136).
 pub const STD_SPONGE_PARAMS: SpongeParams = SpongeParams {
     alphabet_size: 256.0,
-    capacity: 32,
-    rate: 168,
+    capacity: 64,
+    rate: 136,
     delta: 1,
 };
+
+pub type Keccak = spongefish::instantiations::Keccak;
+
+pub fn sponge_params_from_duplex_sponge<
+    P: Permutation<WIDTH>,
+    const WIDTH: usize,
+    const RATE: usize,
+>() -> SpongeParams {
+    let _ = core::marker::PhantomData::<P>;
+    SpongeParams {
+        alphabet_size: 256.0,
+        capacity: (WIDTH - RATE) as u64,
+        rate: RATE as u64,
+        delta: 1,
+    }
+}
+
 
 /// Final NARG security profile after applying DSFS to an IA/IR.
 #[derive(Debug, Clone)]
@@ -129,11 +149,11 @@ impl NargSecurity {
 
 /// Wraps `spongefish::ProverState` as an ia-core `ProverChannel`.
 pub struct SpongeProver {
-    state: ProverState,
+    state: ProverState<Keccak>,
 }
 
 impl SpongeProver {
-    pub fn new(state: ProverState) -> Self {
+    pub fn new(state: ProverState<Keccak>) -> Self {
         Self { state }
     }
 
@@ -158,11 +178,11 @@ impl ProverChannel for SpongeProver {
 
 /// Wraps `spongefish::VerifierState` as an ia-core `VerifierChannel`.
 pub struct SpongeVerifier<'a> {
-    state: VerifierState<'a>,
+    state: VerifierState<'a, Keccak>,
 }
 
 impl<'a> SpongeVerifier<'a> {
-    pub fn new(state: VerifierState<'a>) -> Self {
+    pub fn new(state: VerifierState<'a, Keccak>) -> Self {
         Self { state }
     }
 }
@@ -185,8 +205,8 @@ impl VerifierChannel for SpongeVerifier<'_> {
 // DSFS compiler functions
 // ---------------------------------------------------------------------------
 
-/// Non-interactive prover: creates a sponge channel, runs `IA::prove`, returns the NARG string.
-pub fn prove<IA>(
+/// Non-interactive prover with explicit salt length.
+pub fn prove_with_salt<IA, const SALT_LEN: usize>(
     session: [u8; 64],
     instance: &IA::Instance,
     witness: &IA::Witness,
@@ -199,13 +219,29 @@ where
         .session(session)
         .instance(instance);
 
-    let mut spongefish_prover_ch = SpongeProver::new(domsep.std_prover());
+    let mut spongefish_prover_ch = SpongeProver::new(domsep.to_prover(Keccak::default()));
+    let mut salt = [0u8; SALT_LEN];
+    spongefish_prover_ch.state.rng().fill_bytes(&mut salt);
+    spongefish_prover_ch.state.prover_message(&salt);
     IA::prove(&mut spongefish_prover_ch, instance, witness);
     spongefish_prover_ch.narg_string().to_vec()
 }
 
-/// Non-interactive verifier: creates a sponge channel, runs `IA::verify`, checks EOF.
-pub fn verify<'a, IA>(
+/// Non-interactive prover with default `SALT_LEN = 0`.
+pub fn prove<IA>(
+    session: [u8; 64],
+    instance: &IA::Instance,
+    witness: &IA::Witness,
+) -> Vec<u8>
+where
+    IA: Prove<SpongeProver>,
+    IA::Instance: Encoding,
+{
+    prove_with_salt::<IA, 0>(session, instance, witness)
+}
+
+/// Non-interactive verifier with explicit salt length.
+pub fn verify_with_salt<'a, IA, const SALT_LEN: usize>(
     session: [u8; 64],
     instance: &IA::Instance,
     proof: &'a [u8],
@@ -218,7 +254,12 @@ where
         .session(session)
         .instance(instance);
 
-    let mut spongefish_verifier_ch = SpongeVerifier::new(domsep.std_verifier(proof));
+    let mut spongefish_verifier_ch =
+        SpongeVerifier::new(domsep.to_verifier(Keccak::default(), proof));
+    let _salt: [u8; SALT_LEN] = spongefish_verifier_ch
+        .state
+        .prover_message()
+        .map_err(|_| ia_core::VerificationError)?;
     IA::verify(&mut spongefish_verifier_ch, instance)?;
     spongefish_verifier_ch
         .state
@@ -226,13 +267,25 @@ where
         .map_err(|_| ia_core::VerificationError)
 }
 
+/// Non-interactive verifier with default `SALT_LEN = 0`.
+pub fn verify<'a, IA>(
+    session: [u8; 64],
+    instance: &IA::Instance,
+    proof: &'a [u8],
+) -> ia_core::VerificationResult<()>
+where
+    IA: Verify<SpongeVerifier<'a>>,
+    IA::Instance: Encoding,
+{
+    verify_with_salt::<IA, 0>(session, instance, proof)
+}
+
 // ---------------------------------------------------------------------------
 // DSFS compiler functions for interactive reductions
 // ---------------------------------------------------------------------------
 
-/// Non-interactive prover for an IOR: creates a sponge channel, runs
-/// `IR::prove`, returns the NARG string.
-pub fn prove_reduction<IR>(
+/// Non-interactive prover for an IOR with explicit salt length.
+pub fn prove_reduction_with_salt<IR, const SALT_LEN: usize>(
     session: [u8; 64],
     instance: &IR::SourceInstance,
     witness: &IR::SourceWitness,
@@ -245,14 +298,29 @@ where
         .session(session)
         .instance(instance);
 
-    let mut spongefish_prover_ch = SpongeProver::new(domsep.std_prover());
+    let mut spongefish_prover_ch = SpongeProver::new(domsep.to_prover(Keccak::default()));
+    let mut salt = [0u8; SALT_LEN];
+    spongefish_prover_ch.state.rng().fill_bytes(&mut salt);
+    spongefish_prover_ch.state.prover_message(&salt);
     let (_target_instance, _target_witness) = IR::prove(&mut spongefish_prover_ch, instance, witness);
     spongefish_prover_ch.narg_string().to_vec()
 }
 
-/// Non-interactive verifier for an IOR: creates a sponge channel, runs
-/// `IR::verify`, checks EOF, returns the **target instance**.
-pub fn verify_reduction<'a, IR>(
+/// Non-interactive prover for an IOR with default `SALT_LEN = 0`.
+pub fn prove_reduction<IR>(
+    session: [u8; 64],
+    instance: &IR::SourceInstance,
+    witness: &IR::SourceWitness,
+) -> Vec<u8>
+where
+    IR: ReduceProve<SpongeProver>,
+    IR::SourceInstance: Encoding,
+{
+    prove_reduction_with_salt::<IR, 0>(session, instance, witness)
+}
+
+/// Non-interactive verifier for an IOR with explicit salt length.
+pub fn verify_reduction_with_salt<'a, IR, const SALT_LEN: usize>(
     session: [u8; 64],
     instance: &IR::SourceInstance,
     proof: &'a [u8],
@@ -265,13 +333,31 @@ where
         .session(session)
         .instance(instance);
 
-    let mut spongefish_verifier_ch = SpongeVerifier::new(domsep.std_verifier(proof));
+    let mut spongefish_verifier_ch =
+        SpongeVerifier::new(domsep.to_verifier(Keccak::default(), proof));
+    let _salt: [u8; SALT_LEN] = spongefish_verifier_ch
+        .state
+        .prover_message()
+        .map_err(|_| ia_core::VerificationError)?;
     let target = IR::verify(&mut spongefish_verifier_ch, instance)?;
     spongefish_verifier_ch
         .state
         .check_eof()
         .map_err(|_| ia_core::VerificationError)?;
     Ok(target)
+}
+
+/// Non-interactive verifier for an IOR with default `SALT_LEN = 0`.
+pub fn verify_reduction<'a, IR>(
+    session: [u8; 64],
+    instance: &IR::SourceInstance,
+    proof: &'a [u8],
+) -> ia_core::VerificationResult<IR::TargetInstance>
+where
+    IR: ReduceVerify<SpongeVerifier<'a>>,
+    IR::SourceInstance: Encoding,
+{
+    verify_reduction_with_salt::<IR, 0>(session, instance, proof)
 }
 
 #[cfg(test)]

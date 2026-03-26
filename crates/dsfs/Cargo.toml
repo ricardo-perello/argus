@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 ia-core = { path = "../ia-core" }
 spongefish.workspace = true
+rand_core = "0.6"
