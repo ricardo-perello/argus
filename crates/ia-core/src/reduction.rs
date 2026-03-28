@@ -1,0 +1,51 @@
+//! Interactive oracle reduction traits (`InteractiveReduction`, `ReduceProve`, `ReduceVerify`).
+
+use crate::channel::{ProverChannel, VerifierChannel};
+use crate::error::VerificationResult;
+use crate::security::SecurityProfile;
+
+/// Metadata for a public-coin interactive oracle reduction.
+///
+/// Unlike an `InteractiveArgument` whose verifier outputs accept/reject,
+/// an `InteractiveReduction` verifier outputs a **new instance** of a
+/// (potentially simpler) target relation.  The prover consumes a
+/// *source* witness and produces a *target* witness for the reduced claim.
+pub trait InteractiveReduction {
+    /// Input instance (the claim being reduced).
+    type SourceInstance;
+    /// Output instance (the reduced claim the verifier computes).
+    type TargetInstance;
+    /// Prover's private input for the source relation.
+    type SourceWitness;
+    /// Prover's output: private input for the target relation.
+    type TargetWitness;
+
+    /// Unique 64-byte protocol identifier for domain separation.
+    fn protocol_id() -> [u8; 64];
+
+    /// Security metadata for this protocol.
+    fn security() -> SecurityProfile;
+}
+
+/// Prover logic for an interactive reduction.
+///
+/// Takes `(source_instance, source_witness)` and returns both the target
+/// instance and target witness.  In a public-coin protocol the prover can
+/// always compute the target instance (it sees the same transcript as the
+/// verifier).  Returning it here enables automatic sequential composition.
+pub trait ReduceProve<P: ProverChannel>: InteractiveReduction {
+    fn prove(
+        ch: &mut P,
+        instance: &Self::SourceInstance,
+        witness: &Self::SourceWitness,
+    ) -> (Self::TargetInstance, Self::TargetWitness);
+}
+
+/// Verifier logic for an interactive reduction: returns a new instance,
+/// not accept/reject.
+pub trait ReduceVerify<V: VerifierChannel>: InteractiveReduction {
+    fn verify(
+        ch: &mut V,
+        instance: &Self::SourceInstance,
+    ) -> VerificationResult<Self::TargetInstance>;
+}

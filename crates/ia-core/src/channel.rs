@@ -1,0 +1,22 @@
+//! Abstract prover/verifier channels (generic over sponge alphabet unit `U`).
+
+use spongefish::{Decoding, Encoding};
+
+use crate::deserialize::Deserialize;
+use crate::error::VerificationResult;
+
+/// Prover-side channel: send prover messages and read verifier challenges.
+///
+/// Generic over the sponge unit type `U` (default `u8` for byte-oriented
+/// hash functions; a field element for algebraic sponges in recursive
+/// settings).
+pub trait ProverChannel<U = u8> {
+    fn send_prover_message<PM: Encoding<[U]>>(&mut self, msg: &PM);
+    fn read_verifier_message<VM: Decoding<[U]>>(&mut self) -> VM;
+}
+
+/// Verifier-side channel: read prover messages and derive verifier challenges.
+pub trait VerifierChannel<U = u8> {
+    fn read_prover_message<PM: Encoding<[U]> + Deserialize>(&mut self) -> VerificationResult<PM>;
+    fn send_verifier_message<VM: Decoding<[U]>>(&mut self) -> VM;
+}

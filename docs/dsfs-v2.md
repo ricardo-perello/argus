@@ -60,17 +60,18 @@ So v2 provides default wrappers that keep call sites simple:
 
 So users can keep writing `dsfs::prove::<MyIA>(...)` and only use `*_with_salt` when needed.
 
-## Sponge parameters helper
+## Sponge parameters (extension trait)
 
-v2 adds a compiling helper:
+v2 exposes `DuplexSpongeParamsExt` on spongefish’s `DuplexSponge<P, WIDTH, RATE>`:
 
 ```rust
-pub fn sponge_params_from_duplex_sponge<
-    P: Permutation<WIDTH>,
-    const WIDTH: usize,
-    const RATE: usize,
->() -> SpongeParams
+pub trait DuplexSpongeParamsExt {
+    fn sponge_params(&self) -> SpongeParams;
+}
 ```
+
+Implemented for all `DuplexSponge<P, WIDTH, RATE>` with `P: Permutation<WIDTH>`.  
+For example: `Keccak::default().sponge_params()`.
 
 It returns:
 
@@ -79,7 +80,7 @@ It returns:
 - `rate = RATE as u64`
 - `delta = 1`
 
-This replaces the previous non-compiling shape that used incorrect const-generic types/signatures.
+This replaces the earlier free-function shape that did not compile with correct const generics.
 
 ## Security parameter defaults
 
