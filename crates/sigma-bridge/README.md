@@ -1,14 +1,21 @@
 # sigma-bridge
 
-Nizk-style **batchable** and **compact** Fiat–Shamir drivers matching the σ-proofs [`fiat_shamir`](https://github.com/sigma-rs/sigma-proofs/blob/main/src/fiat_shamir.rs) transcript (public commitment absorb, challenge squeeze, response serialization).
+Turns any `SigmaProtocol` (from `sigma-proofs`) into a non-interactive proof
+through the Argus **DSFS** pipeline (`ia-core` channels backed by `dsfs::SpongeProver` / `SpongeVerifier`).
 
-- Use [`derive_session_id`](./src/session.rs) for the same 64-byte session field as σ-proofs `Nizk`.
-- Use [`dsfs::StdHash`](https://github.com/arkworks-rs/spongefish) with these APIs for transcript compatibility with spongefish `std_prover` / `std_verifier`.
+## Design
 
-## Spongefish / σ-proofs versions
+- **Pure IA pipeline**: commitments and responses are sent via `send_prover_message`
+  (absorb **and** append into the NARG string). The proof is the full spongefish NARG string.
+- **Batchable only**: compact proofs are not supported (per project direction).
+- **Sponge-generic**: defaults to Keccak; pass `dsfs::StdHash` for SHAKE128.
+- **Not byte-identical to `sigma-proofs::Nizk`**: `Nizk::prove_batchable` uses `public_message`
+  (absorb-only) for commitments and manually assembles the proof. This crate instead drives
+  everything through `ProverChannel::send_prover_message`, yielding different NARG bytes but
+  the same cryptographic guarantees.
 
-The published `sigma-proofs` crate depends on **spongefish 0.4**; Argus pins **spongefish 1.x** from git. Cargo cannot link both in one crate, so this crate defines a minimal [`SigmaProtocol`](./src/traits.rs) trait aligned with σ-proofs. When σ-proofs upgrades to the same spongefish as Argus, you can `impl` that upstream trait for wrapper types or depend on σ-proofs directly and delete the local trait.
+## Tests
 
-## Golden vectors vs `Nizk`
-
-Byte-identical proofs vs `Nizk::prove_batchable` / `prove_compact` should be checked **after** spongefish versions unify, or by generating vectors from σ-proofs in a separate binary locked to spongefish 0.4. The unit tests here use a toy `u32` protocol to regression-test round-trip behavior for both [`StdHash`](./src/fiat_shamir.rs) and Keccak.
+- `tests/curve25519_roundtrip.rs` — prove/verify round-trips on Ristretto (StdHash and Keccak).
+- `tests/golden_vectors.rs` — round-trip prove/verify using σ-proofs `CanonicalLinearRelation`
+  instances parsed from spec vector JSON files (BLS12-381; P-256 ignored pending upstream fix).

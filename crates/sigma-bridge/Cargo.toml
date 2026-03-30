@@ -3,14 +3,25 @@ name = "sigma-bridge"
 version = "0.1.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
-description = "Nizk-compatible Fiat–Shamir drivers (σ-proofs layout) on Argus dsfs sponges"
+description = "Sigma-protocol → Interactive-Argument bridge via Argus DSFS pipeline"
 
 [dependencies]
 dsfs = { path = "../dsfs" }
+ia-core = { path = "../ia-core" }
 spongefish.workspace = true
-rand_core = "0.6"
 sha3 = "0.10"
+sigma-proofs = { version = "0.2", default-features = false }
 
 [dev-dependencies]
+bls12_381 = { version = "0.8", default-features = false, features = ["groups"] }
+curve25519-dalek = { version = "4", default-features = false, features = ["alloc", "group"] }
+ff = "0.13"
+group = "0.13"
+hex = "0.4"
+p256 = { version = "0.13", default-features = false, features = ["arithmetic"] }
 rand_chacha = "0.3"
 rand_core = "0.6"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_with = { version = "3", features = ["hex"] }
+sigma-proofs = { version = "0.2", features = ["bls12_381", "p256", "curve25519-dalek", "std"] }
