@@ -3,6 +3,9 @@
 //! Sigma protocols are driven through `ia-core`'s [`ProverChannel`] / [`VerifierChannel`] traits,
 //! so commitments and responses go through `send_prover_message` (absorb + append to NARG).
 //! The proof is the full spongefish NARG string.
+//!
+//! This matches `sigma-proofs::Nizk::prove_batchable` (PR #130+), where both commitments and
+//! responses are recorded via `prover_messages` and the proof is the complete NARG string.
 
 use alloc::vec::Vec;
 
