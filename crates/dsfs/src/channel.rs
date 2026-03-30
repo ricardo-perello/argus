@@ -6,10 +6,89 @@ use alloc::vec::Vec;
 
 use ia_core::{Deserialize, ProverChannel, VerifierChannel};
 use spongefish::{
-    Decoding, DuplexSpongeInterface, Encoding, NargDeserialize, ProverState, VerifierState,
+    Decoding, DomainSeparator, DuplexSpongeInterface, Encoding, NargDeserialize, ProverState,
+    StdHash, VerifierState,
 };
 
 use crate::params::Keccak;
+
+/// Construct spongefish prover/verifier states from the same public inputs that define the
+/// Fiat–Shamir transcript (protocol id, session id, instance bytes).
+///
+/// For SHAKE128 (`StdHash`) we must use spongefish `std_prover/std_verifier` initialization to be
+/// byte-for-byte compatible with σ-proofs `Nizk::{prove_batchable,verify_batchable}`.
+///
+/// For Keccak (`OWKeccak1600` vectors), we use [`DomainSeparator::to_prover`] /
+/// [`DomainSeparator::to_verifier`]: protocol id is absorbed as a single `public_message`
+/// (64 bytes), then session and instance — not the SHAKE-only `StdHash::from_protocol_id` bootstrap.
+pub trait TranscriptSponge: DuplexSpongeInterface<U = u8> + Sized {
+    fn prover_state<I: Encoding>(
+        self,
+        protocol_id: [u8; 64],
+        session: [u8; 64],
+        instance: &I,
+    ) -> ProverState<Self>;
+
+    fn verifier_state<'a, I: Encoding>(
+        self,
+        protocol_id: [u8; 64],
+        session: [u8; 64],
+        instance: &I,
+        narg_string: &'a [u8],
+    ) -> VerifierState<'a, Self>;
+}
+
+impl TranscriptSponge for Keccak {
+    fn prover_state<I: Encoding>(
+        self,
+        protocol_id: [u8; 64],
+        session: [u8; 64],
+        instance: &I,
+    ) -> ProverState<Self> {
+        DomainSeparator::new(protocol_id)
+            .session(session)
+            .instance(instance)
+            .to_prover(self)
+    }
+
+    fn verifier_state<'a, I: Encoding>(
+        self,
+        protocol_id: [u8; 64],
+        session: [u8; 64],
+        instance: &I,
+        narg_string: &'a [u8],
+    ) -> VerifierState<'a, Self> {
+        DomainSeparator::new(protocol_id)
+            .session(session)
+            .instance(instance)
+            .to_verifier(self, narg_string)
+    }
+}
+
+impl TranscriptSponge for StdHash {
+    fn prover_state<I: Encoding>(
+        self,
+        protocol_id: [u8; 64],
+        session: [u8; 64],
+        instance: &I,
+    ) -> ProverState<Self> {
+        // IMPORTANT: ignore `self` and use spongefish `std_prover` initialization semantics.
+        let domsep = DomainSeparator::new(protocol_id).session(session).instance(instance);
+        domsep.std_prover()
+    }
+
+    fn verifier_state<'a, I: Encoding>(
+        self,
+        protocol_id: [u8; 64],
+        session: [u8; 64],
+        instance: &I,
+        narg_string: &'a [u8],
+    ) -> VerifierState<'a, Self> {
+        // IMPORTANT: ignore `self` and use spongefish `std_verifier` initialization semantics.
+        let domsep = DomainSeparator::new(protocol_id).session(session).instance(instance);
+        domsep.std_verifier(narg_string)
+    }
+}
 
 /// Wraps `spongefish::ProverState` as an ia-core `ProverChannel`.
 ///

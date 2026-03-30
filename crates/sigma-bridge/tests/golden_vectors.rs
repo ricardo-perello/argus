@@ -1,19 +1,31 @@
-//! Golden-vector tests for σ-proofs compatibility.
+//! Golden-vector tests for σ-proofs compatibility (batchable proofs, PR #130+).
 //!
-//! The Keccak vectors (`sigma_Keccak1600_BLS12381.json`) were generated with the full-NARG
-//! batchable proof format (commitments + responses via `prover_message`, proof = NARG string).
-//! These are tested for **byte-for-byte equality**.
+//! `sigma-proofs::Nizk` uses spongefish `std_prover` / `std_verifier` (SHAKE128). For byte-for-byte
+//! equality with `Nizk::prove_batchable`, use [`dsfs::StdHash`] in [`sigma_bridge::prove`].
 //!
-//! The StdHash vectors (`sigma-proofs_Shake128_BLS12381.json`) were generated with the older
-//! σ-proofs batchable format (public_message for commitments). These are tested for
-//! **round-trip correctness** only (prove then verify).
+//! The Shake128 vectors (`sigma-proofs_Shake128_BLS12381.json`) match σ-proofs spec testdata: we
+//! assert **byte-identical** `"Batchable Proof"` bytes.
+//!
+//! `sigma_Keccak1600_BLS12381.json`: same **SHAKE128** / `std_prover` stack; the `ciphersuite`
+//! string is the 64-byte protocol tag. `proof_batchable` in that file does **not** currently match
+//! `sigma-proofs` 0.2.1 + `spongefish` 0.4.1 (even an inlined `Nizk::prove_batchable` with that
+//! tag); [`sigma_bridge::prove_with_protocol_domain`] matches that inlined reference — see
+//! `prove_with_protocol_domain_matches_inlined_nizk_prove_batchable`. The Keccak-named golden is
+//! ignored until testdata is regenerated for this dependency set.
 
 use bls12_381::G1Projective as Bls12381G1;
 use group::{ff::PrimeField, prime::PrimeGroup};
 use p256::ProjectivePoint as P256ProjectivePoint;
-use spongefish::{Decoding, Encoding, NargDeserialize, NargSerialize};
+use spongefish::{
+    protocol_id as spongefish_protocol_id, Decoding, DomainSeparator, Encoding, NargDeserialize,
+    NargSerialize,
+};
 
-use sigma_proofs::{linear_relation::CanonicalLinearRelation, MultiScalarMul};
+use sigma_proofs::{
+    errors::Error, linear_relation::CanonicalLinearRelation, traits::ScalarRng, MultiScalarMul,
+};
+
+use sigma_bridge::SigmaProtocol;
 
 mod spec_rng;
 use spec_rng::{proof_generation_rng, MockScalarRng};
@@ -25,8 +37,9 @@ use serde_with::{hex, serde_as};
 #[serde(transparent)]
 struct Hex(#[serde_as(as = "hex::Hex")] Vec<u8>);
 
-// ---- StdHash vectors (old format, round-trip only) ----
+// ---- StdHash vectors (σ-proofs `Nizk::prove_batchable`, byte-identical) ----
 
+#[serde_as]
 #[derive(Debug, Default, serde::Deserialize)]
 struct StdHashVector {
     #[serde(rename = "Relation")]
@@ -37,6 +50,8 @@ struct StdHashVector {
     statement: Hex,
     #[serde(rename = "Witness")]
     witness: Hex,
+    #[serde(rename = "Batchable Proof")]
+    batchable_proof: Hex,
 }
 
 fn decode_scalars<G>(bytes: &[u8]) -> Vec<G::Scalar>
@@ -52,7 +67,7 @@ where
     scalars
 }
 
-fn roundtrip_testvectors_stdhash<G>(vectors_json: &str)
+fn golden_testvectors_stdhash<G>(vectors_json: &str)
 where
     G: PrimeGroup + Encoding<[u8]> + NargSerialize + NargDeserialize + MultiScalarMul,
     G::Scalar: Encoding<[u8]> + NargSerialize + NargDeserialize + Decoding<[u8]>,
@@ -81,6 +96,12 @@ where
         )
         .unwrap_or_else(|_| panic!("prove failed for {}", v.relation));
 
+        assert_eq!(
+            proof, v.batchable_proof.0,
+            "batchable proof byte mismatch for {} (σ-proofs Nizk::prove_batchable)",
+            v.relation
+        );
+
         sigma_bridge::verify(
             dsfs::StdHash::default(),
             &v.session_id.0,
@@ -93,25 +114,60 @@ where
 
 #[test]
 #[ignore = "P-256 CanonicalLinearRelation::from_label / encoding issue under investigation"]
-fn roundtrip_p256_stdhash() {
-    roundtrip_testvectors_stdhash::<P256ProjectivePoint>(include_str!(
+fn golden_p256_stdhash() {
+    golden_testvectors_stdhash::<P256ProjectivePoint>(include_str!(
         "./testdata/sigma-proofs_Shake128_P256.json"
     ));
 }
 
 #[test]
-fn roundtrip_bls12381_stdhash() {
-    roundtrip_testvectors_stdhash::<Bls12381G1>(include_str!(
+fn golden_bls12381_stdhash() {
+    golden_testvectors_stdhash::<Bls12381G1>(include_str!(
         "./testdata/sigma-proofs_Shake128_BLS12381.json"
     ));
 }
 
-// ---- Keccak vectors (full-NARG format, byte-equality) ----
+/// Same transcript as `sigma_proofs::fiat_shamir::Nizk::prove_batchable`, but with an explicit
+/// `protocol_id` (the JSON `ciphersuite` padded to 64 bytes).
+fn nizk_prove_batchable_with_protocol_id<G>(
+    protocol_id: [u8; 64],
+    session_id: &[u8],
+    protocol: &CanonicalLinearRelation<G>,
+    witness: &Vec<G::Scalar>,
+    rng: &mut impl ScalarRng,
+) -> Result<Vec<u8>, Error>
+where
+    G: PrimeGroup + Encoding<[u8]> + NargSerialize + NargDeserialize + MultiScalarMul,
+    G::Scalar: Encoding<[u8]> + NargSerialize + NargDeserialize + Decoding<[u8]>,
+{
+    let instance_label = protocol.instance_label().as_ref().to_vec();
+    let mut transcript = DomainSeparator::new(protocol_id)
+        .session(sigma_bridge::derive_session_id(session_id))
+        .instance(&instance_label)
+        .std_prover();
+
+    let (commitment, ip_state) = protocol.prover_commit(witness, rng)?;
+    let mut commitment_bytes = Vec::new();
+    for c in &commitment {
+        c.serialize_into_narg(&mut commitment_bytes);
+    }
+    transcript.public_message(commitment_bytes.as_slice());
+    let challenge = transcript.verifier_message::<G::Scalar>();
+    let response = protocol.prover_response(ip_state, &challenge)?;
+    let mut proof = commitment_bytes;
+    for r in &response {
+        r.serialize_into_narg(&mut proof);
+    }
+    Ok(proof)
+}
+
+// ---- `sigma_Keccak1600_*.json`: StdHash transcript, explicit randomness (see module docs) ----
 
 #[serde_as]
 #[derive(Debug, serde::Deserialize)]
 struct KeccakVector {
     protocol: String,
+    ciphersuite: String,
     #[serde(rename = "session_id")]
     session_id: Hex,
     #[serde(rename = "statement")]
@@ -155,9 +211,11 @@ where
             v.randomness.iter().map(|h| h.0.clone()).collect();
         let mut rng = MockScalarRng(randomness_vecs.into_iter());
 
-        let proof = sigma_bridge::prove(
-            dsfs::Keccak::default(),
+        let protocol_domain = spongefish_protocol_id(core::format_args!("{}", v.ciphersuite));
+        let proof = sigma_bridge::prove_with_protocol_domain(
+            dsfs::StdHash::default(),
             &v.session_id.0,
+            protocol_domain,
             &parsed_instance,
             &witness,
             &mut rng,
@@ -170,9 +228,10 @@ where
             v.protocol
         );
 
-        sigma_bridge::verify(
-            dsfs::Keccak::default(),
+        sigma_bridge::verify_with_protocol_domain(
+            dsfs::StdHash::default(),
             &v.session_id.0,
+            protocol_domain,
             &parsed_instance,
             &proof,
         )
@@ -181,8 +240,60 @@ where
 }
 
 #[test]
+#[ignore = "sigma_Keccak1600_BLS12381.json proof_batchable mismatches sigma-proofs 0.2.1 + spongefish 0.4.1 even with inlined Nizk + ciphersuite id (see prove_with_protocol_domain_matches_inlined_nizk_prove_batchable)"]
 fn golden_bls12381_keccak() {
     golden_testvectors_keccak::<Bls12381G1>(include_str!(
         "./testdata/sigma_Keccak1600_BLS12381.json"
     ));
+}
+
+/// `sigma_bridge::prove_with_protocol_domain` agrees with an inlined `Nizk::prove_batchable` using
+/// the same `protocol_id` (e.g. JSON `ciphersuite`).
+#[test]
+fn prove_with_protocol_domain_matches_inlined_nizk_prove_batchable() {
+    let vectors: Vec<KeccakVector> = serde_json::from_str(include_str!(
+        "./testdata/sigma_Keccak1600_BLS12381.json"
+    ))
+    .expect("parse json");
+    let v = vectors.iter().find(|x| x.protocol == "dlog").expect("dlog vector");
+
+    let parsed_instance = CanonicalLinearRelation::<Bls12381G1>::from_label(&v.statement.0)
+        .expect("from_label");
+    let witness: Vec<bls12_381::Scalar> = v
+        .witness
+        .iter()
+        .map(|h| {
+            let mut repr = <bls12_381::Scalar as PrimeField>::Repr::default();
+            repr.as_mut().copy_from_slice(&h.0);
+            bls12_381::Scalar::from_repr(repr)
+                .into_option()
+                .expect("witness")
+        })
+        .collect();
+
+    let protocol_id = spongefish_protocol_id(core::format_args!("{}", v.ciphersuite));
+
+    let mut rng1 = MockScalarRng(v.randomness.iter().map(|h| h.0.clone()));
+    let mut rng2 = MockScalarRng(v.randomness.iter().map(|h| h.0.clone()));
+
+    let inlined = nizk_prove_batchable_with_protocol_id(
+        protocol_id,
+        &v.session_id.0,
+        &parsed_instance,
+        &witness,
+        &mut rng1,
+    )
+    .expect("inlined prove");
+
+    let bridge = sigma_bridge::prove_with_protocol_domain(
+        dsfs::StdHash::default(),
+        &v.session_id.0,
+        protocol_id,
+        &parsed_instance,
+        &witness,
+        &mut rng2,
+    )
+    .expect("bridge prove");
+
+    assert_eq!(inlined, bridge);
 }

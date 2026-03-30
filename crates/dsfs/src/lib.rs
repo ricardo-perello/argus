@@ -17,6 +17,7 @@ mod narg_security;
 mod params;
 
 pub use channel::{SpongeProver, SpongeVerifier};
+pub use channel::TranscriptSponge;
 pub use compile::{
     ByteDuplexSponge, prove, prove_reduction, prove_reduction_with_salt,
     prove_reduction_with_sponge, prove_reduction_with_sponge_and_salt, prove_with_salt,
