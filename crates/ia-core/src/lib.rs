@@ -20,7 +20,7 @@ mod error;
 mod reduction;
 mod security;
 
-pub use spongefish::{Decoding, Encoding};
+pub use spongefish::{Decoding, Encoding, NargSerialize};
 
 pub use argument::{InteractiveArgument, Prove, Verify};
 pub use channel::{ProverChannel, VerifierChannel};

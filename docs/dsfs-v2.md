@@ -91,12 +91,25 @@ This replaces the earlier free-function shape that did not compile with correct 
 - `alphabet_size = 256.0`
 - `delta = 1`
 
+## Modular sponge (Keccak vs StdHash)
+
+DSFS channels and compile entry points are generic over a byte-oriented duplex sponge `H` (see `ByteDuplexSponge` in `dsfs::compile`).
+
+- **Default:** existing `prove` / `verify` / `prove_reduction` / `verify_reduction` (and `*_with_salt`) still use **Keccak** (`Keccak::default()`).
+- **Explicit sponge:** use `prove_with_sponge`, `prove_with_sponge_and_salt`, `verify_with_sponge`, `verify_with_sponge_and_salt`, and the reduction variants, passing e.g. `dsfs::StdHash::default()` for spongefish **std_prover** / **std_verifier** (SHAKE128) compatibility.
+
+Security bookkeeping: `STD_SPONGE_PARAMS` remains tied to Keccak; for StdHash-style transcripts use `STD_HASH_SPONGE_PARAMS` with `NargSecurity::for_ia_with` / `for_reduction_with`.
+
+The `sigma-bridge` crate provides Nizk-layout batchable/compact drivers and σ-proofs–compatible `derive_session_id`.
+
 ## What did not change
 
-No IA-layer trait/interface changes were made:
+Core IA protocol traits are unchanged:
 
 - `InteractiveArgument`, `Prove`, `Verify`
 - `InteractiveReduction`, `ReduceProve`, `ReduceVerify`
 - IA security metadata APIs in `ia-core`
+
+**Channel tweak:** `ProverChannel::send_prover_message` now requires `NargSerialize` (in addition to `Encoding`), matching spongefish `prover_message`. Live-channel and sponge adapters were updated accordingly.
 
 In other words: IA defines protocol logic; DSFS still exclusively owns transcript/sponge behavior.

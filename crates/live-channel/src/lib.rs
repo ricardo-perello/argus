@@ -6,9 +6,11 @@
 
 use std::sync::mpsc;
 
-use ia_core::{Decoding, Deserialize, Encoding, VerificationError, VerificationResult};
-use rand::rngs::OsRng;
+use ia_core::{
+    Decoding, Deserialize, Encoding, NargSerialize, VerificationError, VerificationResult,
+};
 use rand::RngCore;
+use rand::rngs::OsRng;
 
 // ---------------------------------------------------------------------------
 // Live channel: prover side
@@ -20,10 +22,7 @@ pub struct LiveProverChannel {
 }
 
 impl LiveProverChannel {
-    pub fn new(
-        to_verifier: mpsc::Sender<Vec<u8>>,
-        from_verifier: mpsc::Receiver<Vec<u8>>,
-    ) -> Self {
+    pub fn new(to_verifier: mpsc::Sender<Vec<u8>>, from_verifier: mpsc::Receiver<Vec<u8>>) -> Self {
         Self {
             to_verifier,
             from_verifier,
@@ -32,7 +31,7 @@ impl LiveProverChannel {
 }
 
 impl ia_core::ProverChannel for LiveProverChannel {
-    fn send_prover_message<M: Encoding>(&mut self, msg: &M) {
+    fn send_prover_message<M: Encoding + NargSerialize>(&mut self, msg: &M) {
         let bytes = msg.encode();
         self.to_verifier.send(bytes.as_ref().to_vec()).unwrap();
     }
@@ -55,10 +54,7 @@ pub struct LiveVerifierChannel {
 }
 
 impl LiveVerifierChannel {
-    pub fn new(
-        from_prover: mpsc::Receiver<Vec<u8>>,
-        to_prover: mpsc::Sender<Vec<u8>>,
-    ) -> Self {
+    pub fn new(from_prover: mpsc::Receiver<Vec<u8>>, to_prover: mpsc::Sender<Vec<u8>>) -> Self {
         Self {
             from_prover,
             to_prover,
@@ -67,9 +63,7 @@ impl LiveVerifierChannel {
 }
 
 impl ia_core::VerifierChannel for LiveVerifierChannel {
-    fn read_prover_message<M: Encoding + Deserialize>(
-        &mut self,
-    ) -> VerificationResult<M> {
+    fn read_prover_message<M: Encoding + Deserialize>(&mut self) -> VerificationResult<M> {
         let bytes = self.from_prover.recv().map_err(|_| VerificationError)?;
         let mut buf = bytes.as_slice();
         M::deserialize(&mut buf)

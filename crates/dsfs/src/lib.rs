@@ -18,10 +18,14 @@ mod params;
 
 pub use channel::{SpongeProver, SpongeVerifier};
 pub use compile::{
-    prove, prove_reduction, prove_reduction_with_salt, prove_with_salt, verify, verify_reduction,
-    verify_reduction_with_salt, verify_with_salt,
+    ByteDuplexSponge, prove, prove_reduction, prove_reduction_with_salt,
+    prove_reduction_with_sponge, prove_reduction_with_sponge_and_salt, prove_with_salt,
+    prove_with_sponge, prove_with_sponge_and_salt, verify, verify_reduction,
+    verify_reduction_with_salt, verify_reduction_with_sponge,
+    verify_reduction_with_sponge_and_salt, verify_with_salt, verify_with_sponge,
+    verify_with_sponge_and_salt,
 };
-pub use narg_security::{reduction_security, security, NargSecurity};
+pub use narg_security::{NargSecurity, reduction_security, security};
 pub use params::{
-    DuplexSpongeParamsExt, Keccak, SpongeParams, STD_SPONGE_PARAMS,
+    DuplexSpongeParamsExt, Keccak, STD_HASH_SPONGE_PARAMS, STD_SPONGE_PARAMS, SpongeParams, StdHash,
 };

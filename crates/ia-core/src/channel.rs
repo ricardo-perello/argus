@@ -1,6 +1,6 @@
 //! Abstract prover/verifier channels (generic over sponge alphabet unit `U`).
 
-use spongefish::{Decoding, Encoding};
+use spongefish::{Decoding, Encoding, NargSerialize};
 
 use crate::deserialize::Deserialize;
 use crate::error::VerificationResult;
@@ -10,8 +10,11 @@ use crate::error::VerificationResult;
 /// Generic over the sponge unit type `U` (default `u8` for byte-oriented
 /// hash functions; a field element for algebraic sponges in recursive
 /// settings).
+///
+/// Prover messages must implement [`NargSerialize`] so they can be written into
+/// the non-interactive argument string by spongefish-backed channels.
 pub trait ProverChannel<U = u8> {
-    fn send_prover_message<PM: Encoding<[U]>>(&mut self, msg: &PM);
+    fn send_prover_message<PM: Encoding<[U]> + NargSerialize>(&mut self, msg: &PM);
     fn read_verifier_message<VM: Decoding<[U]>>(&mut self) -> VM;
 }
 

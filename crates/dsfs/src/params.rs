@@ -27,13 +27,33 @@ pub const STD_SPONGE_PARAMS: SpongeParams = SpongeParams {
 
 pub type Keccak = spongefish::instantiations::Keccak;
 
+/// Spongefish’s default FS transcript hash: SHAKE128 in XOF duplex mode (`std_prover` / `std_verifier`).
+///
+/// Use with [`crate::compile::prove_with_sponge`] when you need byte-compatibility with
+/// spongefish / σ-proofs `Nizk` transcript defaults.
+pub type StdHash = spongefish::StdHash;
+
+/// Bookkeeping parameters for DSFS bounds when the transcript uses [`StdHash`] (SHAKE128 XOF).
+///
+/// The XOF duplex in spongefish does not expose a fixed classical sponge width; this uses the
+/// rate from σ-proofs’ session-id helper (`RATE = 168`, SHAKE padding block) and treats capacity
+/// as **32 bytes (256 bits)** for conservative bound evaluation. Prefer [`STD_SPONGE_PARAMS`] for
+/// the default Keccak-`p[1600]` construction used in Argus.
+pub const STD_HASH_SPONGE_PARAMS: SpongeParams = SpongeParams {
+    alphabet_size: 256.0,
+    capacity: 32,
+    rate: 168,
+    delta: 1,
+};
+
 /// Extension trait: derive [`SpongeParams`] for DSFS security bounds from a duplex sponge’s
 /// width and rate (`capacity = width - rate`, byte alphabet, `delta = 1`).
 pub trait DuplexSpongeParamsExt {
     fn sponge_params(&self) -> SpongeParams;
 }
 
-impl<P, const WIDTH: usize, const RATE: usize> DuplexSpongeParamsExt for DuplexSponge<P, WIDTH, RATE>
+impl<P, const WIDTH: usize, const RATE: usize> DuplexSpongeParamsExt
+    for DuplexSponge<P, WIDTH, RATE>
 where
     P: Permutation<WIDTH>,
 {
@@ -49,7 +69,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{DuplexSpongeParamsExt, Keccak, STD_SPONGE_PARAMS};
+    use super::{DuplexSpongeParamsExt, Keccak, STD_HASH_SPONGE_PARAMS, STD_SPONGE_PARAMS};
 
     #[test]
     fn std_sponge_params_matches_keccak_duplex_ext() {
@@ -58,5 +78,13 @@ mod tests {
         assert_eq!(from_ext.rate, STD_SPONGE_PARAMS.rate);
         assert_eq!(from_ext.delta, STD_SPONGE_PARAMS.delta);
         assert!((from_ext.alphabet_size - STD_SPONGE_PARAMS.alphabet_size).abs() < 1e-12);
+    }
+
+    #[test]
+    fn std_hash_sponge_params_is_documented_constant() {
+        assert_eq!(STD_HASH_SPONGE_PARAMS.alphabet_size, 256.0);
+        assert_eq!(STD_HASH_SPONGE_PARAMS.capacity, 32);
+        assert_eq!(STD_HASH_SPONGE_PARAMS.rate, 168);
+        assert_eq!(STD_HASH_SPONGE_PARAMS.delta, 1);
     }
 }
