@@ -1,0 +1,16 @@
+[package]
+name = "sigma-bridge"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Nizk-compatible Fiat–Shamir drivers (σ-proofs layout) on Argus dsfs sponges"
+
+[dependencies]
+dsfs = { path = "../dsfs" }
+spongefish.workspace = true
+rand_core = "0.6"
+sha3 = "0.10"
+
+[dev-dependencies]
+rand_chacha = "0.3"
+rand_core = "0.6"

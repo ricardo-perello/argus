@@ -6,6 +6,7 @@ members = [
     "crates/ibcs",
     "crates/argus-examples",
     "crates/warp",
+    "crates/sigma-bridge",
 ]
 resolver = "2"
 
