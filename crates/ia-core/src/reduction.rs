@@ -19,8 +19,11 @@ pub trait InteractiveReduction {
     /// Prover's output: private input for the target relation.
     type TargetWitness;
 
-    /// Unique 64-byte protocol identifier for domain separation.
-    fn protocol_id() -> [u8; 64];
+    /// Unique 32-byte protocol identifier for domain separation.
+    ///
+    /// The full 64-byte DSFS domain separator is `protocol_id() || sponge_tag`,
+    /// where the sponge tag is appended by the DSFS backend.
+    fn protocol_id() -> [u8; 32];
 
     /// Prover logic: takes `(source_instance, source_witness)` and returns both the target
     /// instance and target witness.  In a public-coin protocol the prover can always compute

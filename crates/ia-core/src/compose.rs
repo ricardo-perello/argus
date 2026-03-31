@@ -6,14 +6,14 @@ use crate::error::VerificationResult;
 use crate::reduction::InteractiveReduction;
 use crate::security::{ProtocolSecurity, SecurityProfile};
 
-/// Derives a 64-byte protocol identifier from two sub-protocol IDs and a
+/// Derives a 32-byte protocol identifier from two sub-protocol IDs and a
 /// domain-separation tag.  Non-commutative: swapping `first` and `second`
 /// produces a different result.
-fn derive_composition_id(tag: u8, first: [u8; 64], second: [u8; 64]) -> [u8; 64] {
-    let mut id = [0u8; 64];
+fn derive_composition_id(tag: u8, first: [u8; 32], second: [u8; 32]) -> [u8; 32] {
+    let mut id = [0u8; 32];
     let mut i = 0;
-    while i < 64 {
-        id[i] = first[i] ^ second[(i + 1) % 64] ^ tag.wrapping_add(i as u8);
+    while i < 32 {
+        id[i] = first[i] ^ second[(i + 1) % 32] ^ tag.wrapping_add(i as u8);
         i += 1;
     }
     id
@@ -39,7 +39,7 @@ where
     type SourceWitness = First::SourceWitness;
     type TargetWitness = Second::TargetWitness;
 
-    fn protocol_id() -> [u8; 64] {
+    fn protocol_id() -> [u8; 32] {
         derive_composition_id(0x01, First::protocol_id(), Second::protocol_id())
     }
 
@@ -93,7 +93,7 @@ where
     type Instance = R::SourceInstance;
     type Witness = R::SourceWitness;
 
-    fn protocol_id() -> [u8; 64] {
+    fn protocol_id() -> [u8; 32] {
         derive_composition_id(0x02, R::protocol_id(), A::protocol_id())
     }
 

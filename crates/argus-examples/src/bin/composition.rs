@@ -58,8 +58,8 @@ impl InteractiveReduction for FoldPairs {
     type SourceWitness = Values;
     type TargetWitness = Values;
 
-    fn protocol_id() -> [u8; 64] {
-        spongefish::protocol_id(core::format_args!("fold pairs"))
+    fn protocol_id() -> [u8; 32] {
+        ia_core::pad_protocol_id(b"fold pairs")
     }
 
     fn prove<P: ProverChannel>(ch: &mut P, instance: &Claims, witness: &Values) -> (Claims, Values) {
@@ -124,8 +124,8 @@ impl InteractiveReduction for Accumulate {
     type SourceWitness = Values;
     type TargetWitness = ();
 
-    fn protocol_id() -> [u8; 64] {
-        spongefish::protocol_id(core::format_args!("accumulate"))
+    fn protocol_id() -> [u8; 32] {
+        ia_core::pad_protocol_id(b"accumulate")
     }
 
     fn prove<P: ProverChannel>(ch: &mut P, instance: &Claims, witness: &Values) -> (AccPair, ()) {
@@ -193,8 +193,8 @@ impl InteractiveArgument for EqualityCheck {
     type Instance = AccPair;
     type Witness = ();
 
-    fn protocol_id() -> [u8; 64] {
-        spongefish::protocol_id(core::format_args!("equality check"))
+    fn protocol_id() -> [u8; 32] {
+        ia_core::pad_protocol_id(b"equality check")
     }
 
     fn prove<P: ProverChannel>(_ch: &mut P, _instance: &AccPair, _witness: &()) {}

@@ -33,6 +33,34 @@ pub type Keccak = spongefish::instantiations::Keccak;
 /// spongefish / σ-proofs `Nizk` transcript defaults.
 pub type StdHash = spongefish::StdHash;
 
+/// 32-byte sponge tag appended to the 32-byte IA protocol id to form the full
+/// 64-byte DSFS domain separator: `[ia_id: 32 || sponge_tag: 32]`.
+///
+/// Mirrors sigma-proofs’ convention of embedding the hash-function name in the
+/// ASCII ciphersuite label, but keeps it separate from the IA identity so the
+/// same IA can be compiled with different sponges without changing its `protocol_id`.
+pub trait SpongeTag: super::compile::ByteDuplexSponge {
+    const TAG: [u8; 32];
+}
+
+const fn pad_tag(label: &[u8]) -> [u8; 32] {
+    let mut tag = [0u8; 32];
+    let mut i = 0;
+    while i < label.len() && i < 32 {
+        tag[i] = label[i];
+        i += 1;
+    }
+    tag
+}
+
+impl SpongeTag for Keccak {
+    const TAG: [u8; 32] = pad_tag(b"keccak");
+}
+
+impl SpongeTag for StdHash {
+    const TAG: [u8; 32] = pad_tag(b"shake128");
+}
+
 /// Bookkeeping parameters for DSFS bounds when the transcript uses [`StdHash`] (SHAKE128 XOF).
 ///
 /// The XOF duplex in spongefish does not expose a fixed classical sponge width; this uses the

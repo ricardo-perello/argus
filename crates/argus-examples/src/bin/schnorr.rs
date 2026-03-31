@@ -38,8 +38,8 @@ where
     type Instance = [G; 2]; // [generator, public_key]
     type Witness = G::ScalarField;
 
-    fn protocol_id() -> [u8; 64] {
-        spongefish::protocol_id(core::format_args!("schnorr proof"))
+    fn protocol_id() -> [u8; 32] {
+        ia_core::pad_protocol_id(b"schnorr")
     }
 
     #[allow(non_snake_case)]

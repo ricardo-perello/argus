@@ -34,8 +34,8 @@ where
     type TargetInstance = DeciderInstance<F, P, C, MT>;
     type TargetWitness = DeciderWitness<F, MT>;
 
-    fn protocol_id() -> [u8; 64] {
-        spongefish::protocol_id(core::format_args!("argus::warp::reduction"))
+    fn protocol_id() -> [u8; 32] {
+        ia_core::pad_protocol_id(b"argus::warp::reduction")
     }
 
     fn prove<Ch: ProverChannel>(
@@ -119,8 +119,8 @@ where
     type Instance = DeciderInstance<F, P, C, MT>;
     type Witness = DeciderWitness<F, MT>;
 
-    fn protocol_id() -> [u8; 64] {
-        spongefish::protocol_id(core::format_args!("argus::warp::decider"))
+    fn protocol_id() -> [u8; 32] {
+        ia_core::pad_protocol_id(b"argus::warp::decider")
     }
 
     fn prove<Ch: ProverChannel>(ch: &mut Ch, _instance: &DeciderInstance<F, P, C, MT>, witness: &DeciderWitness<F, MT>) {

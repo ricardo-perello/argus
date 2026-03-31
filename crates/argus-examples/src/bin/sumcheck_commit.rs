@@ -127,10 +127,8 @@ impl InteractiveArgument for CommittedSumcheck {
     type Instance = Instance;
     type Witness = Vec<Fr>;
 
-    fn protocol_id() -> [u8; 64] {
-        spongefish::protocol_id(core::format_args!(
-            "committed sumcheck (bit challenges, sha256 merkle)"
-        ))
+    fn protocol_id() -> [u8; 32] {
+        ia_core::pad_protocol_id(b"committed sumcheck sha256")
     }
 
     #[allow(non_snake_case)]

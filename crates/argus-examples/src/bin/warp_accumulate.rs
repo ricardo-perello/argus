@@ -58,10 +58,8 @@ impl InteractiveReduction for Accumulate {
     type SourceWitness = Vec<Fr>;
     type TargetWitness = ();
 
-    fn protocol_id() -> [u8; 64] {
-        spongefish::protocol_id(core::format_args!(
-            "warp-style random linear combination accumulator"
-        ))
+    fn protocol_id() -> [u8; 32] {
+        ia_core::pad_protocol_id(b"warp-style rlc accumulator")
     }
 
     fn prove<P: ProverChannel>(

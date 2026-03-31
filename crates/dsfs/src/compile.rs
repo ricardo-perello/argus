@@ -7,10 +7,10 @@ use alloc::vec::Vec;
 use rand_core::RngCore;
 
 use ia_core::{InteractiveArgument, InteractiveReduction};
-use spongefish::{protocol_id as spongefish_protocol_id, DomainSeparator, DuplexSpongeInterface, Encoding};
+use spongefish::{DomainSeparator, DuplexSpongeInterface, Encoding};
 
 use crate::channel::{SpongeProver, SpongeVerifier};
-use crate::params::Keccak;
+use crate::params::{Keccak, SpongeTag};
 
 /// Byte-oriented duplex sponge (`U = u8`), matching Keccak and spongefish `StdHash` / SHAKE128.
 pub trait ByteDuplexSponge: DuplexSpongeInterface<U = u8> {}
@@ -19,24 +19,43 @@ impl<T: DuplexSpongeInterface<U = u8>> ByteDuplexSponge for T {}
 
 /// DSFS-level 64-byte protocol identifier for the compiled non-interactive argument.
 ///
-/// This tags the *NARG format* (DSFS[IA] with salt length and sponge `H`), not just the
-/// underlying interactive argument. Different salts or sponge choices get distinct ids,
-/// while `StdHash` + `SALT_LEN = 0` can still be aligned explicitly with external schemes
-/// (e.g. σ-proofs `Nizk`) by choosing a compatible label here.
-fn dsfs_protocol_id<IA, H, const SALT_LEN: usize>() -> [u8; 64]
+/// Tags the full NARG format — not just the underlying IA — by hashing together:
+///   - `IA::protocol_id()` (the interactive argument's identity)
+///   - the sponge type name (encodes the hash function choice)
+///   - `SALT_LEN` (encodes the salt policy)
+///
+/// Different sponge choices or salt lengths produce distinct domain separators even
+/// for the same underlying IA, preventing cross-format proof confusion.
+/// Build the full 64-byte DSFS domain separator: `ia_id[32] || sponge_tag[32]`.
+///
+/// The IA/IR supplies a 32-byte human-readable label (`protocol_id()`); the
+/// sponge type supplies a 32-byte tag encoding the hash-function choice.
+/// Concatenating the two gives a domain separator that uniquely identifies
+/// both the protocol and its compiled NARG format — matching sigma-proofs'
+/// convention of embedding the ciphersuite in the ASCII label.
+fn build_domain_sep(ia_id: [u8; 32], sponge_tag: [u8; 32]) -> [u8; 64] {
+    let mut id = [0u8; 64];
+    id[..32].copy_from_slice(&ia_id);
+    id[32..].copy_from_slice(&sponge_tag);
+    id
+}
+
+fn dsfs_protocol_id<IA, H>() -> [u8; 64]
 where
-    H: ByteDuplexSponge,
+    H: SpongeTag,
     IA: InteractiveArgument,
 {
-    // Keep this ASCII and <= 64 bytes; type names are long, so we rely on them alone for now.
-    // If we ever need exact cross-language alignment, we can specialize the label per IA/H pair.
-    spongefish_protocol_id(core::format_args!(
-        "DSFS[{};salt={};sponge={}]",
-        core::any::type_name::<IA>(),
-        SALT_LEN,
-        core::any::type_name::<H>(),
-    ))
+    build_domain_sep(IA::protocol_id(), H::TAG)
 }
+
+fn dsfs_reduction_protocol_id<IR, H>() -> [u8; 64]
+where
+    H: SpongeTag,
+    IR: InteractiveReduction,
+{
+    build_domain_sep(IR::protocol_id(), H::TAG)
+}
+
 
 /// Non-interactive prover with explicit salt length and duplex sponge `H`.
 #[inline]
@@ -47,13 +66,13 @@ pub fn prove_with_sponge_and_salt<IA, H, const SALT_LEN: usize>(
     witness: &IA::Witness,
 ) -> Vec<u8>
 where
-    H: ByteDuplexSponge,
+    H: SpongeTag,
     IA: InteractiveArgument,
     IA::Instance: Encoding<[H::U]>,
     [u8; 64]: Encoding<[H::U]>,
     [u8; SALT_LEN]: Encoding<[H::U]>,
 {
-    let domsep = DomainSeparator::new(dsfs_protocol_id::<IA, H, SALT_LEN>())
+    let domsep = DomainSeparator::new(dsfs_protocol_id::<IA, H>())
         .session(session)
         .instance(instance);
 
@@ -74,7 +93,7 @@ pub fn prove_with_sponge<IA, H>(
     witness: &IA::Witness,
 ) -> Vec<u8>
 where
-    H: ByteDuplexSponge,
+    H: SpongeTag,
     IA: InteractiveArgument,
     IA::Instance: Encoding<[H::U]>,
     [u8; 64]: Encoding<[H::U]>,
@@ -119,13 +138,13 @@ pub fn verify_with_sponge_and_salt<'a, IA, H, const SALT_LEN: usize>(
     proof: &'a [u8],
 ) -> ia_core::VerificationResult<()>
 where
-    H: ByteDuplexSponge,
+    H: SpongeTag,
     IA: InteractiveArgument,
     IA::Instance: Encoding<[H::U]>,
     [u8; 64]: Encoding<[H::U]>,
     [u8; SALT_LEN]: Encoding<[H::U]> + spongefish::NargDeserialize,
 {
-    let domsep = DomainSeparator::new(IA::protocol_id())
+    let domsep = DomainSeparator::new(dsfs_protocol_id::<IA, H>())
         .session(session)
         .instance(instance);
 
@@ -149,7 +168,7 @@ pub fn verify_with_sponge<'a, IA, H>(
     proof: &'a [u8],
 ) -> ia_core::VerificationResult<()>
 where
-    H: ByteDuplexSponge,
+    H: SpongeTag,
     IA: InteractiveArgument,
     IA::Instance: Encoding<[H::U]>,
     [u8; 64]: Encoding<[H::U]>,
@@ -193,13 +212,13 @@ pub fn prove_reduction_with_sponge_and_salt<IR, H, const SALT_LEN: usize>(
     witness: &IR::SourceWitness,
 ) -> Vec<u8>
 where
-    H: ByteDuplexSponge,
+    H: SpongeTag,
     IR: InteractiveReduction,
     IR::SourceInstance: Encoding<[H::U]>,
     [u8; 64]: Encoding<[H::U]>,
     [u8; SALT_LEN]: Encoding<[H::U]>,
 {
-    let domsep = DomainSeparator::new(IR::protocol_id())
+    let domsep = DomainSeparator::new(dsfs_reduction_protocol_id::<IR, H>())
         .session(session)
         .instance(instance);
 
@@ -219,7 +238,7 @@ pub fn prove_reduction_with_sponge<IR, H>(
     witness: &IR::SourceWitness,
 ) -> Vec<u8>
 where
-    H: ByteDuplexSponge,
+    H: SpongeTag,
     IR: InteractiveReduction,
     IR::SourceInstance: Encoding<[H::U]>,
     [u8; 64]: Encoding<[H::U]>,
@@ -266,13 +285,13 @@ pub fn verify_reduction_with_sponge_and_salt<'a, IR, H, const SALT_LEN: usize>(
     proof: &'a [u8],
 ) -> ia_core::VerificationResult<IR::TargetInstance>
 where
-    H: ByteDuplexSponge,
+    H: SpongeTag,
     IR: InteractiveReduction,
     IR::SourceInstance: Encoding<[H::U]>,
     [u8; 64]: Encoding<[H::U]>,
     [u8; SALT_LEN]: Encoding<[H::U]> + spongefish::NargDeserialize,
 {
-    let domsep = DomainSeparator::new(IR::protocol_id())
+    let domsep = DomainSeparator::new(dsfs_reduction_protocol_id::<IR, H>())
         .session(session)
         .instance(instance);
 
@@ -296,7 +315,7 @@ pub fn verify_reduction_with_sponge<'a, IR, H>(
     proof: &'a [u8],
 ) -> ia_core::VerificationResult<IR::TargetInstance>
 where
-    H: ByteDuplexSponge,
+    H: SpongeTag,
     IR: InteractiveReduction,
     IR::SourceInstance: Encoding<[H::U]>,
     [u8; 64]: Encoding<[H::U]>,

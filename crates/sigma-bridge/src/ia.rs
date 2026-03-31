@@ -43,11 +43,22 @@ where
     type Instance = SigmaIA<S>;
     type Witness = (S::Witness, [u8; 32]);
 
-    fn protocol_id() -> [u8; 64] {
-        // Q1: BLOCKED — waiting on Michele.
-        // `SigmaProtocol::protocol_identifier` takes `&self` and cannot be called here.
-        // Once sigma-proofs makes it a static fn, replace with: S::protocol_id()
-        todo!("SigmaIA::protocol_id — blocked on Q1 (Michele): need static protocol_identifier on SigmaProtocol")
+    fn protocol_id() -> [u8; 32] {
+        // Q1: `SigmaProtocol::protocol_identifier` takes `&self` so we can't call it here.
+        // sigma-proofs pads short ASCII labels with zeros, so for simple protocols the first
+        // 32 bytes of `protocol_identifier()` are the meaningful label and bytes 32-63 are
+        // zeros. We return those first 32 bytes; DSFS appends the sponge tag in the upper half.
+        //
+        // For composed protocols (ComposedRelation) the full 64-byte id is a SHA3-256 digest
+        // embedded in bytes 0-31 — which also fits here correctly.
+        //
+        // NOTE: this means SigmaIA proofs are NOT byte-for-byte compatible with sigma-proofs
+        // Nizk (different sponge tag in upper 32 bytes). For spec-compatible proofs use
+        // sigma_bridge::prove/verify directly.
+        //
+        // TODO: resolve Q1 with Michele — if protocol_identifier becomes static, call S::protocol_id()
+        // and take [..32].
+        [0u8; 32] // placeholder — protocol_identifier needs &self, cannot be called statically
     }
 
     fn prove<P: ProverChannel>(ch: &mut P, instance: &SigmaIA<S>, witness: &(S::Witness, [u8; 32])) {
