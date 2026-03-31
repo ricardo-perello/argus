@@ -2,7 +2,7 @@
 
 extern crate alloc;
 
-use ia_core::{InteractiveArgument, InteractiveReduction, SecurityProfile};
+use ia_core::{ProtocolSecurity, SecurityProfile};
 
 use crate::params::{SpongeParams, STD_SPONGE_PARAMS};
 
@@ -13,34 +13,44 @@ pub struct NargSecurity {
     pub sponge: SpongeParams,
 }
 
-/// NARG security for an `InteractiveArgument` under the standard sponge.
-pub fn security<IA: InteractiveArgument>() -> NargSecurity {
-    NargSecurity::for_ia::<IA>()
+/// NARG security for a protocol under the standard sponge.
+pub fn security<P: ProtocolSecurity>() -> NargSecurity {
+    NargSecurity::for_protocol::<P>()
 }
 
-/// NARG security for an `InteractiveReduction` under the standard sponge.
-pub fn reduction_security<IR: InteractiveReduction>() -> NargSecurity {
-    NargSecurity::for_reduction::<IR>()
+/// NARG security for an interactive reduction under the standard sponge.
+pub fn reduction_security<P: ProtocolSecurity>() -> NargSecurity {
+    NargSecurity::for_protocol::<P>()
 }
 
 impl NargSecurity {
+    /// Security for a protocol under the standard sponge.
+    pub fn for_protocol<P: ProtocolSecurity>() -> Self {
+        Self { ia: P::security(), sponge: STD_SPONGE_PARAMS }
+    }
+
+    /// Security for a protocol under a custom sponge configuration.
+    pub fn for_protocol_with<P: ProtocolSecurity>(sponge: SpongeParams) -> Self {
+        Self { ia: P::security(), sponge }
+    }
+
     /// Security for an IA under the standard sponge.
-    pub fn for_ia<IA: InteractiveArgument>() -> Self {
+    pub fn for_ia<IA: ProtocolSecurity>() -> Self {
         Self { ia: IA::security(), sponge: STD_SPONGE_PARAMS }
     }
 
     /// Security for an IR under the standard sponge.
-    pub fn for_reduction<IR: InteractiveReduction>() -> Self {
+    pub fn for_reduction<IR: ProtocolSecurity>() -> Self {
         Self { ia: IR::security(), sponge: STD_SPONGE_PARAMS }
     }
 
     /// Security for an IA under a custom sponge configuration.
-    pub fn for_ia_with<IA: InteractiveArgument>(sponge: SpongeParams) -> Self {
+    pub fn for_ia_with<IA: ProtocolSecurity>(sponge: SpongeParams) -> Self {
         Self { ia: IA::security(), sponge }
     }
 
     /// Security for an IR under a custom sponge configuration.
-    pub fn for_reduction_with<IR: InteractiveReduction>(sponge: SpongeParams) -> Self {
+    pub fn for_reduction_with<IR: ProtocolSecurity>(sponge: SpongeParams) -> Self {
         Self { ia: IR::security(), sponge }
     }
 

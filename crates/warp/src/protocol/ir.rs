@@ -7,8 +7,8 @@ use ark_poly::{DenseMultilinearExtension, Polynomial};
 use ark_std::log2;
 
 use ia_core::{
-    InteractiveArgument, InteractiveReduction, Prove, ProverChannel, ReduceProve, ReduceVerify,
-    ReducedArgument, SecurityErrorBound, SecurityProfile, Verify, VerificationResult,
+    InteractiveArgument, InteractiveReduction, ProtocolSecurity, ProverChannel,
+    ReducedArgument, SecurityErrorBound, SecurityProfile, VerificationResult, VerifierChannel,
 };
 
 use crate::protocol::warp::{DeciderInstance, DeciderWitness, WARPInstance, WARPWitness};
@@ -24,10 +24,10 @@ pub struct WARPReduction<F, P, C, MT>(PhantomData<(F, P, C, MT)>);
 
 impl<F, P, C, MT> InteractiveReduction for WARPReduction<F, P, C, MT>
 where
-    F: Field,
-    P: BundledPESAT<F>,
+    F: Field + PrimeField + Send + Sync + spongefish::Encoding + spongefish::Decoding + ia_core::Deserialize,
+    P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
     C: LinearCode<F> + Clone,
-    MT: Config,
+    MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
 {
     type SourceInstance = WARPInstance<F, P, C, MT>;
     type SourceWitness = WARPWitness<F, MT>;
@@ -38,28 +38,7 @@ where
         spongefish::protocol_id(core::format_args!("argus::warp::reduction"))
     }
 
-    fn security() -> SecurityProfile {
-        // TODO : Conservative placeholder bound until a full, parameterized WARP analysis
-        // is encoded in the type-level IA metadata.
-        SecurityProfile {
-            soundness_error: SecurityErrorBound::new(|_t| 1.0),
-            knowledge_soundness_error: SecurityErrorBound::new(|_t| 1.0),
-            hvzk_error: SecurityErrorBound::new(|_t| 1.0),
-            num_rounds: 0,
-            verifier_challenge_lengths: Vec::new(),
-        }
-    }
-}
-
-impl<F, P, C, MT, Ch> ReduceProve<Ch> for WARPReduction<F, P, C, MT>
-where
-    F: Field + PrimeField + Send + Sync + spongefish::Encoding + spongefish::Decoding,
-    P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
-    C: LinearCode<F> + Clone,
-    MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
-    Ch: ProverChannel,
-{
-    fn prove(
+    fn prove<Ch: ProverChannel>(
         ch: &mut Ch,
         instance: &WARPInstance<F, P, C, MT>,
         witness: &WARPWitness<F, MT>,
@@ -84,17 +63,8 @@ where
         };
         (target_instance, acc_witness)
     }
-}
 
-impl<F, P, C, MT, Ch> ReduceVerify<Ch> for WARPReduction<F, P, C, MT>
-where
-    F: Field + PrimeField + Send + Sync + spongefish::Encoding + spongefish::Decoding + ia_core::Deserialize,
-    P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
-    C: LinearCode<F> + Clone,
-    MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
-    Ch: ia_core::VerifierChannel,
-{
-    fn verify(
+    fn verify<Ch: VerifierChannel>(
         ch: &mut Ch,
         instance: &WARPInstance<F, P, C, MT>,
     ) -> VerificationResult<DeciderInstance<F, P, C, MT>> {
@@ -113,6 +83,26 @@ where
     }
 }
 
+impl<F, P, C, MT> ProtocolSecurity for WARPReduction<F, P, C, MT>
+where
+    F: Field,
+    P: BundledPESAT<F>,
+    C: LinearCode<F> + Clone,
+    MT: Config,
+{
+    fn security() -> SecurityProfile {
+        // TODO: Conservative placeholder bound until a full, parameterized WARP analysis
+        // is encoded in the type-level IA metadata.
+        SecurityProfile {
+            soundness_error: SecurityErrorBound::new(|_t| 1.0),
+            knowledge_soundness_error: SecurityErrorBound::new(|_t| 1.0),
+            hvzk_error: SecurityErrorBound::new(|_t| 1.0),
+            num_rounds: 0,
+            verifier_challenge_lengths: Vec::new(),
+        }
+    }
+}
+
 // -----------------------------------------------------------------------
 // WARPDeciderIA: the decider as an InteractiveArgument
 // -----------------------------------------------------------------------
@@ -121,10 +111,10 @@ pub struct WARPDeciderIA<F, P, C, MT>(PhantomData<(F, P, C, MT)>);
 
 impl<F, P, C, MT> InteractiveArgument for WARPDeciderIA<F, P, C, MT>
 where
-    F: Field,
-    P: BundledPESAT<F>,
+    F: Field + PrimeField + Send + Sync + spongefish::Encoding + spongefish::Decoding + ia_core::Deserialize,
+    P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
     C: LinearCode<F> + Clone,
-    MT: Config,
+    MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
 {
     type Instance = DeciderInstance<F, P, C, MT>;
     type Witness = DeciderWitness<F, MT>;
@@ -133,26 +123,7 @@ where
         spongefish::protocol_id(core::format_args!("argus::warp::decider"))
     }
 
-    fn security() -> SecurityProfile {
-        SecurityProfile {
-            soundness_error: SecurityErrorBound::zero(),
-            knowledge_soundness_error: SecurityErrorBound::zero(),
-            hvzk_error: SecurityErrorBound::zero(),
-            num_rounds: 0,
-            verifier_challenge_lengths: Vec::new(),
-        }
-    }
-}
-
-impl<F, P, C, MT, Ch> Prove<Ch> for WARPDeciderIA<F, P, C, MT>
-where
-    F: Field + PrimeField + Send + Sync + spongefish::Encoding + spongefish::Decoding,
-    P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
-    C: LinearCode<F> + Clone,
-    MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
-    Ch: ProverChannel,
-{
-    fn prove(ch: &mut Ch, _instance: &DeciderInstance<F, P, C, MT>, witness: &DeciderWitness<F, MT>) {
+    fn prove<Ch: ProverChannel>(ch: &mut Ch, _instance: &DeciderInstance<F, P, C, MT>, witness: &DeciderWitness<F, MT>) {
         let (_trees, codewords, w_parts) = witness;
         for val in &codewords[0] {
             ch.send_prover_message(val);
@@ -161,17 +132,8 @@ where
             ch.send_prover_message(val);
         }
     }
-}
 
-impl<F, P, C, MT, Ch> Verify<Ch> for WARPDeciderIA<F, P, C, MT>
-where
-    F: Field + PrimeField + Send + Sync + spongefish::Encoding + spongefish::Decoding + ia_core::Deserialize,
-    P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
-    C: LinearCode<F> + Clone,
-    MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
-    Ch: ia_core::VerifierChannel,
-{
-    fn verify(
+    fn verify<Ch: VerifierChannel>(
         ch: &mut Ch,
         instance: &DeciderInstance<F, P, C, MT>,
     ) -> VerificationResult<()> {
@@ -227,6 +189,24 @@ where
         }
 
         Ok(())
+    }
+}
+
+impl<F, P, C, MT> ProtocolSecurity for WARPDeciderIA<F, P, C, MT>
+where
+    F: Field,
+    P: BundledPESAT<F>,
+    C: LinearCode<F> + Clone,
+    MT: Config,
+{
+    fn security() -> SecurityProfile {
+        SecurityProfile {
+            soundness_error: SecurityErrorBound::zero(),
+            knowledge_soundness_error: SecurityErrorBound::zero(),
+            hvzk_error: SecurityErrorBound::zero(),
+            num_rounds: 0,
+            verifier_challenge_lengths: Vec::new(),
+        }
     }
 }
 

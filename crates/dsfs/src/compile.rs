@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 
 use rand_core::RngCore;
 
-use ia_core::{Prove, ReduceProve, ReduceVerify, Verify};
+use ia_core::{InteractiveArgument, InteractiveReduction};
 use spongefish::{protocol_id as spongefish_protocol_id, DomainSeparator, DuplexSpongeInterface, Encoding};
 
 use crate::channel::{SpongeProver, SpongeVerifier};
@@ -26,7 +26,7 @@ impl<T: DuplexSpongeInterface<U = u8>> ByteDuplexSponge for T {}
 fn dsfs_protocol_id<IA, H, const SALT_LEN: usize>() -> [u8; 64]
 where
     H: ByteDuplexSponge,
-    IA: Prove<SpongeProver<H>>,
+    IA: InteractiveArgument,
 {
     // Keep this ASCII and <= 64 bytes; type names are long, so we rely on them alone for now.
     // If we ever need exact cross-language alignment, we can specialize the label per IA/H pair.
@@ -48,7 +48,7 @@ pub fn prove_with_sponge_and_salt<IA, H, const SALT_LEN: usize>(
 ) -> Vec<u8>
 where
     H: ByteDuplexSponge,
-    IA: Prove<SpongeProver<H>>,
+    IA: InteractiveArgument,
     IA::Instance: Encoding<[H::U]>,
     [u8; 64]: Encoding<[H::U]>,
     [u8; SALT_LEN]: Encoding<[H::U]>,
@@ -75,7 +75,7 @@ pub fn prove_with_sponge<IA, H>(
 ) -> Vec<u8>
 where
     H: ByteDuplexSponge,
-    IA: Prove<SpongeProver<H>>,
+    IA: InteractiveArgument,
     IA::Instance: Encoding<[H::U]>,
     [u8; 64]: Encoding<[H::U]>,
 {
@@ -90,7 +90,7 @@ pub fn prove_with_salt<IA, const SALT_LEN: usize>(
     witness: &IA::Witness,
 ) -> Vec<u8>
 where
-    IA: Prove<SpongeProver>,
+    IA: InteractiveArgument,
     IA::Instance: Encoding,
 {
     prove_with_sponge_and_salt::<IA, Keccak, SALT_LEN>(
@@ -105,7 +105,7 @@ where
 #[inline(always)]
 pub fn prove<IA>(session: [u8; 64], instance: &IA::Instance, witness: &IA::Witness) -> Vec<u8>
 where
-    IA: Prove<SpongeProver>,
+    IA: InteractiveArgument,
     IA::Instance: Encoding,
 {
     prove_with_salt::<IA, 0>(session, instance, witness)
@@ -120,7 +120,7 @@ pub fn verify_with_sponge_and_salt<'a, IA, H, const SALT_LEN: usize>(
 ) -> ia_core::VerificationResult<()>
 where
     H: ByteDuplexSponge,
-    IA: Verify<SpongeVerifier<'a, H>>,
+    IA: InteractiveArgument,
     IA::Instance: Encoding<[H::U]>,
     [u8; 64]: Encoding<[H::U]>,
     [u8; SALT_LEN]: Encoding<[H::U]> + spongefish::NargDeserialize,
@@ -150,7 +150,7 @@ pub fn verify_with_sponge<'a, IA, H>(
 ) -> ia_core::VerificationResult<()>
 where
     H: ByteDuplexSponge,
-    IA: Verify<SpongeVerifier<'a, H>>,
+    IA: InteractiveArgument,
     IA::Instance: Encoding<[H::U]>,
     [u8; 64]: Encoding<[H::U]>,
     [u8; 0]: Encoding<[H::U]> + spongefish::NargDeserialize,
@@ -165,7 +165,7 @@ pub fn verify_with_salt<'a, IA, const SALT_LEN: usize>(
     proof: &'a [u8],
 ) -> ia_core::VerificationResult<()>
 where
-    IA: Verify<SpongeVerifier<'a>>,
+    IA: InteractiveArgument,
     IA::Instance: Encoding,
     [u8; SALT_LEN]: spongefish::NargDeserialize,
 {
@@ -179,7 +179,7 @@ pub fn verify<'a, IA>(
     proof: &'a [u8],
 ) -> ia_core::VerificationResult<()>
 where
-    IA: Verify<SpongeVerifier<'a>>,
+    IA: InteractiveArgument,
     IA::Instance: Encoding,
 {
     verify_with_salt::<IA, 0>(session, instance, proof)
@@ -194,7 +194,7 @@ pub fn prove_reduction_with_sponge_and_salt<IR, H, const SALT_LEN: usize>(
 ) -> Vec<u8>
 where
     H: ByteDuplexSponge,
-    IR: ReduceProve<SpongeProver<H>>,
+    IR: InteractiveReduction,
     IR::SourceInstance: Encoding<[H::U]>,
     [u8; 64]: Encoding<[H::U]>,
     [u8; SALT_LEN]: Encoding<[H::U]>,
@@ -220,7 +220,7 @@ pub fn prove_reduction_with_sponge<IR, H>(
 ) -> Vec<u8>
 where
     H: ByteDuplexSponge,
-    IR: ReduceProve<SpongeProver<H>>,
+    IR: InteractiveReduction,
     IR::SourceInstance: Encoding<[H::U]>,
     [u8; 64]: Encoding<[H::U]>,
 {
@@ -234,7 +234,7 @@ pub fn prove_reduction_with_salt<IR, const SALT_LEN: usize>(
     witness: &IR::SourceWitness,
 ) -> Vec<u8>
 where
-    IR: ReduceProve<SpongeProver>,
+    IR: InteractiveReduction,
     IR::SourceInstance: Encoding,
 {
     prove_reduction_with_sponge_and_salt::<IR, Keccak, SALT_LEN>(
@@ -252,7 +252,7 @@ pub fn prove_reduction<IR>(
     witness: &IR::SourceWitness,
 ) -> Vec<u8>
 where
-    IR: ReduceProve<SpongeProver>,
+    IR: InteractiveReduction,
     IR::SourceInstance: Encoding,
 {
     prove_reduction_with_salt::<IR, 0>(session, instance, witness)
@@ -267,7 +267,7 @@ pub fn verify_reduction_with_sponge_and_salt<'a, IR, H, const SALT_LEN: usize>(
 ) -> ia_core::VerificationResult<IR::TargetInstance>
 where
     H: ByteDuplexSponge,
-    IR: ReduceVerify<SpongeVerifier<'a, H>>,
+    IR: InteractiveReduction,
     IR::SourceInstance: Encoding<[H::U]>,
     [u8; 64]: Encoding<[H::U]>,
     [u8; SALT_LEN]: Encoding<[H::U]> + spongefish::NargDeserialize,
@@ -297,7 +297,7 @@ pub fn verify_reduction_with_sponge<'a, IR, H>(
 ) -> ia_core::VerificationResult<IR::TargetInstance>
 where
     H: ByteDuplexSponge,
-    IR: ReduceVerify<SpongeVerifier<'a, H>>,
+    IR: InteractiveReduction,
     IR::SourceInstance: Encoding<[H::U]>,
     [u8; 64]: Encoding<[H::U]>,
     [u8; 0]: Encoding<[H::U]> + spongefish::NargDeserialize,
@@ -312,7 +312,7 @@ pub fn verify_reduction_with_salt<'a, IR, const SALT_LEN: usize>(
     proof: &'a [u8],
 ) -> ia_core::VerificationResult<IR::TargetInstance>
 where
-    IR: ReduceVerify<SpongeVerifier<'a>>,
+    IR: InteractiveReduction,
     IR::SourceInstance: Encoding,
     [u8; SALT_LEN]: spongefish::NargDeserialize,
 {
@@ -331,7 +331,7 @@ pub fn verify_reduction<'a, IR>(
     proof: &'a [u8],
 ) -> ia_core::VerificationResult<IR::TargetInstance>
 where
-    IR: ReduceVerify<SpongeVerifier<'a>>,
+    IR: InteractiveReduction,
     IR::SourceInstance: Encoding,
 {
     verify_reduction_with_salt::<IR, 0>(session, instance, proof)

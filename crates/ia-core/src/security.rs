@@ -37,6 +37,16 @@ impl SecurityErrorBound {
     }
 }
 
+/// Security metadata provider for an interactive protocol.
+///
+/// Separate from `InteractiveArgument` / `InteractiveReduction` so that protocols
+/// without fully specified bounds can still implement the core traits.
+/// Composition structs (`ChainedReduction`, `ReducedArgument`) provide conditional
+/// impls when both sub-protocols implement this.
+pub trait ProtocolSecurity {
+    fn security() -> SecurityProfile;
+}
+
 impl core::fmt::Debug for SecurityErrorBound {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "SecurityErrorBound({} terms)", self.0.len())

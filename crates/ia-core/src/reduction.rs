@@ -1,10 +1,9 @@
-//! Interactive oracle reduction traits (`InteractiveReduction`, `ReduceProve`, `ReduceVerify`).
+//! Interactive oracle reduction trait (`InteractiveReduction`).
 
 use crate::channel::{ProverChannel, VerifierChannel};
 use crate::error::VerificationResult;
-use crate::security::SecurityProfile;
 
-/// Metadata for a public-coin interactive oracle reduction.
+/// Metadata and logic for a public-coin interactive oracle reduction.
 ///
 /// Unlike an `InteractiveArgument` whose verifier outputs accept/reject,
 /// an `InteractiveReduction` verifier outputs a **new instance** of a
@@ -23,28 +22,17 @@ pub trait InteractiveReduction {
     /// Unique 64-byte protocol identifier for domain separation.
     fn protocol_id() -> [u8; 64];
 
-    /// Security metadata for this protocol.
-    fn security() -> SecurityProfile;
-}
-
-/// Prover logic for an interactive reduction.
-///
-/// Takes `(source_instance, source_witness)` and returns both the target
-/// instance and target witness.  In a public-coin protocol the prover can
-/// always compute the target instance (it sees the same transcript as the
-/// verifier).  Returning it here enables automatic sequential composition.
-pub trait ReduceProve<P: ProverChannel>: InteractiveReduction {
-    fn prove(
+    /// Prover logic: takes `(source_instance, source_witness)` and returns both the target
+    /// instance and target witness.  In a public-coin protocol the prover can always compute
+    /// the target instance (it sees the same transcript as the verifier).
+    fn prove<P: ProverChannel>(
         ch: &mut P,
         instance: &Self::SourceInstance,
         witness: &Self::SourceWitness,
     ) -> (Self::TargetInstance, Self::TargetWitness);
-}
 
-/// Verifier logic for an interactive reduction: returns a new instance,
-/// not accept/reject.
-pub trait ReduceVerify<V: VerifierChannel>: InteractiveReduction {
-    fn verify(
+    /// Verifier logic: returns a new instance, not accept/reject.
+    fn verify<V: VerifierChannel>(
         ch: &mut V,
         instance: &Self::SourceInstance,
     ) -> VerificationResult<Self::TargetInstance>;

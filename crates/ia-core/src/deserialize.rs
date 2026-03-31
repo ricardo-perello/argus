@@ -16,3 +16,6 @@ impl<T: spongefish::NargDeserialize> Deserialize for T {
         T::deserialize_from_narg(buf).map_err(|_| VerificationError)
     }
 }
+
+
+// TODO: why is this necessary?

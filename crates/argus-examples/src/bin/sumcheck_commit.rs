@@ -21,8 +21,8 @@ use rand::rngs::OsRng;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
 use ia_core::{
-    InteractiveArgument, Prove, SecurityErrorBound, SecurityProfile, Verify, VerificationError,
-    VerificationResult,
+    InteractiveArgument, ProtocolSecurity, ProverChannel, SecurityErrorBound, SecurityProfile,
+    VerificationError, VerificationResult, VerifierChannel,
 };
 
 use spongefish::Encoding;
@@ -118,7 +118,7 @@ impl Config for Sha256MerkleConfig {
 }
 
 // ---------------------------------------------------------------------------
-// InteractiveArgument: metadata
+// InteractiveArgument impl
 // ---------------------------------------------------------------------------
 
 struct CommittedSumcheck;
@@ -133,24 +133,8 @@ impl InteractiveArgument for CommittedSumcheck {
         ))
     }
 
-    fn security() -> SecurityProfile {
-        SecurityProfile {
-            soundness_error: SecurityErrorBound::zero(),
-            knowledge_soundness_error: SecurityErrorBound::zero(),
-            hvzk_error: SecurityErrorBound::zero(),
-            num_rounds: 0,
-            verifier_challenge_lengths: vec![],
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Prove: linear prover logic against an abstract channel
-// ---------------------------------------------------------------------------
-
-impl<P: ia_core::ProverChannel> Prove<P> for CommittedSumcheck {
     #[allow(non_snake_case)]
-    fn prove(ch: &mut P, instance: &Instance, evals: &Vec<Fr>) {
+    fn prove<P: ProverChannel>(ch: &mut P, instance: &Instance, evals: &Vec<Fr>) {
         let n = instance.n as usize;
         let (tree, root) = Self::build_merkle_tree(evals);
         assert_eq!(root.as_slice(), instance.root.0.as_slice());
@@ -198,14 +182,8 @@ impl<P: ia_core::ProverChannel> Prove<P> for CommittedSumcheck {
             path_bytes: Bytes(path_bytes),
         });
     }
-}
 
-// ---------------------------------------------------------------------------
-// Verify: linear verifier logic against an abstract channel
-// ---------------------------------------------------------------------------
-
-impl<V: ia_core::VerifierChannel> Verify<V> for CommittedSumcheck {
-    fn verify(ch: &mut V, instance: &Instance) -> VerificationResult<()> {
+    fn verify<V: VerifierChannel>(ch: &mut V, instance: &Instance) -> VerificationResult<()> {
         let n = instance.n as usize;
 
         let root: Bytes = ch.read_prover_message()?;
@@ -260,6 +238,18 @@ impl<V: ia_core::VerifierChannel> Verify<V> for CommittedSumcheck {
         }
 
         Ok(())
+    }
+}
+
+impl ProtocolSecurity for CommittedSumcheck {
+    fn security() -> SecurityProfile {
+        SecurityProfile {
+            soundness_error: SecurityErrorBound::zero(),
+            knowledge_soundness_error: SecurityErrorBound::zero(),
+            hvzk_error: SecurityErrorBound::zero(),
+            num_rounds: 0,
+            verifier_challenge_lengths: vec![],
+        }
     }
 }
 

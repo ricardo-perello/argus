@@ -23,8 +23,8 @@ use ark_std::UniformRand;
 use rand::rngs::OsRng;
 
 use ia_core::{
-    InteractiveReduction, ReduceProve, ReduceVerify, SecurityErrorBound, SecurityProfile,
-    VerificationError, VerificationResult,
+    InteractiveReduction, ProtocolSecurity, ProverChannel, SecurityErrorBound, SecurityProfile,
+    VerificationError, VerificationResult, VerifierChannel,
 };
 
 // ---------------------------------------------------------------------------
@@ -47,14 +47,10 @@ struct TargetInstance {
 }
 
 // ---------------------------------------------------------------------------
-// Protocol type
+// InteractiveReduction impl
 // ---------------------------------------------------------------------------
 
 struct Accumulate;
-
-// ---------------------------------------------------------------------------
-// InteractiveReduction: metadata
-// ---------------------------------------------------------------------------
 
 impl InteractiveReduction for Accumulate {
     type SourceInstance = SourceInstance;
@@ -68,23 +64,7 @@ impl InteractiveReduction for Accumulate {
         ))
     }
 
-    fn security() -> SecurityProfile {
-        SecurityProfile {
-            soundness_error: SecurityErrorBound::zero(),
-            knowledge_soundness_error: SecurityErrorBound::zero(),
-            hvzk_error: SecurityErrorBound::zero(),
-            num_rounds: 1,
-            verifier_challenge_lengths: vec![1],
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// ReduceProve: prover sends witness values, reads challenge
-// ---------------------------------------------------------------------------
-
-impl<P: ia_core::ProverChannel> ReduceProve<P> for Accumulate {
-    fn prove(
+    fn prove<P: ProverChannel>(
         ch: &mut P,
         instance: &SourceInstance,
         witness: &Vec<Fr>,
@@ -107,15 +87,11 @@ impl<P: ia_core::ProverChannel> ReduceProve<P> for Accumulate {
 
         (TargetInstance { acc_claim, acc_value }, ())
     }
-}
 
-// ---------------------------------------------------------------------------
-// ReduceVerify: verifier reads witness values, squeezes alpha, computes
-//               accumulated (claim, value) pair
-// ---------------------------------------------------------------------------
-
-impl<V: ia_core::VerifierChannel> ReduceVerify<V> for Accumulate {
-    fn verify(ch: &mut V, instance: &SourceInstance) -> VerificationResult<TargetInstance> {
+    fn verify<V: VerifierChannel>(
+        ch: &mut V,
+        instance: &SourceInstance,
+    ) -> VerificationResult<TargetInstance> {
         let n = instance.claims.len();
 
         let mut values = Vec::with_capacity(n);
@@ -139,6 +115,18 @@ impl<V: ia_core::VerifierChannel> ReduceVerify<V> for Accumulate {
             acc_claim,
             acc_value,
         })
+    }
+}
+
+impl ProtocolSecurity for Accumulate {
+    fn security() -> SecurityProfile {
+        SecurityProfile {
+            soundness_error: SecurityErrorBound::zero(),
+            knowledge_soundness_error: SecurityErrorBound::zero(),
+            hvzk_error: SecurityErrorBound::zero(),
+            num_rounds: 1,
+            verifier_challenge_lengths: vec![1],
+        }
     }
 }
 

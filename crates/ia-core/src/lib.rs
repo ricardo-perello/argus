@@ -22,10 +22,10 @@ mod security;
 
 pub use spongefish::{Decoding, Encoding, NargSerialize};
 
-pub use argument::{InteractiveArgument, Prove, Verify};
+pub use argument::InteractiveArgument;
 pub use channel::{ProverChannel, VerifierChannel};
 pub use compose::{ChainedReduction, ReducedArgument};
 pub use deserialize::Deserialize;
 pub use error::{VerificationError, VerificationResult};
-pub use reduction::{InteractiveReduction, ReduceProve, ReduceVerify};
-pub use security::{SecurityErrorBound, SecurityProfile};
+pub use reduction::InteractiveReduction;
+pub use security::{ProtocolSecurity, SecurityErrorBound, SecurityProfile};

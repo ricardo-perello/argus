@@ -20,8 +20,8 @@ use ark_std::UniformRand;
 use rand::rngs::OsRng;
 
 use ia_core::{
-    Decoding, Deserialize, Encoding, InteractiveArgument, Prove, SecurityErrorBound,
-    SecurityProfile, Verify, VerificationError, VerificationResult,
+    Decoding, Deserialize, Encoding, InteractiveArgument, ProtocolSecurity, ProverChannel,
+    SecurityErrorBound, SecurityProfile, VerificationError, VerificationResult, VerifierChannel,
 };
 
 // ---------------------------------------------------------------------------
@@ -30,9 +30,10 @@ use ia_core::{
 
 struct Schnorr<G: CurveGroup>(core::marker::PhantomData<G>);
 
-impl<G: CurveGroup> InteractiveArgument for Schnorr<G>
+impl<G> InteractiveArgument for Schnorr<G>
 where
-    G::ScalarField: PrimeField,
+    G: CurveGroup + PrimeGroup + Encoding + Deserialize,
+    G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
 {
     type Instance = [G; 2]; // [generator, public_key]
     type Witness = G::ScalarField;
@@ -41,6 +42,37 @@ where
         spongefish::protocol_id(core::format_args!("schnorr proof"))
     }
 
+    #[allow(non_snake_case)]
+    fn prove<P: ProverChannel>(ch: &mut P, instance: &[G; 2], witness: &G::ScalarField) {
+        let k = G::ScalarField::rand(&mut OsRng);
+        let K = instance[0] * k;
+
+        ch.send_prover_message(&K);
+        let c: G::ScalarField = ch.read_verifier_message();
+        let r = k + c * witness;
+        ch.send_prover_message(&r);
+    }
+
+    #[allow(non_snake_case)]
+    fn verify<V: VerifierChannel>(ch: &mut V, instance: &[G; 2]) -> VerificationResult<()> {
+        let (G_gen, X) = (instance[0], instance[1]);
+
+        let K: G = ch.read_prover_message()?;
+        let c: G::ScalarField = ch.send_verifier_message();
+        let r: G::ScalarField = ch.read_prover_message()?;
+
+        if G_gen * r == K + X * c {
+            Ok(())
+        } else {
+            Err(VerificationError)
+        }
+    }
+}
+
+impl<G: CurveGroup> ProtocolSecurity for Schnorr<G>
+where
+    G::ScalarField: PrimeField,
+{
     fn security() -> SecurityProfile {
         fn one_over_q<F: PrimeField>(_t: u64) -> f64 {
             2_f64.powi(-(F::MODULUS_BIT_SIZE as i32))
@@ -55,54 +87,6 @@ where
             hvzk_error: SecurityErrorBound::zero(),
             num_rounds: 1,
             verifier_challenge_lengths: vec![1],
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Prove: linear prover logic against an abstract channel
-// ---------------------------------------------------------------------------
-
-impl<G, P> Prove<P> for Schnorr<G>
-where
-    G: CurveGroup + PrimeGroup + Encoding,
-    G::ScalarField: Encoding + Decoding,
-    P: ia_core::ProverChannel,
-{
-    #[allow(non_snake_case)]
-    fn prove(ch: &mut P, instance: &[G; 2], witness: &G::ScalarField) {
-        let k = G::ScalarField::rand(&mut OsRng);
-        let K = instance[0] * k;
-
-        ch.send_prover_message(&K);
-        let c: G::ScalarField = ch.read_verifier_message();
-        let r = k + c * witness;
-        ch.send_prover_message(&r);
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Verify: linear verifier logic against an abstract channel
-// ---------------------------------------------------------------------------
-
-impl<G, V> Verify<V> for Schnorr<G>
-where
-    G: CurveGroup + PrimeGroup + Encoding + Deserialize,
-    G::ScalarField: Encoding + Decoding + Deserialize,
-    V: ia_core::VerifierChannel,
-{
-    #[allow(non_snake_case)]
-    fn verify(ch: &mut V, instance: &[G; 2]) -> VerificationResult<()> {
-        let (G_gen, X) = (instance[0], instance[1]);
-
-        let K: G = ch.read_prover_message()?;
-        let c: G::ScalarField = ch.send_verifier_message();
-        let r: G::ScalarField = ch.read_prover_message()?;
-
-        if G_gen * r == K + X * c {
-            Ok(())
-        } else {
-            Err(VerificationError)
         }
     }
 }
@@ -183,7 +167,7 @@ mod tests {
     use super::*;
     use ark_ff::PrimeField;
     use dsfs::STD_SPONGE_PARAMS;
-    use ia_core::InteractiveArgument;
+    use ia_core::{ProtocolSecurity};
 
     type G = ark_curve25519::EdwardsProjective;
     type F = ark_curve25519::Fr;

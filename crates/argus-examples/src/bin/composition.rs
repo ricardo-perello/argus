@@ -17,9 +17,9 @@ use ark_std::UniformRand;
 use rand::rngs::OsRng;
 
 use ia_core::{
-    ChainedReduction, InteractiveArgument, InteractiveReduction, Prove, ReduceProve, ReduceVerify,
-    ReducedArgument, SecurityErrorBound, SecurityProfile, Verify, VerificationError,
-    VerificationResult,
+    ChainedReduction, InteractiveArgument, InteractiveReduction, ProtocolSecurity, ProverChannel,
+    ReducedArgument, SecurityErrorBound, SecurityProfile, VerificationError, VerificationResult,
+    VerifierChannel,
 };
 
 // ---------------------------------------------------------------------------
@@ -62,19 +62,7 @@ impl InteractiveReduction for FoldPairs {
         spongefish::protocol_id(core::format_args!("fold pairs"))
     }
 
-    fn security() -> SecurityProfile {
-        SecurityProfile {
-            soundness_error: SecurityErrorBound::zero(),
-            knowledge_soundness_error: SecurityErrorBound::zero(),
-            hvzk_error: SecurityErrorBound::zero(),
-            num_rounds: 1,
-            verifier_challenge_lengths: vec![1],
-        }
-    }
-}
-
-impl<P: ia_core::ProverChannel> ReduceProve<P> for FoldPairs {
-    fn prove(ch: &mut P, instance: &Claims, witness: &Values) -> (Claims, Values) {
+    fn prove<P: ProverChannel>(ch: &mut P, instance: &Claims, witness: &Values) -> (Claims, Values) {
         let n = instance.0.len();
         assert!(n % 2 == 0 && n >= 2);
 
@@ -92,10 +80,8 @@ impl<P: ia_core::ProverChannel> ReduceProve<P> for FoldPairs {
 
         (Claims(folded_claims), Values(folded_values))
     }
-}
 
-impl<V: ia_core::VerifierChannel> ReduceVerify<V> for FoldPairs {
-    fn verify(ch: &mut V, instance: &Claims) -> VerificationResult<Claims> {
+    fn verify<V: VerifierChannel>(ch: &mut V, instance: &Claims) -> VerificationResult<Claims> {
         let n = instance.0.len();
 
         // Read prover-committed values (absorbed into transcript before the
@@ -111,6 +97,18 @@ impl<V: ia_core::VerifierChannel> ReduceVerify<V> for FoldPairs {
         }
 
         Ok(Claims(folded))
+    }
+}
+
+impl ProtocolSecurity for FoldPairs {
+    fn security() -> SecurityProfile {
+        SecurityProfile {
+            soundness_error: SecurityErrorBound::zero(),
+            knowledge_soundness_error: SecurityErrorBound::zero(),
+            hvzk_error: SecurityErrorBound::zero(),
+            num_rounds: 1,
+            verifier_challenge_lengths: vec![1],
+        }
     }
 }
 
@@ -130,19 +128,7 @@ impl InteractiveReduction for Accumulate {
         spongefish::protocol_id(core::format_args!("accumulate"))
     }
 
-    fn security() -> SecurityProfile {
-        SecurityProfile {
-            soundness_error: SecurityErrorBound::zero(),
-            knowledge_soundness_error: SecurityErrorBound::zero(),
-            hvzk_error: SecurityErrorBound::zero(),
-            num_rounds: 1,
-            verifier_challenge_lengths: vec![1],
-        }
-    }
-}
-
-impl<P: ia_core::ProverChannel> ReduceProve<P> for Accumulate {
-    fn prove(ch: &mut P, instance: &Claims, witness: &Values) -> (AccPair, ()) {
+    fn prove<P: ProverChannel>(ch: &mut P, instance: &Claims, witness: &Values) -> (AccPair, ()) {
         let n = instance.0.len();
 
         for w_i in &witness.0 {
@@ -161,10 +147,8 @@ impl<P: ia_core::ProverChannel> ReduceProve<P> for Accumulate {
 
         (AccPair { claim: acc_claim, value: acc_value }, ())
     }
-}
 
-impl<V: ia_core::VerifierChannel> ReduceVerify<V> for Accumulate {
-    fn verify(ch: &mut V, instance: &Claims) -> VerificationResult<AccPair> {
+    fn verify<V: VerifierChannel>(ch: &mut V, instance: &Claims) -> VerificationResult<AccPair> {
         let n = instance.0.len();
 
         let mut values = Vec::with_capacity(n);
@@ -187,6 +171,18 @@ impl<V: ia_core::VerifierChannel> ReduceVerify<V> for Accumulate {
     }
 }
 
+impl ProtocolSecurity for Accumulate {
+    fn security() -> SecurityProfile {
+        SecurityProfile {
+            soundness_error: SecurityErrorBound::zero(),
+            knowledge_soundness_error: SecurityErrorBound::zero(),
+            hvzk_error: SecurityErrorBound::zero(),
+            num_rounds: 1,
+            verifier_challenge_lengths: vec![1],
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // IA: EqualityCheck -- trivial decider that checks acc_claim == acc_value
 // ---------------------------------------------------------------------------
@@ -201,6 +197,18 @@ impl InteractiveArgument for EqualityCheck {
         spongefish::protocol_id(core::format_args!("equality check"))
     }
 
+    fn prove<P: ProverChannel>(_ch: &mut P, _instance: &AccPair, _witness: &()) {}
+
+    fn verify<V: VerifierChannel>(_ch: &mut V, instance: &AccPair) -> VerificationResult<()> {
+        if instance.claim == instance.value {
+            Ok(())
+        } else {
+            Err(VerificationError)
+        }
+    }
+}
+
+impl ProtocolSecurity for EqualityCheck {
     fn security() -> SecurityProfile {
         SecurityProfile {
             soundness_error: SecurityErrorBound::zero(),
@@ -208,20 +216,6 @@ impl InteractiveArgument for EqualityCheck {
             hvzk_error: SecurityErrorBound::zero(),
             num_rounds: 0,
             verifier_challenge_lengths: vec![],
-        }
-    }
-}
-
-impl<P: ia_core::ProverChannel> Prove<P> for EqualityCheck {
-    fn prove(_ch: &mut P, _instance: &AccPair, _witness: &()) {}
-}
-
-impl<V: ia_core::VerifierChannel> Verify<V> for EqualityCheck {
-    fn verify(_ch: &mut V, instance: &AccPair) -> VerificationResult<()> {
-        if instance.claim == instance.value {
-            Ok(())
-        } else {
-            Err(VerificationError)
         }
     }
 }
