@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 use rand_core::RngCore;
 
 use ia_core::{Prove, ReduceProve, ReduceVerify, Verify};
-use spongefish::{DomainSeparator, DuplexSpongeInterface, Encoding};
+use spongefish::{protocol_id as spongefish_protocol_id, DomainSeparator, DuplexSpongeInterface, Encoding};
 
 use crate::channel::{SpongeProver, SpongeVerifier};
 use crate::params::Keccak;
@@ -16,6 +16,27 @@ use crate::params::Keccak;
 pub trait ByteDuplexSponge: DuplexSpongeInterface<U = u8> {}
 
 impl<T: DuplexSpongeInterface<U = u8>> ByteDuplexSponge for T {}
+
+/// DSFS-level 64-byte protocol identifier for the compiled non-interactive argument.
+///
+/// This tags the *NARG format* (DSFS[IA] with salt length and sponge `H`), not just the
+/// underlying interactive argument. Different salts or sponge choices get distinct ids,
+/// while `StdHash` + `SALT_LEN = 0` can still be aligned explicitly with external schemes
+/// (e.g. σ-proofs `Nizk`) by choosing a compatible label here.
+fn dsfs_protocol_id<IA, H, const SALT_LEN: usize>() -> [u8; 64]
+where
+    H: ByteDuplexSponge,
+    IA: Prove<SpongeProver<H>>,
+{
+    // Keep this ASCII and <= 64 bytes; type names are long, so we rely on them alone for now.
+    // If we ever need exact cross-language alignment, we can specialize the label per IA/H pair.
+    spongefish_protocol_id(core::format_args!(
+        "DSFS[{};salt={};sponge={}]",
+        core::any::type_name::<IA>(),
+        SALT_LEN,
+        core::any::type_name::<H>(),
+    ))
+}
 
 /// Non-interactive prover with explicit salt length and duplex sponge `H`.
 pub fn prove_with_sponge_and_salt<IA, H, const SALT_LEN: usize>(
@@ -31,7 +52,7 @@ where
     [u8; 64]: Encoding<[H::U]>,
     [u8; SALT_LEN]: Encoding<[H::U]>,
 {
-    let domsep = DomainSeparator::new(IA::protocol_id())
+    let domsep = DomainSeparator::new(dsfs_protocol_id::<IA, H, SALT_LEN>())
         .session(session)
         .instance(instance);
 
