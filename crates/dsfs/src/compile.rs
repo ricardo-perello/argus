@@ -39,6 +39,7 @@ where
 }
 
 /// Non-interactive prover with explicit salt length and duplex sponge `H`.
+#[inline]
 pub fn prove_with_sponge_and_salt<IA, H, const SALT_LEN: usize>(
     sponge: H,
     session: [u8; 64],
@@ -65,6 +66,7 @@ where
 }
 
 /// Non-interactive prover with default salt (`SALT_LEN = 0`).
+#[inline(always)]
 pub fn prove_with_sponge<IA, H>(
     sponge: H,
     session: [u8; 64],
@@ -81,6 +83,7 @@ where
 }
 
 /// Non-interactive prover with explicit salt length (standard Keccak duplex).
+#[inline(always)]
 pub fn prove_with_salt<IA, const SALT_LEN: usize>(
     session: [u8; 64],
     instance: &IA::Instance,
@@ -99,6 +102,7 @@ where
 }
 
 /// Non-interactive prover with default `SALT_LEN = 0`.
+#[inline(always)]
 pub fn prove<IA>(session: [u8; 64], instance: &IA::Instance, witness: &IA::Witness) -> Vec<u8>
 where
     IA: Prove<SpongeProver>,
