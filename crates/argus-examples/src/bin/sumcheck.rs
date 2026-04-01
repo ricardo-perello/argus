@@ -107,6 +107,31 @@ impl Sumcheck {
 
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sumcheck_dsfs_roundtrip() {
+        let n: u32 = 4;
+        let size = 1usize << n as usize;
+        let evals: Vec<Fr> = (0..size as u64).map(Fr::from).collect();
+        let claimed_sum = evals.iter().copied().sum();
+
+        let instance = Instance { n, evals, claimed_sum };
+
+        let domain_separator = DomainSeparator::new(Sumcheck::protocol_id())
+            .session(spongefish::session!("argus examples"))
+            .instance(&instance);
+
+        let mut prover_state = domain_separator.std_prover();
+        let narg = Sumcheck::prove(&mut prover_state, &instance).to_vec();
+
+        let verifier_state = domain_separator.std_verifier(&narg);
+        Sumcheck::verify(verifier_state, &instance).expect("sumcheck verification failed");
+    }
+}
+
 fn main() {
     //set up instance
     let n: u32 = 4;

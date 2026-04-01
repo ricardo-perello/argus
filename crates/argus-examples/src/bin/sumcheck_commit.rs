@@ -330,6 +330,32 @@ fn run_live(instance: Instance, evals: Vec<Fr>) {
 // Main
 // ---------------------------------------------------------------------------
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_instance(n: u32) -> (Instance, Vec<Fr>) {
+        let size = 1usize << n as usize;
+        let evals: Vec<Fr> = (0..size as u64).map(Fr::from).collect();
+        let claimed_sum = evals.iter().copied().sum::<Fr>();
+        let (_tree, root) = CommittedSumcheck::build_merkle_tree(&evals);
+        let instance = Instance { n, root: Bytes(root), claimed_sum };
+        (instance, evals)
+    }
+
+    #[test]
+    fn committed_sumcheck_dsfs_roundtrip() {
+        let (instance, evals) = make_instance(4);
+        run_dsfs(&instance, &evals);
+    }
+
+    #[test]
+    fn committed_sumcheck_live_roundtrip() {
+        let (instance, evals) = make_instance(4);
+        run_live(instance, evals);
+    }
+}
+
 fn main() {
     let n: u32 = 4;
     let size = 1usize << (n as usize);

@@ -141,6 +141,29 @@ fn decide(target: &TargetInstance) -> VerificationResult<()> {
 }
 
 // ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn warp_accumulate_roundtrip() {
+        let n = 8;
+        let values: Vec<Fr> = (0..n as u64).map(Fr::from).collect();
+        let instance = SourceInstance { claims: values.clone() };
+        let witness = values;
+
+        let session = spongefish::session!("argus example: warp accumulate");
+        let proof = dsfs::prove_reduction::<Accumulate>(session, &instance, &witness);
+        let target = dsfs::verify_reduction::<Accumulate>(session, &instance, &proof)
+            .expect("reduction failed");
+        decide(&target).expect("decider rejected");
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Main: prove, verify (get target instance), decide
 // ---------------------------------------------------------------------------
 

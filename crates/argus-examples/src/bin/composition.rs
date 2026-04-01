@@ -234,6 +234,27 @@ type FoldAndAccumulate = ChainedReduction<TwoFolds, Accumulate>;
 type FullProtocol = ReducedArgument<FoldAndAccumulate, EqualityCheck>;
 
 // ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn composition_dsfs_roundtrip() {
+        let n = 8;
+        let values: Vec<Fr> = (0..n as u64).map(Fr::from).collect();
+        let instance = Claims(values.clone());
+        let witness = Values(values);
+
+        let session = spongefish::session!("argus example: composition");
+        let proof = dsfs::prove::<FullProtocol>(session, &instance, &witness);
+        dsfs::verify::<FullProtocol>(session, &instance, &proof).expect("verification failed");
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 

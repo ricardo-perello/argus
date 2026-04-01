@@ -167,7 +167,8 @@ mod tests {
     use super::*;
     use ark_ff::PrimeField;
     use dsfs::STD_SPONGE_PARAMS;
-    use ia_core::{ProtocolSecurity};
+    use ia_core::ProtocolSecurity;
+    use std::thread;
 
     type G = ark_curve25519::EdwardsProjective;
     type F = ark_curve25519::Fr;
@@ -240,5 +241,40 @@ mod tests {
             (got - expected).abs() / expected < 1e-10,
             "NARG ZK: expected {expected}, got {got}",
         );
+    }
+
+    #[test]
+    fn schnorr_dsfs_roundtrip() {
+        let generator = G::generator();
+        let sk = F::rand(&mut OsRng);
+        let pk = generator * sk;
+        let instance = [generator, pk];
+
+        let session = spongefish::session!("spongefish examples");
+        let narg = dsfs::prove::<Schnorr<G>>(session, &instance, &sk);
+        dsfs::verify::<Schnorr<G>>(session, &instance, &narg).expect("dsfs verification failed");
+    }
+
+    #[test]
+    fn schnorr_live_roundtrip() {
+        let generator = G::generator();
+        let sk = F::rand(&mut OsRng);
+        let pk = generator * sk;
+        let instance = [generator, pk];
+
+        let (mut prover_ch, mut verifier_ch) = live_channel::channel_pair();
+
+        let prover_instance = instance;
+        let prover_handle = thread::spawn(move || {
+            Schnorr::<G>::prove(&mut prover_ch, &prover_instance, &sk);
+        });
+
+        let verifier_instance = instance;
+        let verifier_handle = thread::spawn(move || {
+            Schnorr::<G>::verify(&mut verifier_ch, &verifier_instance)
+        });
+
+        prover_handle.join().unwrap();
+        verifier_handle.join().unwrap().expect("live verification failed");
     }
 }
