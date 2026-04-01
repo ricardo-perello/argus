@@ -45,12 +45,12 @@ the protocol.
 - **`crates/ia-core`**: the **IA/IR interface layer**.
   - Channel traits: `ProverChannel`, `VerifierChannel`
   - Protocol traits:
-    - IA: `InteractiveArgument` + `Prove` + `Verify`
-    - IOR/IR: `InteractiveReduction` + `ReduceProve` + `ReduceVerify`
+    - IA: `InteractiveArgument` (with generic `prove` / `verify` methods)
+    - IOR/IR: `InteractiveReduction` (with generic `prove` / `verify` methods)
+    - Security: `ProtocolSecurity` (opt-in; enables DSFS security bound evaluation)
   - Composition:
     - `ChainedReduction` (IR ∘ IR → IR)
     - `ReducedArgument` (IR ∘ IA → IA)
-  - Security metadata: `SecurityProfile`, `SecurityErrorBound`
 - **`crates/dsfs`**: a **backend** that compiles IA/IR into NARGs using DSFS.
   - `prove` / `verify` for IAs
   - `prove_reduction` / `verify_reduction` for IORs
@@ -61,23 +61,18 @@ the protocol.
   - `WARPDeciderIA` (an `InteractiveArgument`)
   - `FullWARP = ReducedArgument<WARPReduction, WARPDeciderIA>`
 - **`crates/argus-examples`**: runnable examples (e.g. Schnorr).
-- **`crates/ibcs`**: placeholder/WIP for “BCS as IA”.
+- **`crates/ibcs`**: WIP — will implement the IOP-to-IA compiler (BCS[IOP, MT] = DSFS[IBCS[IOP, MT]]).
 
 ## Documentation index
 
-- **IA interface design iterations**
-  - `docs/iarg-interface-v1.md`
-  - `docs/iarg-interface-v2.md`
-  - `docs/iarg-interface-v3.md` (channel interface; method-level generics)
-  - `docs/iarg-interface-v4.md` (security metadata + DSFS bounds)
-- **Interactive reductions (IOR)**
-  - `docs/interactive-reduction.md`
-  - `docs/interactive-reduction-v2.md` (sequential composition; source/target witness)
-- **WARP**
-  - `docs/warp.md` (protocol overview + how it plugs into Argus)
-  - `docs/examples-vs-warp.md` (examples vs the real WARP stack)
-- **Interactive execution**
-  - `docs/live-channel.md`
+- **IA/IR interface**: `docs/iarg-interface-v5.md` — current trait design, protocol id scheme, security metadata
+- **DSFS compiler**: `docs/dsfs-v2.md` — Keccak transcript, salt, sponge parameters
+- **Interactive reductions**: `docs/interactive-reduction-v2.md` — sequential composition, source/target witness
+- **Sigma bridge**: `docs/sigma-bridge-v3.md` — StdHash vs Keccak, golden vector behavior
+- **WARP**: `docs/warp.md` — protocol overview; `docs/examples-vs-warp.md` — API layers and usage guide
+- **Live channel**: `docs/live-channel.md`
+
+Prior interface iterations are in `docs/archive/`.
 
 ## Quickstart
 
@@ -125,8 +120,7 @@ cargo test -p warp
 At a high level:
 
 1. Define your statement/witness types in some crate.
-2. Implement `InteractiveArgument` + `Prove` + `Verify` (or `InteractiveReduction` + `ReduceProve` + `ReduceVerify`)
-   **against the channel traits** from `ia-core`.
+2. Implement `InteractiveArgument` (or `InteractiveReduction`) **against the channel traits** from `ia-core`.
 3. Compile it non-interactively with `dsfs::prove` / `dsfs::verify` (or the reduction variants).
 
 Protocol code should only ever call:

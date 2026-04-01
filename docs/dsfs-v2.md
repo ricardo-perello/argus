@@ -104,11 +104,12 @@ The `sigma-bridge` crate provides Nizk-layout batchable/compact drivers and σ-p
 
 ## What did not change
 
-Core IA protocol traits are unchanged:
+Core IA protocol traits are unchanged relative to DSFS v1:
 
-- `InteractiveArgument`, `Prove`, `Verify`
-- `InteractiveReduction`, `ReduceProve`, `ReduceVerify`
-- IA security metadata APIs in `ia-core`
+- `InteractiveArgument`, `InteractiveReduction`
+- `ProtocolSecurity` and security metadata APIs in `ia-core`
+
+(Note: separate `Prove<P>`/`Verify<V>` and `ReduceProve<P>`/`ReduceVerify<V>` traits were later collapsed into generic methods on `InteractiveArgument`/`InteractiveReduction` in the v5 interface — see `iarg-interface-v5.md`.)
 
 **Channel tweak:** `ProverChannel::send_prover_message` now requires `NargSerialize` (in addition to `Encoding`), matching spongefish `prover_message`. Live-channel and sponge adapters were updated accordingly.
 

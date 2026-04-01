@@ -66,7 +66,7 @@ In DSFS, both prover and verifier independently squeeze the sponge to derive the
 
 ## Example: live Schnorr
 
-[schnorr_live.rs](../crates/argus-examples/src/bin/schnorr_live.rs) runs the Schnorr protocol interactively:
+[schnorr.rs](../crates/argus-examples/src/bin/schnorr.rs) runs the Schnorr protocol interactively (`--live` flag or `#[test] fn schnorr_live_roundtrip`):
 
 ```rust
 let (mut prover_ch, mut verifier_ch) = live_channel::channel_pair();
@@ -80,7 +80,7 @@ let verifier_handle = thread::spawn(move || {
 });
 ```
 
-The `Schnorr` type, its `Prove` impl, and its `Verify` impl are identical to those in the DSFS example (`schnorr.rs`). The protocol code does not know whether it is running through a sponge or through a real interactive exchange.
+The `Schnorr` type and its `InteractiveArgument` impl are identical to those used in the DSFS path. The protocol code does not know whether it is running through a sponge or through a real interactive exchange.
 
 ## Limitations
 

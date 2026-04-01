@@ -33,39 +33,34 @@ The verifier side is mechanical (run V1, feed x2 to V2). The prover side require
 
 ### Split Witness into SourceWitness + TargetWitness
 
-A reduction transforms one relation into another. The prover consumes a witness for the **source** relation and produces a witness for the **target** relation. These are distinct types:
+A reduction transforms one relation into another. The prover consumes a witness for the **source** relation and produces a witness for the **target** relation. These are distinct types.
+
+### Prover returns (TargetInstance, TargetWitness)
+
+In a public-coin protocol, the prover sees the same transcript as the verifier. It can always compute the target instance as a side-effect of its own execution. Returning it enables automatic composition.
+
+The DSFS compiler discards both returned values — it only needs the NARG string from the sponge. The returned pair exists solely so composed provers can thread the intermediate instance and witness into the next stage.
+
+### Current interface (v5)
+
+`prove` and `verify` are generic methods on `InteractiveReduction` itself (no separate `ReduceProve<P>` / `ReduceVerify<V>` traits):
 
 ```rust
 pub trait InteractiveReduction {
     type SourceInstance;
     type TargetInstance;
-    type SourceWitness;      // prover's input
-    type TargetWitness;      // prover's output
-    fn protocol_id() -> [u8; 64];
-}
-```
+    type SourceWitness;
+    type TargetWitness;
 
-### Prover returns (TargetInstance, TargetWitness)
+    fn protocol_id() -> [u8; 32];
 
-In a public-coin protocol, the prover sees the same transcript as the verifier. It can always compute the target instance as a side-effect of its own execution. Returning it enables automatic composition:
-
-```rust
-pub trait ReduceProve<P: ProverChannel>: InteractiveReduction {
-    fn prove(
+    fn prove<P: ProverChannel>(
         ch: &mut P,
         instance: &Self::SourceInstance,
         witness: &Self::SourceWitness,
     ) -> (Self::TargetInstance, Self::TargetWitness);
-}
-```
 
-The DSFS compiler discards both returned values -- it only needs the NARG string from the sponge. The returned pair exists solely so composed provers can thread the intermediate instance and witness into the next stage.
-
-### ReduceVerify unchanged
-
-```rust
-pub trait ReduceVerify<V: VerifierChannel>: InteractiveReduction {
-    fn verify(
+    fn verify<V: VerifierChannel>(
         ch: &mut V,
         instance: &Self::SourceInstance,
     ) -> VerificationResult<Self::TargetInstance>;
@@ -152,23 +147,15 @@ An IA verifier outputs accept/reject, not a new instance. There is nothing to fe
 ```mermaid
 graph TD
     subgraph iaCore ["ia-core"]
-        IR["InteractiveReduction\nSourceInstance, TargetInstance\nSourceWitness, TargetWitness"]
-        RP["ReduceProve\nprove(ch, x, w) -> (x', w')"]
-        RV["ReduceVerify\nverify(ch, x) -> x'"]
+        IR["InteractiveReduction\nSourceInstance, TargetInstance\nSourceWitness, TargetWitness\nprove(ch, x, w) -> (x', w')\nverify(ch, x) -> x'"]
         CR["ChainedReduction\nIR . IR -> IR"]
         RA["ReducedArgument\nIR . IA -> IA"]
-        IA["InteractiveArgument\nInstance, Witness"]
+        IA["InteractiveArgument\nInstance, Witness\nprove(ch, x, w)\nverify(ch, x) -> ()"]
     end
 
-    RP --> IR
-    RV --> IR
     CR --> IR
-    CR --> RP
-    CR --> RV
     RA --> IR
     RA --> IA
-    RA --> RP
-    RA --> RV
 ```
 
 ## Example: composition pipeline

@@ -40,11 +40,11 @@ This is where WARP is expressed in the **Argus IA stack**:
 - **File**: `crates/warp/src/protocol/ir.rs`
 - **Defines**:
   - `WARPReduction<...>`: implements `ia_core::InteractiveReduction`
-    - `ReduceProve` calls into `WARP::prove_with_channel`.
-    - `ReduceVerify` calls into `WARP::verify_reduction_transcript` (computes the target instance from transcript).
+    - `prove` calls into `WARP::prove_with_channel`.
+    - `verify` calls into `WARP::verify_reduction_transcript` (computes the target instance from transcript).
   - `WARPDeciderIA<...>`: implements `ia_core::InteractiveArgument`
-    - `Prove` sends the final codeword + witness part needed for the decider checks.
-    - `Verify` reconstructs and checks the final accumulated statement.
+    - `prove` sends the final codeword + witness part needed for the decider checks.
+    - `verify` reconstructs and checks the final accumulated statement.
   - `FullWARP<...>`: type alias
     - `ReducedArgument<WARPReduction<...>, WARPDeciderIA<...>>`
 
