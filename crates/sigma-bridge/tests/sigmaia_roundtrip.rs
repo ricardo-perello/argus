@@ -1,26 +1,19 @@
-//! Roundtrip test for `SigmaIA<S>` via the IA channel API.
+//! Roundtrip tests for `SigmaIA<S>` via the full DSFS pipeline.
 //!
-//! Bypasses `SigmaIA::protocol_id()` (blocked on Q1) by constructing
-//! `SpongeProver` / `SpongeVerifier` directly with matching domain setup,
-//! then calling `InteractiveArgument::prove` and `verify` on those channels.
-//!
-//! This validates:
-//!   - Q2: commit randomness seed bundled in witness → `ChaCha20Rng::from_seed`
-//!   - Q3: `Encoding for SigmaIA<S>` forwards `instance_label()` correctly
+//! Now that Q1 is resolved (StaticSigmaProtocol gives us a static protocol_id),
+//! these tests go through dsfs::prove / dsfs::verify end-to-end.
 
 use curve25519_dalek::{
     constants::RISTRETTO_BASEPOINT_POINT, ristretto::RistrettoPoint, scalar::Scalar,
 };
 use rand_core::SeedableRng;
 
-use dsfs::{Keccak, SpongeProver, SpongeVerifier, TranscriptSponge};
 use ia_core::InteractiveArgument;
-use sigma_bridge::{derive_session_id, SigmaIA, SigmaProtocol};
+use sigma_bridge::{SigmaIA, SigmaProtocol};
+use sigma_proofs::linear_relation::CanonicalLinearRelation;
 use sigma_proofs::LinearRelation;
 
-#[test]
-fn sigmaia_roundtrip_keccak() {
-    // --- build the sigma protocol instance ---
+fn make_schnorr() -> (SigmaIA<CanonicalLinearRelation<RistrettoPoint>>, Vec<Scalar>) {
     let mut rel = LinearRelation::<RistrettoPoint>::new();
     let [var_x] = rel.allocate_scalars::<1>();
     let [var_g] = rel.allocate_elements::<1>();
@@ -33,30 +26,28 @@ fn sigmaia_roundtrip_keccak() {
     rel.compute_image(&witness).expect("compute image");
 
     let protocol = rel.canonical().expect("canonical");
+    (SigmaIA(protocol), witness)
+}
 
-    // Wrap in SigmaIA — the wrapped value is both protocol params and the public instance
-    let instance = SigmaIA(protocol);
-
-    // Commit randomness seed (Q2: bundled into witness tuple)
+#[test]
+fn sigmaia_dsfs_roundtrip() {
+    let (instance, witness) = make_schnorr();
     let commit_seed = [7u8; 32];
     let sigma_witness = (witness, commit_seed);
 
-    // Use the sigma protocol's own identifier as the domain (bypasses Q1 todo!)
-    let protocol_id = instance.0.protocol_identifier();
-    let session = derive_session_id(b"sigmaia-roundtrip-test");
+    let session = spongefish::session!("sigmaia-roundtrip-test");
 
-    // --- prove ---
-    let mut prover_ch = SpongeProver::new(
-        Keccak::default().prover_state(protocol_id, session, &instance),
-    );
-    <SigmaIA<_> as InteractiveArgument>::prove(&mut prover_ch, &instance, &sigma_witness);
-    let proof = prover_ch.narg_string().to_vec();
+    let proof = dsfs::prove::<SigmaIA<_>>(session, &instance, &sigma_witness);
+    dsfs::verify::<SigmaIA<_>>(session, &instance, &proof).expect("verification must succeed");
+}
 
-    // --- verify ---
-    let mut verifier_ch = SpongeVerifier::new(
-        Keccak::default().verifier_state(protocol_id, session, &instance, &proof),
-    );
-    <SigmaIA<_> as InteractiveArgument>::verify(&mut verifier_ch, &instance)
-        .expect("SigmaIA verify must succeed");
-    verifier_ch.check_eof().expect("no trailing bytes in proof");
+#[test]
+fn sigmaia_protocol_id_is_first_32_bytes_of_sigma_proofs_id() {
+    let (instance, _) = make_schnorr();
+
+    // SigmaIA::protocol_id() should be first 32 bytes of protocol_identifier()
+    let full_id = instance.0.protocol_identifier();
+    let ia_id = <SigmaIA<CanonicalLinearRelation<RistrettoPoint>> as InteractiveArgument>::protocol_id();
+
+    assert_eq!(ia_id, full_id[..32], "SigmaIA protocol_id must be first 32 bytes of sigma-proofs identifier");
 }
