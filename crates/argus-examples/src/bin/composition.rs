@@ -103,10 +103,10 @@ impl InteractiveReduction for FoldPairs {
 impl ProtocolSecurity for FoldPairs {
     fn security() -> SecurityProfile {
         SecurityProfile {
-            soundness_error: SecurityErrorBound::zero(),
-            knowledge_soundness_error: SecurityErrorBound::zero(),
+            plain_soundness_error: SecurityErrorBound::zero(),
+            rbr_soundness_errors: vec![SecurityErrorBound::zero()],
+            sr_knowledge_soundness_error: SecurityErrorBound::zero(),
             hvzk_error: SecurityErrorBound::zero(),
-            num_rounds: 1,
             verifier_challenge_lengths: vec![1],
         }
     }
@@ -174,10 +174,10 @@ impl InteractiveReduction for Accumulate {
 impl ProtocolSecurity for Accumulate {
     fn security() -> SecurityProfile {
         SecurityProfile {
-            soundness_error: SecurityErrorBound::zero(),
-            knowledge_soundness_error: SecurityErrorBound::zero(),
+            plain_soundness_error: SecurityErrorBound::zero(),
+            rbr_soundness_errors: vec![SecurityErrorBound::zero()],
+            sr_knowledge_soundness_error: SecurityErrorBound::zero(),
             hvzk_error: SecurityErrorBound::zero(),
-            num_rounds: 1,
             verifier_challenge_lengths: vec![1],
         }
     }
@@ -211,10 +211,10 @@ impl InteractiveArgument for EqualityCheck {
 impl ProtocolSecurity for EqualityCheck {
     fn security() -> SecurityProfile {
         SecurityProfile {
-            soundness_error: SecurityErrorBound::zero(),
-            knowledge_soundness_error: SecurityErrorBound::zero(),
+            plain_soundness_error: SecurityErrorBound::zero(),
+            rbr_soundness_errors: vec![],
+            sr_knowledge_soundness_error: SecurityErrorBound::zero(),
             hvzk_error: SecurityErrorBound::zero(),
-            num_rounds: 0,
             verifier_challenge_lengths: vec![],
         }
     }

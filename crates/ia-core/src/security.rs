@@ -56,36 +56,78 @@ impl core::fmt::Debug for SecurityErrorBound {
 /// Security metadata for an interactive protocol.
 ///
 /// Error bounds are functions of the adversary's query budget `t`,
-/// matching the formalism of Chiesa--Orrù 2025 (Theorems 1 & 2).
+/// matching the formalism of Chiesa--Orru 2025 (Theorems 6.1, 6.2, 7.1).
+///
+/// # Soundness notions
+///
+/// - **Plain soundness** (`plain_soundness_error`): classical soundness, no
+///   rewinding.  Relevant for interactive (live-channel) execution.
+/// - **Round-by-round (RBR) soundness** (`rbr_soundness_errors`): per-round
+///   local soundness condition.  Composes by concatenation.
+/// - **State-restoration (SR) soundness**: derived from RBR via
+///   `sr_soundness_error() = sum_i rbr_soundness_errors[i]`.  This is the
+///   input to DSFS Theorem 6.1.
+/// - **SR knowledge soundness** (`sr_knowledge_soundness_error`): used by
+///   DSFS Theorem 6.2.
 #[derive(Debug, Clone)]
 pub struct SecurityProfile {
-    /// State-restoration soundness error ε^sr(t).
-    pub soundness_error: SecurityErrorBound,
-    /// State-restoration knowledge soundness error κ^sr(t).
-    pub knowledge_soundness_error: SecurityErrorBound,
+    /// Plain soundness error epsilon(t).
+    /// Relevant for live/interactive execution where SR is not needed.
+    pub plain_soundness_error: SecurityErrorBound,
+    /// Per-round RBR soundness errors [epsilon_1^rbr, ..., epsilon_mu^rbr].
+    /// Length equals the number of public-coin rounds.
+    pub rbr_soundness_errors: Vec<SecurityErrorBound>,
+    /// State-restoration knowledge soundness error kappa^sr(t).
+    pub sr_knowledge_soundness_error: SecurityErrorBound,
     /// Honest-verifier zero-knowledge error z(t).
     pub hvzk_error: SecurityErrorBound,
-    /// Number of public-coin rounds.
-    pub num_rounds: usize,
     /// Verifier challenge lengths `l_V(i)` in sponge alphabet units.
     pub verifier_challenge_lengths: Vec<usize>,
 }
 
 impl SecurityProfile {
-    /// Compose two protocol profiles (union bound on errors, concatenate rounds).
+    /// Number of public-coin rounds, derived from RBR vector length.
+    pub fn num_rounds(&self) -> usize {
+        self.rbr_soundness_errors.len()
+    }
+
+    /// Derive SR soundness from RBR: epsilon^sr(t) = sum_i epsilon_i^rbr(t).
+    ///
+    /// This is the bound used by DSFS Theorem 6.1 to lift interactive
+    /// soundness to NARG soundness.
+    pub fn sr_soundness_error(&self) -> SecurityErrorBound {
+        self.rbr_soundness_errors
+            .iter()
+            .fold(SecurityErrorBound::zero(), |acc, e| acc.compose(e))
+    }
+
+    /// Compose two protocol profiles sequentially.
+    ///
+    /// - RBR soundness errors: concatenated (the correct composition).
+    /// - Plain soundness / SR knowledge soundness / HVZK: union bound.
+    /// - Challenge lengths: concatenated.
     pub fn compose(&self, other: &Self) -> Self {
-        let mut verifier_challenge_lengths =
-            Vec::with_capacity(self.num_rounds + other.num_rounds);
+        let mut rbr_soundness_errors = Vec::with_capacity(
+            self.rbr_soundness_errors.len() + other.rbr_soundness_errors.len(),
+        );
+        rbr_soundness_errors.extend_from_slice(&self.rbr_soundness_errors);
+        rbr_soundness_errors.extend_from_slice(&other.rbr_soundness_errors);
+
+        let mut verifier_challenge_lengths = Vec::with_capacity(
+            self.verifier_challenge_lengths.len() + other.verifier_challenge_lengths.len(),
+        );
         verifier_challenge_lengths.extend_from_slice(&self.verifier_challenge_lengths);
         verifier_challenge_lengths.extend_from_slice(&other.verifier_challenge_lengths);
 
         Self {
-            soundness_error: self.soundness_error.compose(&other.soundness_error),
-            knowledge_soundness_error: self
-                .knowledge_soundness_error
-                .compose(&other.knowledge_soundness_error),
+            plain_soundness_error: self
+                .plain_soundness_error
+                .compose(&other.plain_soundness_error),
+            rbr_soundness_errors,
+            sr_knowledge_soundness_error: self
+                .sr_knowledge_soundness_error
+                .compose(&other.sr_knowledge_soundness_error),
             hvzk_error: self.hvzk_error.compose(&other.hvzk_error),
-            num_rounds: self.num_rounds + other.num_rounds,
             verifier_challenge_lengths,
         }
     }

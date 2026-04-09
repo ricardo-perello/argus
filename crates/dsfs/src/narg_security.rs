@@ -54,21 +54,23 @@ impl NargSecurity {
         Self { ia: IR::security(), sponge }
     }
 
-    /// Theorem 1: `eps_narg(t) <= eps_sr_ip(t) + 25*t^2/|Sigma|^c`.
+    /// Theorem 6.1: `eps_narg(t) <= eps_sr_ip(t) + 25*t^2/|Sigma|^c`.
+    ///
+    /// SR soundness is derived from the per-round RBR errors.
     pub fn soundness_error(&self, t: u64) -> f64 {
         let t_f = t as f64;
-        self.ia.soundness_error.evaluate(t)
+        self.ia.sr_soundness_error().evaluate(t)
             + 25.0 * t_f * t_f / self.sponge_sigma_to(self.sponge.capacity)
     }
 
-    /// Theorem 1: `kappa_narg(t) <= kappa_sr_ip(t) + 25*t^2/|Sigma|^c`.
+    /// Theorem 6.2: `kappa_narg(t) <= kappa_sr_ip(t) + 25*t^2/|Sigma|^c`.
     pub fn knowledge_soundness_error(&self, t: u64) -> f64 {
         let t_f = t as f64;
-        self.ia.knowledge_soundness_error.evaluate(t)
+        self.ia.sr_knowledge_soundness_error.evaluate(t)
             + 25.0 * t_f * t_f / self.sponge_sigma_to(self.sponge.capacity)
     }
 
-    /// Theorem 2: `z_narg(t) <= z_ip(t) + t/|Sigma|^min(delta,c) + t*sum_i ceil(lV(i)/r)/|Sigma|^(r+c)`.
+    /// Theorem 7.1: `z_narg(t) <= z_ip(t) + t/|Sigma|^min(delta,c) + t*sum_i ceil(lV(i)/r)/|Sigma|^(r+c)`.
     pub fn zk_error(&self, t: u64) -> f64 {
         let t_f = t as f64;
         let min_delta_c = self.sponge.delta.min(self.sponge.capacity);
@@ -108,16 +110,35 @@ mod tests {
     use crate::params::SpongeParams;
     use ia_core::{SecurityErrorBound, SecurityProfile};
 
+    /// Helper: build a profile with uniform per-round RBR error.
+    fn profile_with_rbr(
+        rbr_per_round: fn(u64) -> f64,
+        num_rounds: usize,
+        knowledge_soundness: fn(u64) -> f64,
+        hvzk: fn(u64) -> f64,
+        challenge_lengths: alloc::vec::Vec<usize>,
+    ) -> SecurityProfile {
+        SecurityProfile {
+            plain_soundness_error: SecurityErrorBound::zero(),
+            rbr_soundness_errors: (0..num_rounds)
+                .map(|_| SecurityErrorBound::new(rbr_per_round))
+                .collect(),
+            sr_knowledge_soundness_error: SecurityErrorBound::new(knowledge_soundness),
+            hvzk_error: SecurityErrorBound::new(hvzk),
+            verifier_challenge_lengths: challenge_lengths,
+        }
+    }
+
     #[test]
     fn theorem1_bounds_are_applied() {
         let sec = NargSecurity {
-            ia: SecurityProfile {
-                soundness_error: SecurityErrorBound::new(|_t| 0.01),
-                knowledge_soundness_error: SecurityErrorBound::new(|_t| 0.02),
-                hvzk_error: SecurityErrorBound::new(|_t| 0.03),
-                num_rounds: 2,
-                verifier_challenge_lengths: alloc::vec![5, 7],
-            },
+            ia: profile_with_rbr(
+                |_t| 0.005, // 2 rounds * 0.005 = 0.01 SR soundness
+                2,
+                |_t| 0.02,
+                |_t| 0.03,
+                alloc::vec![5, 7],
+            ),
             sponge: SpongeParams {
                 alphabet_size: 2.0,
                 capacity: 4,
@@ -128,24 +149,20 @@ mod tests {
 
         let t = 2_u64;
         let additive = 25.0 * (t as f64) * (t as f64) / 2_f64.powf(4.0);
+        // SR soundness = 2 * 0.005 = 0.01
         assert!((sec.soundness_error(t) - (0.01 + additive)).abs() < 1e-12);
         assert!((sec.knowledge_soundness_error(t) - (0.02 + additive)).abs() < 1e-12);
     }
 
     #[test]
     fn theorem1_with_t_dependent_ia_error() {
-        fn ia_soundness(t: u64) -> f64 {
+        fn ia_rbr_soundness(t: u64) -> f64 {
             (t as f64) / 1_000_000.0
         }
 
         let sec = NargSecurity {
-            ia: SecurityProfile {
-                soundness_error: SecurityErrorBound::new(ia_soundness),
-                knowledge_soundness_error: SecurityErrorBound::zero(),
-                hvzk_error: SecurityErrorBound::zero(),
-                num_rounds: 1,
-                verifier_challenge_lengths: alloc::vec![1],
-            },
+            // 1 round with RBR error = t/1M, so SR soundness = t/1M
+            ia: profile_with_rbr(ia_rbr_soundness, 1, |_| 0.0, |_| 0.0, alloc::vec![1]),
             sponge: SpongeParams {
                 alphabet_size: 256.0,
                 capacity: 2,
@@ -163,13 +180,7 @@ mod tests {
     #[test]
     fn theorem2_bound_is_applied() {
         let sec = NargSecurity {
-            ia: SecurityProfile {
-                soundness_error: SecurityErrorBound::zero(),
-                knowledge_soundness_error: SecurityErrorBound::zero(),
-                hvzk_error: SecurityErrorBound::new(|_t| 0.125),
-                num_rounds: 2,
-                verifier_challenge_lengths: alloc::vec![5, 7],
-            },
+            ia: profile_with_rbr(|_| 0.0, 2, |_| 0.0, |_t| 0.125, alloc::vec![5, 7]),
             sponge: SpongeParams {
                 alphabet_size: 2.0,
                 capacity: 4,
@@ -190,5 +201,54 @@ mod tests {
         let b = SecurityErrorBound::new(|t| 2.0 * t as f64);
         let c = a.compose(&b);
         assert!((c.evaluate(10) - 30.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn sr_soundness_derived_from_rbr() {
+        let profile = SecurityProfile {
+            plain_soundness_error: SecurityErrorBound::zero(),
+            rbr_soundness_errors: alloc::vec![
+                SecurityErrorBound::new(|_| 0.01),
+                SecurityErrorBound::new(|_| 0.02),
+                SecurityErrorBound::new(|_| 0.03),
+            ],
+            sr_knowledge_soundness_error: SecurityErrorBound::zero(),
+            hvzk_error: SecurityErrorBound::zero(),
+            verifier_challenge_lengths: alloc::vec![1, 1, 1],
+        };
+        // SR = sum of RBR = 0.01 + 0.02 + 0.03 = 0.06
+        assert!((profile.sr_soundness_error().evaluate(0) - 0.06).abs() < 1e-12);
+    }
+
+    #[test]
+    fn rbr_composition_derives_correct_sr() {
+        let p1 = SecurityProfile {
+            plain_soundness_error: SecurityErrorBound::new(|_| 0.01),
+            rbr_soundness_errors: alloc::vec![
+                SecurityErrorBound::new(|_| 0.005),
+                SecurityErrorBound::new(|_| 0.005),
+            ],
+            sr_knowledge_soundness_error: SecurityErrorBound::zero(),
+            hvzk_error: SecurityErrorBound::zero(),
+            verifier_challenge_lengths: alloc::vec![1, 1],
+        };
+        let p2 = SecurityProfile {
+            plain_soundness_error: SecurityErrorBound::new(|_| 0.02),
+            rbr_soundness_errors: alloc::vec![SecurityErrorBound::new(|_| 0.02)],
+            sr_knowledge_soundness_error: SecurityErrorBound::zero(),
+            hvzk_error: SecurityErrorBound::zero(),
+            verifier_challenge_lengths: alloc::vec![1],
+        };
+        let composed = p1.compose(&p2);
+
+        // RBR vectors concatenated
+        assert_eq!(composed.rbr_soundness_errors.len(), 3);
+        assert_eq!(composed.num_rounds(), 3);
+
+        // SR derived from concatenated RBR: 0.005 + 0.005 + 0.02 = 0.03
+        assert!((composed.sr_soundness_error().evaluate(0) - 0.03).abs() < 1e-12);
+
+        // Plain soundness composed via union bound: 0.01 + 0.02 = 0.03
+        assert!((composed.plain_soundness_error.evaluate(0) - 0.03).abs() < 1e-12);
     }
 }

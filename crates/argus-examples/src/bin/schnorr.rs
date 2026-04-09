@@ -79,13 +79,14 @@ where
         }
 
         SecurityProfile {
-            // Cheating prover guesses the challenge: ε^sr = 1/q.
-            soundness_error: SecurityErrorBound::new(one_over_q::<G::ScalarField>),
+            // Plain soundness: cheating prover guesses the challenge: 1/q.
+            plain_soundness_error: SecurityErrorBound::new(one_over_q::<G::ScalarField>),
+            // 1 round, RBR error = 1/q (SR soundness derived as sum = 1/q).
+            rbr_soundness_errors: vec![SecurityErrorBound::new(one_over_q::<G::ScalarField>)],
             // Special soundness extractor succeeds except with prob 1/q.
-            knowledge_soundness_error: SecurityErrorBound::new(one_over_q::<G::ScalarField>),
+            sr_knowledge_soundness_error: SecurityErrorBound::new(one_over_q::<G::ScalarField>),
             // Perfect HVZK (simulator picks c first, computes K = rG - cX).
             hvzk_error: SecurityErrorBound::zero(),
-            num_rounds: 1,
             verifier_challenge_lengths: vec![1],
         }
     }
@@ -176,11 +177,21 @@ mod tests {
     #[test]
     fn schnorr_ia_soundness_is_one_over_q() {
         let profile = Schnorr::<G>::security();
-        let eps = profile.soundness_error.evaluate(0);
         let expected = 2_f64.powi(-(F::MODULUS_BIT_SIZE as i32));
+
+        // Plain soundness = 1/q
+        let eps_plain = profile.plain_soundness_error.evaluate(0);
         assert!(
-            (eps - expected).abs() < 1e-30,
-            "IA soundness should be 1/q = 2^-{}, got {eps}",
+            (eps_plain - expected).abs() < 1e-30,
+            "IA plain soundness should be 1/q = 2^-{}, got {eps_plain}",
+            F::MODULUS_BIT_SIZE,
+        );
+
+        // SR soundness (derived from 1-round RBR) = 1/q
+        let eps_sr = profile.sr_soundness_error().evaluate(0);
+        assert!(
+            (eps_sr - expected).abs() < 1e-30,
+            "IA SR soundness should be 1/q = 2^-{}, got {eps_sr}",
             F::MODULUS_BIT_SIZE,
         );
     }

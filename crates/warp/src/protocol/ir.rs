@@ -94,10 +94,10 @@ where
         // TODO: Conservative placeholder bound until a full, parameterized WARP analysis
         // is encoded in the type-level IA metadata.
         SecurityProfile {
-            soundness_error: SecurityErrorBound::new(|_t| 1.0),
-            knowledge_soundness_error: SecurityErrorBound::new(|_t| 1.0),
+            plain_soundness_error: SecurityErrorBound::new(|_t| 1.0),
+            rbr_soundness_errors: Vec::new(),
+            sr_knowledge_soundness_error: SecurityErrorBound::new(|_t| 1.0),
             hvzk_error: SecurityErrorBound::new(|_t| 1.0),
-            num_rounds: 0,
             verifier_challenge_lengths: Vec::new(),
         }
     }
@@ -201,10 +201,10 @@ where
 {
     fn security() -> SecurityProfile {
         SecurityProfile {
-            soundness_error: SecurityErrorBound::zero(),
-            knowledge_soundness_error: SecurityErrorBound::zero(),
+            plain_soundness_error: SecurityErrorBound::zero(),
+            rbr_soundness_errors: Vec::new(),
+            sr_knowledge_soundness_error: SecurityErrorBound::zero(),
             hvzk_error: SecurityErrorBound::zero(),
-            num_rounds: 0,
             verifier_challenge_lengths: Vec::new(),
         }
     }
