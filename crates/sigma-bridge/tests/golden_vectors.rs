@@ -4,14 +4,11 @@
 //! `DomainSeparator::derive` inputs as [`sigma_bridge::prove`] when using [`dsfs::StdHash`].
 //!
 //! The Shake128 vectors (`sigma-proofs_Shake128_BLS12381.json`) pin expected `"Batchable Proof"`
-//! bytes for this workspace’s transcript layout.
+//! bytes for this workspace’s transcript layout, verified against both BLS12-381 and P-256.
 //!
-//! `sigma_Keccak1600_BLS12381.json`: same **SHAKE128** / `std_prover` stack; the `ciphersuite`
-//! string is the 64-byte protocol tag. `proof_batchable` in that file does **not** currently match
-//! `sigma-proofs` 0.2.1 + `spongefish` 0.4.1 (even an inlined `Nizk::prove_batchable` with that
-//! tag); [`sigma_bridge::prove_with_protocol_domain`] matches that inlined reference — see
-//! `prove_with_protocol_domain_matches_inlined_nizk_prove_batchable`. The Keccak-named golden is
-//! ignored until testdata is regenerated for this dependency set.
+//! `sigma_Keccak1600_BLS12381.json`: uses [`sigma_bridge::prove_with_protocol_domain`] with
+//! `StdHash` and the `ciphersuite` string as an explicit 64-byte protocol domain tag. Vectors
+//! regenerated for spongefish 0.7.0 (`DomainSeparator::derive`).
 
 use bls12_381::G1Projective as Bls12381G1;
 use group::{ff::PrimeField, prime::PrimeGroup};
@@ -114,7 +111,6 @@ where
 }
 
 #[test]
-#[ignore = "P-256 CanonicalLinearRelation::from_label / encoding issue under investigation"]
 fn golden_p256_stdhash() {
     golden_testvectors_stdhash::<P256ProjectivePoint>(include_str!(
         "./testdata/sigma-proofs_Shake128_P256.json"
@@ -245,7 +241,6 @@ where
 }
 
 #[test]
-#[ignore = "sigma_Keccak1600_BLS12381.json proof_batchable mismatches sigma-proofs 0.2.1 + spongefish 0.4.1 even with inlined Nizk + ciphersuite id (see prove_with_protocol_domain_matches_inlined_nizk_prove_batchable)"]
 fn golden_bls12381_keccak() {
     golden_testvectors_keccak::<Bls12381G1>(include_str!(
         "./testdata/sigma_Keccak1600_BLS12381.json"

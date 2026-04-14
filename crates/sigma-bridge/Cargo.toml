@@ -13,6 +13,9 @@ sha3 = "0.10"
 sigma-proofs = { path = "../../../sigma-proofs", default-features = false }
 rand_chacha = { version = "0.3", default-features = false }
 
+[[example]]
+name = "update_keccak_vectors"
+
 [dev-dependencies]
 bls12_381 = { version = "0.8", default-features = false, features = ["groups"] }
 curve25519-dalek = { version = "4", default-features = false, features = ["alloc", "group"] }
