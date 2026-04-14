@@ -22,7 +22,7 @@ ark-relations = "0.5.0"
 ark-r1cs-std = "0.5.0"
 ark-crypto-primitives = { version = "0.5.0", features = ["merkle_tree", "crh", "r1cs", "sponge"] }
 ark-codes = { git = "https://github.com/dmpierre/ark-codes.git" }
-spongefish = { version = "0.6.0", features = ["keccak", "derive", "sha2"] }
+spongefish = { version = "0.7.0", features = ["keccak", "derive", "sha2"] }
 thiserror = "2.0"
 rayon = "1.11"
 blake3 = "1.5"
