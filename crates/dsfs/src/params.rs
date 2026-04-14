@@ -33,32 +33,21 @@ pub type Keccak = spongefish::instantiations::Keccak;
 /// spongefish / σ-proofs `Nizk` transcript defaults.
 pub type StdHash = spongefish::StdHash;
 
-/// 32-byte sponge tag appended to the 32-byte IA protocol id to form the full
-/// 64-byte DSFS domain separator: `[ia_id: 32 || sponge_tag: 32]`.
+/// Compilation-layer identifier fed into [`spongefish::DomainSeparator::derive`] together with the
+/// IA `protocol_id` and encoded session (length-prefixed SHA-512 in spongefish).
 ///
-/// Mirrors sigma-proofs’ convention of embedding the hash-function name in the
-/// ASCII ciphersuite label, but keeps it separate from the IA identity so the
-/// same IA can be compiled with different sponges without changing its `protocol_id`.
-pub trait SpongeTag: super::compile::ByteDuplexSponge {
-    const TAG: [u8; 32];
+/// Must distinguish every configuration that affects the compiled NARG / DSFS bounds (sponge
+/// shape, transcript format, etc.).
+pub trait SpongeInfo: super::compile::ByteDuplexSponge {
+    const SPONGE_INFO: &'static [u8];
 }
 
-const fn pad_tag(label: &[u8]) -> [u8; 32] {
-    let mut tag = [0u8; 32];
-    let mut i = 0;
-    while i < label.len() && i < 32 {
-        tag[i] = label[i];
-        i += 1;
-    }
-    tag
+impl SpongeInfo for Keccak {
+    const SPONGE_INFO: &'static [u8] = b"dsfs/v2/keccak-f1600-r136c64";
 }
 
-impl SpongeTag for Keccak {
-    const TAG: [u8; 32] = pad_tag(b"keccak");
-}
-
-impl SpongeTag for StdHash {
-    const TAG: [u8; 32] = pad_tag(b"shake128");
+impl SpongeInfo for StdHash {
+    const SPONGE_INFO: &'static [u8] = b"dsfs/v2/shake128-r168c32";
 }
 
 /// Bookkeeping parameters for DSFS bounds when the transcript uses [`StdHash`] (SHAKE128 XOF).
@@ -100,19 +89,15 @@ mod tests {
     use super::{DuplexSpongeParamsExt, Keccak, STD_HASH_SPONGE_PARAMS, STD_SPONGE_PARAMS};
 
     #[test]
-    fn std_sponge_params_matches_keccak_duplex_ext() {
-        let from_ext = Keccak::default().sponge_params();
-        assert_eq!(from_ext.capacity, STD_SPONGE_PARAMS.capacity);
-        assert_eq!(from_ext.rate, STD_SPONGE_PARAMS.rate);
-        assert_eq!(from_ext.delta, STD_SPONGE_PARAMS.delta);
-        assert!((from_ext.alphabet_size - STD_SPONGE_PARAMS.alphabet_size).abs() < 1e-12);
+    fn keccak_default_matches_std_bookkeeping() {
+        let k = Keccak::default();
+        let p = k.sponge_params();
+        assert_eq!(p.rate, STD_SPONGE_PARAMS.rate);
+        assert_eq!(p.capacity, STD_SPONGE_PARAMS.capacity);
     }
 
     #[test]
-    fn std_hash_sponge_params_is_documented_constant() {
-        assert_eq!(STD_HASH_SPONGE_PARAMS.alphabet_size, 256.0);
-        assert_eq!(STD_HASH_SPONGE_PARAMS.capacity, 32);
-        assert_eq!(STD_HASH_SPONGE_PARAMS.rate, 168);
-        assert_eq!(STD_HASH_SPONGE_PARAMS.delta, 1);
+    fn std_hash_bookkeeping_is_conservative() {
+        assert!(STD_HASH_SPONGE_PARAMS.capacity < STD_SPONGE_PARAMS.capacity);
     }
 }

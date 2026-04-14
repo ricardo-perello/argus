@@ -7,4 +7,3 @@ edition = "2024"
 ia-core = { path = "../ia-core" }
 spongefish.workspace = true
 rand_core = "0.6"
-blake3.workspace = true

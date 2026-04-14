@@ -1,4 +1,4 @@
-//! `SigmaIA<S>`: [`InteractiveArgument`] wrapper for any [`StaticSigmaProtocol`].
+//! `SigmaIA<S>`: [`InteractiveArgument`] wrapper for any [`SigmaProtocol`].
 //!
 //! ## Design notes
 //!
@@ -6,9 +6,9 @@
 //!   - prover: send commitment(s) → read challenge → send response(s)
 //!   - verifier: read commitment(s) → derive challenge → read response(s) → call verifier()
 //!
-//! **Protocol id:** `S::static_protocol_id()` returns the 64-byte label; we take the first
-//! 32 bytes as the IA-level id. DSFS appends the sponge tag in the upper 32 bytes to form
-//! the full 64-byte domain separator.
+//! **Protocol id:** `protocol_identifier()` (64-byte sigma-proofs label or runtime hash for
+//! compositions) is mixed with compilation info and session via spongefish
+//! [`spongefish::DomainSeparator::derive`] in DSFS.
 //!
 //! Note: SigmaIA proofs are NOT byte-for-byte compatible with sigma-proofs `Nizk` (different
 //! domain separator structure). For spec-compatible proofs use `sigma_bridge::prove/verify`.
@@ -29,7 +29,7 @@ use rand_chacha::rand_core::SeedableRng;
 use sigma_proofs::traits::SigmaProtocol;
 use spongefish::Encoding;
 
-/// Wraps a [`StaticSigmaProtocol`] as an [`InteractiveArgument`].
+/// Wraps a [`SigmaProtocol`] as an [`InteractiveArgument`].
 ///
 /// `S` acts as both the protocol parameters and the public instance.
 /// The witness bundles `(S::Witness, commit_seed)` where `commit_seed: [u8; 32]`
@@ -47,8 +47,7 @@ where
         // The full 64-byte sigma-proofs identifier. For `ComposedRelation` this
         // is computed at runtime from the composition tree; for canonical
         // sigma protocols it is a static ASCII label zero-padded to 64 bytes.
-        // DSFS compacts and mixes this with the sponge tag via BLAKE3 (Stage 1)
-        // or SHA-256 `DomainSeparator::derive` (Stage 3).
+        // DSFS passes this with `SpongeInfo` and encoded session into `DomainSeparator::derive`.
         self.0.protocol_identifier()
     }
 

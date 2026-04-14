@@ -58,7 +58,7 @@ dependencies = [
  "ia-core",
  "live-channel",
  "rand 0.8.5",
- "spongefish 0.5.1",
+ "spongefish 0.5.2",
 ]
 
 [[package]]
@@ -676,10 +676,9 @@ dependencies = [
 name = "dsfs"
 version = "0.1.0"
 dependencies = [
- "blake3",
  "ia-core",
  "rand_core 0.6.4",
- "spongefish 0.5.1",
+ "spongefish 0.5.2",
 ]
 
 [[package]]
@@ -910,7 +909,7 @@ name = "ia-core"
 version = "0.1.0"
 dependencies = [
  "sigma-proofs 0.2.1",
- "spongefish 0.5.1",
+ "spongefish 0.5.2",
 ]
 
 [[package]]
@@ -1060,7 +1059,7 @@ version = "0.1.0"
 dependencies = [
  "ia-core",
  "rand 0.8.5",
- "spongefish 0.5.1",
+ "spongefish 0.5.2",
 ]
 
 [[package]]
@@ -1720,7 +1719,7 @@ dependencies = [
  "serde_with",
  "sha3 0.10.8",
  "sigma-proofs 0.3.0",
- "spongefish 0.5.1",
+ "spongefish 0.5.2",
 ]
 
 [[package]]
@@ -1769,7 +1768,7 @@ dependencies = [
  "p256",
  "rand_core 0.6.4",
  "sha3 0.10.8",
- "spongefish 0.5.1",
+ "spongefish 0.5.2",
  "subtle",
  "thiserror 1.0.69",
  "zerocopy",
@@ -1829,9 +1828,7 @@ dependencies = [
 
 [[package]]
 name = "spongefish"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff3a693ee5aad3c727a5cd8abba59205cd58bb23c905323c1374bf2b80ee3a60"
+version = "0.5.2"
 dependencies = [
  "ark-ec",
  "ark-ff",
@@ -1846,7 +1843,7 @@ dependencies = [
  "rand 0.8.5",
  "sha2 0.11.0",
  "sha3 0.11.0",
- "spongefish-derive 0.5.1",
+ "spongefish-derive 0.5.2",
  "zeroize",
 ]
 
@@ -1863,9 +1860,7 @@ dependencies = [
 
 [[package]]
 name = "spongefish-derive"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42cb6d475d6a443e1a2a002d0136417975b4fa147b096ff5e03e1355e9a11c11"
+version = "0.5.2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2085,7 +2080,7 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
- "spongefish 0.5.1",
+ "spongefish 0.5.2",
  "thiserror 2.0.18",
 ]
 

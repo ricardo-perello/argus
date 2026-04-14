@@ -141,6 +141,7 @@ where
     G::Scalar: Encoding<[u8]> + NargSerialize + NargDeserialize + Decoding<[u8]>,
 {
     let instance_label = protocol.instance_label().as_ref().to_vec();
+    #[allow(deprecated)]
     let mut transcript = DomainSeparator::new(protocol_id)
         .session(sigma_bridge::derive_session_id(session_id))
         .instance(&instance_label)

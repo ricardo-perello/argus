@@ -45,10 +45,11 @@ impl TranscriptSponge for Keccak {
         session: [u8; 64],
         instance: &I,
     ) -> ProverState<Self> {
-        DomainSeparator::new(protocol_id)
+        #[allow(deprecated)]
+        let domsep = DomainSeparator::new(protocol_id)
             .session(session)
-            .instance(instance)
-            .to_prover(self)
+            .instance(instance);
+        domsep.to_prover(self)
     }
 
     fn verifier_state<'a, I: Encoding>(
@@ -58,10 +59,11 @@ impl TranscriptSponge for Keccak {
         instance: &I,
         narg_string: &'a [u8],
     ) -> VerifierState<'a, Self> {
-        DomainSeparator::new(protocol_id)
+        #[allow(deprecated)]
+        let domsep = DomainSeparator::new(protocol_id)
             .session(session)
-            .instance(instance)
-            .to_verifier(self, narg_string)
+            .instance(instance);
+        domsep.to_verifier(self, narg_string)
     }
 }
 
@@ -73,6 +75,7 @@ impl TranscriptSponge for StdHash {
         instance: &I,
     ) -> ProverState<Self> {
         // IMPORTANT: ignore `self` and use spongefish `std_prover` initialization semantics.
+        #[allow(deprecated)]
         let domsep = DomainSeparator::new(protocol_id).session(session).instance(instance);
         domsep.std_prover()
     }
@@ -85,6 +88,7 @@ impl TranscriptSponge for StdHash {
         narg_string: &'a [u8],
     ) -> VerifierState<'a, Self> {
         // IMPORTANT: ignore `self` and use spongefish `std_verifier` initialization semantics.
+        #[allow(deprecated)]
         let domsep = DomainSeparator::new(protocol_id).session(session).instance(instance);
         domsep.std_verifier(narg_string)
     }

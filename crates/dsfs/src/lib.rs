@@ -28,5 +28,6 @@ pub use compile::{
 };
 pub use narg_security::{NargSecurity, reduction_security, security};
 pub use params::{
-    DuplexSpongeParamsExt, Keccak, STD_HASH_SPONGE_PARAMS, STD_SPONGE_PARAMS, SpongeParams, StdHash,
+    DuplexSpongeParamsExt, Keccak, SpongeInfo, STD_HASH_SPONGE_PARAMS, STD_SPONGE_PARAMS,
+    SpongeParams, StdHash,
 };

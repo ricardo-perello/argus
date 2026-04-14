@@ -35,6 +35,7 @@ static INSTANCE_TAG: &[u8; 16] = b"warp-test-inst00";
 fn make_prover() -> SpongeProver {
     let protocol_id = spongefish::protocol_id(core::format_args!("argus::warp::test"));
     let session = spongefish::session!("warp test session");
+    #[allow(deprecated)]
     let domsep = spongefish::DomainSeparator::new(protocol_id)
         .session(session)
         .instance(INSTANCE_TAG);
@@ -44,6 +45,7 @@ fn make_prover() -> SpongeProver {
 fn make_verifier(narg_string: &[u8]) -> SpongeVerifier<'_> {
     let protocol_id = spongefish::protocol_id(core::format_args!("argus::warp::test"));
     let session = spongefish::session!("warp test session");
+    #[allow(deprecated)]
     let domsep = spongefish::DomainSeparator::new(protocol_id)
         .session(session)
         .instance(INSTANCE_TAG);
@@ -295,10 +297,10 @@ fn warp_ir_dsfs_prove_verify() {
 
     let session = spongefish::session!("warp IR test");
     let ir = WARPReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default();
-    let proof = dsfs::prove_reduction(&ir, session, &instance, &witness);
+    let proof = dsfs::prove_reduction(&ir, &session, &instance, &witness);
     println!("IR NARG string: {} bytes", proof.len());
 
-    let target = dsfs::verify_reduction(&ir, session, &instance, &proof)
+    let target = dsfs::verify_reduction(&ir, &session, &instance, &proof)
         .expect("IR verification failed");
 
     println!("IR verification: OK");
@@ -340,12 +342,12 @@ fn warp_full_ia_dsfs_prove_verify() {
 
     let session = spongefish::session!("warp FullWARP test");
     let full = FullWARP::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default();
-    let proof = dsfs::prove(&full, session, &instance, &witness);
+    let proof = dsfs::prove(&full, &session, &instance, &witness);
     println!("FullWARP NARG string: {} bytes", proof.len());
 
     dsfs::verify(
         &full,
-        session,
+        &session,
         &instance,
         &proof,
     )

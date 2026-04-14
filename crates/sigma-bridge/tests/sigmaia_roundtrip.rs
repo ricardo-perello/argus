@@ -1,8 +1,8 @@
 //! Roundtrip tests for `SigmaIA<S>` via the full DSFS pipeline.
 //!
-//! After the Stage 1 domain-separation refactor, `SigmaIA`'s `protocol_id(&self)`
-//! returns the full 64-byte `protocol_identifier()` from the underlying sigma
-//! protocol. DSFS compacts it (Stage 1: BLAKE3) into the 32-byte domain separator slot.
+//! `SigmaIA`'s `protocol_id(&self)` returns the full sigma-proofs `protocol_identifier()`
+//! bytes. DSFS passes them with [`dsfs::SpongeInfo`] and the encoded session into
+//! spongefish [`spongefish::DomainSeparator::derive`].
 
 use curve25519_dalek::{
     constants::RISTRETTO_BASEPOINT_POINT, ristretto::RistrettoPoint, scalar::Scalar,
@@ -38,8 +38,8 @@ fn sigmaia_dsfs_roundtrip() {
 
     let session = spongefish::session!("sigmaia-roundtrip-test");
 
-    let proof = dsfs::prove(&instance, session, &instance, &sigma_witness);
-    dsfs::verify(&instance, session, &instance, &proof).expect("verification must succeed");
+    let proof = dsfs::prove(&instance, &session, &instance, &sigma_witness);
+    dsfs::verify(&instance, &session, &instance, &proof).expect("verification must succeed");
 }
 
 #[test]

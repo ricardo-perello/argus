@@ -285,14 +285,14 @@ fn run_dsfs(instance: &Instance, evals: &Vec<Fr>) {
 
     let session = spongefish::session!("argus warmup: committed sumcheck");
 
-    let narg_string = dsfs::prove(&CommittedSumcheck, session, instance, evals);
+    let narg_string = dsfs::prove(&CommittedSumcheck, &session, instance, evals);
     println!(
         "Proof ({} bytes):\n{}",
         narg_string.len(),
         hex::encode(&narg_string)
     );
 
-    dsfs::verify(&CommittedSumcheck, session, instance, &narg_string).expect("Invalid proof");
+    dsfs::verify(&CommittedSumcheck, &session, instance, &narg_string).expect("Invalid proof");
     println!("Verification succeeded");
 }
 

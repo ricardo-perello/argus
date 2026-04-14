@@ -120,6 +120,7 @@ mod tests {
 
         let instance = Instance { n, evals, claimed_sum };
 
+        #[allow(deprecated)]
         let domain_separator = DomainSeparator::new(Sumcheck::protocol_id())
             .session(spongefish::session!("argus examples"))
             .instance(&instance);
@@ -147,6 +148,7 @@ fn main() {
         claimed_sum,
     };
 
+    #[allow(deprecated)]
     let domain_separator = DomainSeparator::new(Sumcheck::protocol_id())
         .session(spongefish::session!("argus examples"))
         .instance(&instance);

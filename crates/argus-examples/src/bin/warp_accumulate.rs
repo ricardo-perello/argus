@@ -158,8 +158,8 @@ mod tests {
         let witness = values;
 
         let session = spongefish::session!("argus example: warp accumulate");
-        let proof = dsfs::prove_reduction(&Accumulate, session, &instance, &witness);
-        let target = dsfs::verify_reduction(&Accumulate, session, &instance, &proof)
+        let proof = dsfs::prove_reduction(&Accumulate, &session, &instance, &witness);
+        let target = dsfs::verify_reduction(&Accumulate, &session, &instance, &proof)
             .expect("reduction failed");
         decide(&target).expect("decider rejected");
     }
@@ -180,14 +180,14 @@ fn main() {
 
     let session = spongefish::session!("argus example: warp accumulate");
 
-    let proof = dsfs::prove_reduction(&Accumulate, session, &instance, &witness);
+    let proof = dsfs::prove_reduction(&Accumulate, &session, &instance, &witness);
     println!(
         "Accumulation proof ({n} instances, {} bytes):\n{}",
         proof.len(),
         hex::encode(&proof)
     );
 
-    let target = dsfs::verify_reduction(&Accumulate, session, &instance, &proof)
+    let target = dsfs::verify_reduction(&Accumulate, &session, &instance, &proof)
         .expect("reduction failed");
     println!(
         "Reduction succeeded -> target instance:\n  acc_claim = {:?}\n  acc_value = {:?}",

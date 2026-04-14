@@ -110,10 +110,10 @@ fn run_dsfs(instance: &[ark_curve25519::EdwardsProjective; 2], sk: &ark_curve255
     let session = spongefish::session!("spongefish examples");
 
     let schnorr = Schnorr::<G>::default();
-    let narg_string = dsfs::prove(&schnorr, session, instance, sk);
+    let narg_string = dsfs::prove(&schnorr, &session, &instance, sk);
     println!("Proof:\n{}", hex::encode(&narg_string));
 
-    dsfs::verify(&schnorr, session, instance, &narg_string).expect("verification failed");
+    dsfs::verify(&schnorr, &session, &instance, &narg_string).expect("verification failed");
     println!("Verification succeeded");
 }
 
@@ -270,8 +270,8 @@ mod tests {
 
         let session = spongefish::session!("spongefish examples");
         let schnorr = Schnorr::<G>::default();
-        let narg = dsfs::prove(&schnorr, session, &instance, &sk);
-        dsfs::verify(&schnorr, session, &instance, &narg).expect("dsfs verification failed");
+        let narg = dsfs::prove(&schnorr, &session, &instance, &sk);
+        dsfs::verify(&schnorr, &session, &instance, &narg).expect("dsfs verification failed");
     }
 
     #[test]
