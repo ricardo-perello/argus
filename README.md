@@ -66,13 +66,14 @@ the protocol.
 ## Documentation index
 
 - **IA/IR interface**: `docs/iarg-interface-v5.md` — current trait design, protocol id scheme, security metadata
+- **Domain separation**: `docs/domain-separation.md` — `derive(protocol, sponge_info, session)`, `SpongeInfo`, σ-proofs alignment
 - **DSFS compiler**: `docs/dsfs-v2.md` — Keccak transcript, salt, sponge parameters
 - **Interactive reductions**: `docs/interactive-reduction-v2.md` — sequential composition, source/target witness
 - **Sigma bridge**: `docs/sigma-bridge-v3.md` — StdHash vs Keccak, golden vector behavior
 - **WARP**: `docs/warp.md` — protocol overview; `docs/examples-vs-warp.md` — API layers and usage guide
 - **Live channel**: `docs/live-channel.md`
 
-Prior interface iterations are in `docs/archive/`.
+Prior interface iterations and the April 2026 domain-separation **planning** write-up are in `docs/archive/`.
 
 ## Quickstart
 

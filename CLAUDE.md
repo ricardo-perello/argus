@@ -49,6 +49,7 @@ Definition of done for changes:
 Useful docs:
 
 - `README.md` (overview + quickstart)
+- `docs/domain-separation.md` (derive triple, `SpongeInfo`, σ-proofs alignment)
 - `docs/dsfs-v2.md` (Keccak transcript, optional salt, sponge params)
 - `docs/iarg-interface-v4.md` (security metadata + DSFS bounds)
 - `docs/warp.md` (how WARP plugs into Argus)

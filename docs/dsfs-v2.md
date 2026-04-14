@@ -102,6 +102,8 @@ Security bookkeeping: `STD_SPONGE_PARAMS` remains tied to Keccak; for StdHash-st
 
 The `sigma-bridge` crate provides Nizk-layout batchable/compact drivers and σ-proofs–compatible `derive_session_id`.
 
+For the **triple** `(protocol_id, sponge_info, session)` and SHA-512 `domsep` feeding these channels, see [`domain-separation.md`](domain-separation.md).
+
 ## What did not change
 
 Core IA protocol traits are unchanged relative to DSFS v1:

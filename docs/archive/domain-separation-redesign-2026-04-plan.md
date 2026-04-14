@@ -1,6 +1,10 @@
-# Domain Separation Redesign
+# Domain Separation Redesign (planning notes, April 2026)
 
-**Status:** Updated 2026-04-14 after discussion with Michele.
+> **Archived.** This file is the original design-space write-up. The **implemented** layout is documented in [`domain-separation.md`](../domain-separation.md). Some options here (e.g. SHA-256 with a 32-byte tag) were discussed before the stack settled on **SHA-512 → 64-byte `domsep`** in spongefish and `SpongeInfo` strings in DSFS.
+
+---
+
+**Status (historical):** Updated 2026-04-14 after discussion with Michele.
 
 **Key decisions:** Option B — derivation and session enforcement live in **spongefish**, not DSFS. SHA-256 (32 bytes) replaces the earlier SHA-512 (64 bytes) proposal. DSFS `prove`/`verify` take `&ia` and `session: impl Encoding<[u8]>`. CO25 §8.2 session-placement deviation is accepted as still secure.
 
