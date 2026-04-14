@@ -1,22 +1,28 @@
 //! Sequential composition of reductions and reduced arguments.
 
+extern crate alloc;
+
+use alloc::vec::Vec;
+
 use crate::argument::InteractiveArgument;
 use crate::channel::{ProverChannel, VerifierChannel};
 use crate::error::VerificationResult;
 use crate::reduction::InteractiveReduction;
 use crate::security::{ProtocolSecurity, SecurityProfile};
 
-/// Derives a 32-byte protocol identifier from two sub-protocol IDs and a
-/// domain-separation tag.  Non-commutative: swapping `first` and `second`
-/// produces a different result.
-fn derive_composition_id(tag: u8, first: [u8; 32], second: [u8; 32]) -> [u8; 32] {
-    let mut id = [0u8; 32];
-    let mut i = 0;
-    while i < 32 {
-        id[i] = first[i] ^ second[(i + 1) % 32] ^ tag.wrapping_add(i as u8);
-        i += 1;
-    }
-    id
+/// Derives a variable-length protocol identifier from two sub-protocol IDs and a
+/// domain-separation tag, using length-prefixed concatenation:
+///   `tag || LE32(|first|) || first || LE32(|second|) || second`
+/// This encoding is injective — no two distinct `(tag, first, second)` triples
+/// produce the same byte string — so it's a safe input to the DSFS derivation.
+fn derive_composition_id(tag: u8, first: &[u8], second: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(1 + 4 + first.len() + 4 + second.len());
+    out.push(tag);
+    out.extend_from_slice(&(first.len() as u32).to_le_bytes());
+    out.extend_from_slice(first);
+    out.extend_from_slice(&(second.len() as u32).to_le_bytes());
+    out.extend_from_slice(second);
+    out
 }
 
 /// Sequential composition of two interactive reductions: IR . IR -> IR.
@@ -24,7 +30,16 @@ fn derive_composition_id(tag: u8, first: [u8; 32], second: [u8; 32]) -> [u8; 32]
 /// `First` reduces `(SourceInstance, SourceWitness)` into an intermediate
 /// relation; `Second` reduces that intermediate relation into the final
 /// `(TargetInstance, TargetWitness)`.
-pub struct ChainedReduction<First, Second>(core::marker::PhantomData<(First, Second)>);
+pub struct ChainedReduction<First, Second> {
+    pub first: First,
+    pub second: Second,
+}
+
+impl<First, Second> ChainedReduction<First, Second> {
+    pub fn new(first: First, second: Second) -> Self {
+        Self { first, second }
+    }
+}
 
 impl<First, Second> InteractiveReduction for ChainedReduction<First, Second>
 where
@@ -39,25 +54,31 @@ where
     type SourceWitness = First::SourceWitness;
     type TargetWitness = Second::TargetWitness;
 
-    fn protocol_id() -> [u8; 32] {
-        derive_composition_id(0x01, First::protocol_id(), Second::protocol_id())
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        derive_composition_id(
+            0x01,
+            self.first.protocol_id().as_ref(),
+            self.second.protocol_id().as_ref(),
+        )
     }
 
     fn prove<P: ProverChannel>(
+        &self,
         ch: &mut P,
         instance: &Self::SourceInstance,
         witness: &Self::SourceWitness,
     ) -> (Self::TargetInstance, Self::TargetWitness) {
-        let (x2, w2) = First::prove(ch, instance, witness);
-        Second::prove(ch, &x2, &w2)
+        let (x2, w2) = self.first.prove(ch, instance, witness);
+        self.second.prove(ch, &x2, &w2)
     }
 
     fn verify<V: VerifierChannel>(
+        &self,
         ch: &mut V,
         instance: &Self::SourceInstance,
     ) -> VerificationResult<Self::TargetInstance> {
-        let intermediate = First::verify(ch, instance)?;
-        Second::verify(ch, &intermediate)
+        let intermediate = self.first.verify(ch, instance)?;
+        self.second.verify(ch, &intermediate)
     }
 }
 
@@ -69,8 +90,19 @@ where
         SourceWitness = First::TargetWitness,
     > + ProtocolSecurity,
 {
-    fn security() -> SecurityProfile {
-        First::security().compose(&Second::security())
+    fn security(&self) -> SecurityProfile {
+        self.first.security().compose(&self.second.security())
+    }
+}
+
+/// Default impl so `ChainedReduction<F, S>` can be zero-sized-constructed when
+/// both subcomponents are `Default`.
+impl<First: Default, Second: Default> Default for ChainedReduction<First, Second> {
+    fn default() -> Self {
+        Self {
+            first: First::default(),
+            second: Second::default(),
+        }
     }
 }
 
@@ -80,7 +112,16 @@ where
 /// `Reduction` reduces the source relation into a target relation whose
 /// instance and witness types match the `Argument`.  The composed protocol
 /// is itself an interactive argument (the verifier outputs accept/reject).
-pub struct ReducedArgument<Reduction, Argument>(core::marker::PhantomData<(Reduction, Argument)>);
+pub struct ReducedArgument<Reduction, Argument> {
+    pub reduction: Reduction,
+    pub argument: Argument,
+}
+
+impl<R, A> ReducedArgument<R, A> {
+    pub fn new(reduction: R, argument: A) -> Self {
+        Self { reduction, argument }
+    }
+}
 
 impl<R, A> InteractiveArgument for ReducedArgument<R, A>
 where
@@ -93,21 +134,31 @@ where
     type Instance = R::SourceInstance;
     type Witness = R::SourceWitness;
 
-    fn protocol_id() -> [u8; 32] {
-        derive_composition_id(0x02, R::protocol_id(), A::protocol_id())
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        derive_composition_id(
+            0x02,
+            self.reduction.protocol_id().as_ref(),
+            self.argument.protocol_id().as_ref(),
+        )
     }
 
-    fn prove<P: ProverChannel>(ch: &mut P, instance: &Self::Instance, witness: &Self::Witness) {
-        let (x2, w2) = R::prove(ch, instance, witness);
-        A::prove(ch, &x2, &w2);
+    fn prove<P: ProverChannel>(
+        &self,
+        ch: &mut P,
+        instance: &Self::Instance,
+        witness: &Self::Witness,
+    ) {
+        let (x2, w2) = self.reduction.prove(ch, instance, witness);
+        self.argument.prove(ch, &x2, &w2);
     }
 
     fn verify<V: VerifierChannel>(
+        &self,
         ch: &mut V,
         instance: &Self::Instance,
     ) -> VerificationResult<()> {
-        let target_instance = R::verify(ch, instance)?;
-        A::verify(ch, &target_instance)
+        let target_instance = self.reduction.verify(ch, instance)?;
+        self.argument.verify(ch, &target_instance)
     }
 }
 
@@ -119,7 +170,16 @@ where
         Witness = R::TargetWitness,
     > + ProtocolSecurity,
 {
-    fn security() -> SecurityProfile {
-        R::security().compose(&A::security())
+    fn security(&self) -> SecurityProfile {
+        self.reduction.security().compose(&self.argument.security())
+    }
+}
+
+impl<R: Default, A: Default> Default for ReducedArgument<R, A> {
+    fn default() -> Self {
+        Self {
+            reduction: R::default(),
+            argument: A::default(),
+        }
     }
 }

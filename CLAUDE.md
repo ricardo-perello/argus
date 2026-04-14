@@ -152,6 +152,7 @@ When reviewing any change that touches protocol execution or transcript wiring, 
 - Prefer the smallest change that preserves transcript ordering and determinism.
 - Do not add dependencies or change crypto primitives without calling it out explicitly.
 - Always provide a concrete test plan (which `cargo ...` commands to run).
+- Never add a `Co-Authored-By: Claude ...` trailer to commit messages.
 
 ## Advisors on the project
 

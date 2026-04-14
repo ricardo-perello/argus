@@ -676,6 +676,7 @@ dependencies = [
 name = "dsfs"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "ia-core",
  "rand_core 0.6.4",
  "spongefish 0.5.1",

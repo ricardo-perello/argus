@@ -14,44 +14,44 @@ pub struct NargSecurity {
 }
 
 /// NARG security for a protocol under the standard sponge.
-pub fn security<P: ProtocolSecurity>() -> NargSecurity {
-    NargSecurity::for_protocol::<P>()
+pub fn security<P: ProtocolSecurity>(p: &P) -> NargSecurity {
+    NargSecurity::for_protocol(p)
 }
 
 /// NARG security for an interactive reduction under the standard sponge.
-pub fn reduction_security<P: ProtocolSecurity>() -> NargSecurity {
-    NargSecurity::for_protocol::<P>()
+pub fn reduction_security<P: ProtocolSecurity>(p: &P) -> NargSecurity {
+    NargSecurity::for_protocol(p)
 }
 
 impl NargSecurity {
     /// Security for a protocol under the standard sponge.
-    pub fn for_protocol<P: ProtocolSecurity>() -> Self {
-        Self { ia: P::security(), sponge: STD_SPONGE_PARAMS }
+    pub fn for_protocol<P: ProtocolSecurity>(p: &P) -> Self {
+        Self { ia: p.security(), sponge: STD_SPONGE_PARAMS }
     }
 
     /// Security for a protocol under a custom sponge configuration.
-    pub fn for_protocol_with<P: ProtocolSecurity>(sponge: SpongeParams) -> Self {
-        Self { ia: P::security(), sponge }
+    pub fn for_protocol_with<P: ProtocolSecurity>(p: &P, sponge: SpongeParams) -> Self {
+        Self { ia: p.security(), sponge }
     }
 
     /// Security for an IA under the standard sponge.
-    pub fn for_ia<IA: ProtocolSecurity>() -> Self {
-        Self { ia: IA::security(), sponge: STD_SPONGE_PARAMS }
+    pub fn for_ia<IA: ProtocolSecurity>(ia: &IA) -> Self {
+        Self { ia: ia.security(), sponge: STD_SPONGE_PARAMS }
     }
 
     /// Security for an IR under the standard sponge.
-    pub fn for_reduction<IR: ProtocolSecurity>() -> Self {
-        Self { ia: IR::security(), sponge: STD_SPONGE_PARAMS }
+    pub fn for_reduction<IR: ProtocolSecurity>(ir: &IR) -> Self {
+        Self { ia: ir.security(), sponge: STD_SPONGE_PARAMS }
     }
 
     /// Security for an IA under a custom sponge configuration.
-    pub fn for_ia_with<IA: ProtocolSecurity>(sponge: SpongeParams) -> Self {
-        Self { ia: IA::security(), sponge }
+    pub fn for_ia_with<IA: ProtocolSecurity>(ia: &IA, sponge: SpongeParams) -> Self {
+        Self { ia: ia.security(), sponge }
     }
 
     /// Security for an IR under a custom sponge configuration.
-    pub fn for_reduction_with<IR: ProtocolSecurity>(sponge: SpongeParams) -> Self {
-        Self { ia: IR::security(), sponge }
+    pub fn for_reduction_with<IR: ProtocolSecurity>(ir: &IR, sponge: SpongeParams) -> Self {
+        Self { ia: ir.security(), sponge }
     }
 
     /// Theorem 6.1: `eps_narg(t) <= eps_sr_ip(t) + 25*t^2/|Sigma|^c`.

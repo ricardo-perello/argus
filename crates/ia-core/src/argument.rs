@@ -10,16 +10,26 @@ pub trait InteractiveArgument {
     /// Prover's private input.
     type Witness;
 
-    /// Unique 32-byte protocol identifier for domain separation.
+    /// Variable-length protocol identifier for domain separation.
     ///
-    /// The full 64-byte DSFS domain separator is `protocol_id() || sponge_tag`,
-    /// where the sponge tag is appended by the DSFS backend.  This lets the label
-    /// remain human-readable while encoding the hash-function choice at the DSFS level.
-    fn protocol_id() -> [u8; 32];
+    /// May depend on runtime structure of the protocol instance (e.g. a composition
+    /// tree). The DSFS backend compacts and mixes this with a sponge tag and session
+    /// to form the full domain separator. Leaf protocols may return a fixed
+    /// `[u8; 32]` (via `pad_protocol_id`) or a short byte slice.
+    fn protocol_id(&self) -> impl AsRef<[u8]>;
 
     /// Prover logic: writes messages to and reads challenges from a `ProverChannel`.
-    fn prove<P: ProverChannel>(ch: &mut P, instance: &Self::Instance, witness: &Self::Witness);
+    fn prove<P: ProverChannel>(
+        &self,
+        ch: &mut P,
+        instance: &Self::Instance,
+        witness: &Self::Witness,
+    );
 
     /// Verifier logic: reads messages from and derives challenges from a `VerifierChannel`.
-    fn verify<V: VerifierChannel>(ch: &mut V, instance: &Self::Instance) -> VerificationResult<()>;
+    fn verify<V: VerifierChannel>(
+        &self,
+        ch: &mut V,
+        instance: &Self::Instance,
+    ) -> VerificationResult<()>;
 }

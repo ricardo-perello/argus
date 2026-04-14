@@ -40,26 +40,34 @@ fn build_domain_sep(ia_id: [u8; 32], sponge_tag: [u8; 32]) -> [u8; 64] {
     id
 }
 
-fn dsfs_protocol_id<IA, H>() -> [u8; 64]
+/// Stage 1 temporary: compress a variable-length IA/IR protocol id into 32 bytes
+/// via a domain-separated BLAKE3 KDF. Removed in Stage 3 once the spongefish
+/// `DomainSeparator::derive` API lands and can take the raw slice directly.
+fn compact_protocol_id(raw: &[u8]) -> [u8; 32] {
+    blake3::derive_key("argus/dsfs/v1/ia-protocol-id-compact", raw)
+}
+
+fn dsfs_protocol_id<IA, H>(ia: &IA) -> [u8; 64]
 where
     H: SpongeTag,
     IA: InteractiveArgument,
 {
-    build_domain_sep(IA::protocol_id(), H::TAG)
+    build_domain_sep(compact_protocol_id(ia.protocol_id().as_ref()), H::TAG)
 }
 
-fn dsfs_reduction_protocol_id<IR, H>() -> [u8; 64]
+fn dsfs_reduction_protocol_id<IR, H>(ir: &IR) -> [u8; 64]
 where
     H: SpongeTag,
     IR: InteractiveReduction,
 {
-    build_domain_sep(IR::protocol_id(), H::TAG)
+    build_domain_sep(compact_protocol_id(ir.protocol_id().as_ref()), H::TAG)
 }
 
 
 /// Non-interactive prover with explicit salt length and duplex sponge `H`.
 #[inline]
 pub fn prove_with_sponge_and_salt<IA, H, const SALT_LEN: usize>(
+    ia: &IA,
     sponge: H,
     session: [u8; 64],
     instance: &IA::Instance,
@@ -72,7 +80,7 @@ where
     [u8; 64]: Encoding<[H::U]>,
     [u8; SALT_LEN]: Encoding<[H::U]>,
 {
-    let domsep = DomainSeparator::new(dsfs_protocol_id::<IA, H>())
+    let domsep = DomainSeparator::new(dsfs_protocol_id::<IA, H>(ia))
         .session(session)
         .instance(instance);
 
@@ -80,13 +88,14 @@ where
     let mut salt = [0u8; SALT_LEN];
     spongefish_prover_ch.state.rng().fill_bytes(&mut salt);
     spongefish_prover_ch.state.prover_message(&salt);
-    IA::prove(&mut spongefish_prover_ch, instance, witness);
+    ia.prove(&mut spongefish_prover_ch, instance, witness);
     spongefish_prover_ch.narg_string().to_vec()
 }
 
 /// Non-interactive prover with default salt (`SALT_LEN = 0`).
 #[inline(always)]
 pub fn prove_with_sponge<IA, H>(
+    ia: &IA,
     sponge: H,
     session: [u8; 64],
     instance: &IA::Instance,
@@ -98,12 +107,13 @@ where
     IA::Instance: Encoding<[H::U]>,
     [u8; 64]: Encoding<[H::U]>,
 {
-    prove_with_sponge_and_salt::<IA, H, 0>(sponge, session, instance, witness)
+    prove_with_sponge_and_salt::<IA, H, 0>(ia, sponge, session, instance, witness)
 }
 
 /// Non-interactive prover with explicit salt length (standard Keccak duplex).
 #[inline(always)]
 pub fn prove_with_salt<IA, const SALT_LEN: usize>(
+    ia: &IA,
     session: [u8; 64],
     instance: &IA::Instance,
     witness: &IA::Witness,
@@ -113,6 +123,7 @@ where
     IA::Instance: Encoding,
 {
     prove_with_sponge_and_salt::<IA, Keccak, SALT_LEN>(
+        ia,
         Keccak::default(),
         session,
         instance,
@@ -122,16 +133,22 @@ where
 
 /// Non-interactive prover with default `SALT_LEN = 0`.
 #[inline(always)]
-pub fn prove<IA>(session: [u8; 64], instance: &IA::Instance, witness: &IA::Witness) -> Vec<u8>
+pub fn prove<IA>(
+    ia: &IA,
+    session: [u8; 64],
+    instance: &IA::Instance,
+    witness: &IA::Witness,
+) -> Vec<u8>
 where
     IA: InteractiveArgument,
     IA::Instance: Encoding,
 {
-    prove_with_salt::<IA, 0>(session, instance, witness)
+    prove_with_salt::<IA, 0>(ia, session, instance, witness)
 }
 
 /// Non-interactive verifier with explicit salt length and duplex sponge `H`.
 pub fn verify_with_sponge_and_salt<'a, IA, H, const SALT_LEN: usize>(
+    ia: &IA,
     sponge: H,
     session: [u8; 64],
     instance: &IA::Instance,
@@ -144,7 +161,7 @@ where
     [u8; 64]: Encoding<[H::U]>,
     [u8; SALT_LEN]: Encoding<[H::U]> + spongefish::NargDeserialize,
 {
-    let domsep = DomainSeparator::new(dsfs_protocol_id::<IA, H>())
+    let domsep = DomainSeparator::new(dsfs_protocol_id::<IA, H>(ia))
         .session(session)
         .instance(instance);
 
@@ -153,7 +170,7 @@ where
         .state
         .prover_message()
         .map_err(|_| ia_core::VerificationError)?;
-    IA::verify(&mut spongefish_verifier_ch, instance)?;
+    ia.verify(&mut spongefish_verifier_ch, instance)?;
     spongefish_verifier_ch
         .state
         .check_eof()
@@ -162,6 +179,7 @@ where
 
 /// Non-interactive verifier with default salt (`SALT_LEN = 0`).
 pub fn verify_with_sponge<'a, IA, H>(
+    ia: &IA,
     sponge: H,
     session: [u8; 64],
     instance: &IA::Instance,
@@ -174,11 +192,12 @@ where
     [u8; 64]: Encoding<[H::U]>,
     [u8; 0]: Encoding<[H::U]> + spongefish::NargDeserialize,
 {
-    verify_with_sponge_and_salt::<IA, H, 0>(sponge, session, instance, proof)
+    verify_with_sponge_and_salt::<IA, H, 0>(ia, sponge, session, instance, proof)
 }
 
 /// Non-interactive verifier with explicit salt length (standard Keccak duplex).
 pub fn verify_with_salt<'a, IA, const SALT_LEN: usize>(
+    ia: &IA,
     session: [u8; 64],
     instance: &IA::Instance,
     proof: &'a [u8],
@@ -188,11 +207,18 @@ where
     IA::Instance: Encoding,
     [u8; SALT_LEN]: spongefish::NargDeserialize,
 {
-    verify_with_sponge_and_salt::<IA, Keccak, SALT_LEN>(Keccak::default(), session, instance, proof)
+    verify_with_sponge_and_salt::<IA, Keccak, SALT_LEN>(
+        ia,
+        Keccak::default(),
+        session,
+        instance,
+        proof,
+    )
 }
 
 /// Non-interactive verifier with default `SALT_LEN = 0`.
 pub fn verify<'a, IA>(
+    ia: &IA,
     session: [u8; 64],
     instance: &IA::Instance,
     proof: &'a [u8],
@@ -201,11 +227,12 @@ where
     IA: InteractiveArgument,
     IA::Instance: Encoding,
 {
-    verify_with_salt::<IA, 0>(session, instance, proof)
+    verify_with_salt::<IA, 0>(ia, session, instance, proof)
 }
 
 /// Non-interactive prover for an IOR with explicit salt length and sponge `H`.
 pub fn prove_reduction_with_sponge_and_salt<IR, H, const SALT_LEN: usize>(
+    ir: &IR,
     sponge: H,
     session: [u8; 64],
     instance: &IR::SourceInstance,
@@ -218,7 +245,7 @@ where
     [u8; 64]: Encoding<[H::U]>,
     [u8; SALT_LEN]: Encoding<[H::U]>,
 {
-    let domsep = DomainSeparator::new(dsfs_reduction_protocol_id::<IR, H>())
+    let domsep = DomainSeparator::new(dsfs_reduction_protocol_id::<IR, H>(ir))
         .session(session)
         .instance(instance);
 
@@ -227,11 +254,12 @@ where
     spongefish_prover_ch.state.rng().fill_bytes(&mut salt);
     spongefish_prover_ch.state.prover_message(&salt);
     let (_target_instance, _target_witness) =
-        IR::prove(&mut spongefish_prover_ch, instance, witness);
+        ir.prove(&mut spongefish_prover_ch, instance, witness);
     spongefish_prover_ch.narg_string().to_vec()
 }
 
 pub fn prove_reduction_with_sponge<IR, H>(
+    ir: &IR,
     sponge: H,
     session: [u8; 64],
     instance: &IR::SourceInstance,
@@ -243,11 +271,12 @@ where
     IR::SourceInstance: Encoding<[H::U]>,
     [u8; 64]: Encoding<[H::U]>,
 {
-    prove_reduction_with_sponge_and_salt::<IR, H, 0>(sponge, session, instance, witness)
+    prove_reduction_with_sponge_and_salt::<IR, H, 0>(ir, sponge, session, instance, witness)
 }
 
 /// Non-interactive prover for an IOR with explicit salt length.
 pub fn prove_reduction_with_salt<IR, const SALT_LEN: usize>(
+    ir: &IR,
     session: [u8; 64],
     instance: &IR::SourceInstance,
     witness: &IR::SourceWitness,
@@ -257,6 +286,7 @@ where
     IR::SourceInstance: Encoding,
 {
     prove_reduction_with_sponge_and_salt::<IR, Keccak, SALT_LEN>(
+        ir,
         Keccak::default(),
         session,
         instance,
@@ -266,6 +296,7 @@ where
 
 /// Non-interactive prover for an IOR with default `SALT_LEN = 0`.
 pub fn prove_reduction<IR>(
+    ir: &IR,
     session: [u8; 64],
     instance: &IR::SourceInstance,
     witness: &IR::SourceWitness,
@@ -274,11 +305,12 @@ where
     IR: InteractiveReduction,
     IR::SourceInstance: Encoding,
 {
-    prove_reduction_with_salt::<IR, 0>(session, instance, witness)
+    prove_reduction_with_salt::<IR, 0>(ir, session, instance, witness)
 }
 
 /// Non-interactive verifier for an IOR with explicit salt length and sponge `H`.
 pub fn verify_reduction_with_sponge_and_salt<'a, IR, H, const SALT_LEN: usize>(
+    ir: &IR,
     sponge: H,
     session: [u8; 64],
     instance: &IR::SourceInstance,
@@ -291,7 +323,7 @@ where
     [u8; 64]: Encoding<[H::U]>,
     [u8; SALT_LEN]: Encoding<[H::U]> + spongefish::NargDeserialize,
 {
-    let domsep = DomainSeparator::new(dsfs_reduction_protocol_id::<IR, H>())
+    let domsep = DomainSeparator::new(dsfs_reduction_protocol_id::<IR, H>(ir))
         .session(session)
         .instance(instance);
 
@@ -300,7 +332,7 @@ where
         .state
         .prover_message()
         .map_err(|_| ia_core::VerificationError)?;
-    let target = IR::verify(&mut spongefish_verifier_ch, instance)?;
+    let target = ir.verify(&mut spongefish_verifier_ch, instance)?;
     spongefish_verifier_ch
         .state
         .check_eof()
@@ -309,6 +341,7 @@ where
 }
 
 pub fn verify_reduction_with_sponge<'a, IR, H>(
+    ir: &IR,
     sponge: H,
     session: [u8; 64],
     instance: &IR::SourceInstance,
@@ -321,11 +354,12 @@ where
     [u8; 64]: Encoding<[H::U]>,
     [u8; 0]: Encoding<[H::U]> + spongefish::NargDeserialize,
 {
-    verify_reduction_with_sponge_and_salt::<IR, H, 0>(sponge, session, instance, proof)
+    verify_reduction_with_sponge_and_salt::<IR, H, 0>(ir, sponge, session, instance, proof)
 }
 
 /// Non-interactive verifier for an IOR with explicit salt length.
 pub fn verify_reduction_with_salt<'a, IR, const SALT_LEN: usize>(
+    ir: &IR,
     session: [u8; 64],
     instance: &IR::SourceInstance,
     proof: &'a [u8],
@@ -336,6 +370,7 @@ where
     [u8; SALT_LEN]: spongefish::NargDeserialize,
 {
     verify_reduction_with_sponge_and_salt::<IR, Keccak, SALT_LEN>(
+        ir,
         Keccak::default(),
         session,
         instance,
@@ -345,6 +380,7 @@ where
 
 /// Non-interactive verifier for an IOR with default `SALT_LEN = 0`.
 pub fn verify_reduction<'a, IR>(
+    ir: &IR,
     session: [u8; 64],
     instance: &IR::SourceInstance,
     proof: &'a [u8],
@@ -353,5 +389,5 @@ where
     IR: InteractiveReduction,
     IR::SourceInstance: Encoding,
 {
-    verify_reduction_with_salt::<IR, 0>(session, instance, proof)
+    verify_reduction_with_salt::<IR, 0>(ir, session, instance, proof)
 }

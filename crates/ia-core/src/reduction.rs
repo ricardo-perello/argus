@@ -19,16 +19,17 @@ pub trait InteractiveReduction {
     /// Prover's output: private input for the target relation.
     type TargetWitness;
 
-    /// Unique 32-byte protocol identifier for domain separation.
+    /// Variable-length protocol identifier for domain separation.
     ///
-    /// The full 64-byte DSFS domain separator is `protocol_id() || sponge_tag`,
-    /// where the sponge tag is appended by the DSFS backend.
-    fn protocol_id() -> [u8; 32];
+    /// May depend on runtime structure. DSFS compacts and mixes this with a sponge
+    /// tag and session to form the full domain separator.
+    fn protocol_id(&self) -> impl AsRef<[u8]>;
 
     /// Prover logic: takes `(source_instance, source_witness)` and returns both the target
     /// instance and target witness.  In a public-coin protocol the prover can always compute
     /// the target instance (it sees the same transcript as the verifier).
     fn prove<P: ProverChannel>(
+        &self,
         ch: &mut P,
         instance: &Self::SourceInstance,
         witness: &Self::SourceWitness,
@@ -36,6 +37,7 @@ pub trait InteractiveReduction {
 
     /// Verifier logic: returns a new instance, not accept/reject.
     fn verify<V: VerifierChannel>(
+        &self,
         ch: &mut V,
         instance: &Self::SourceInstance,
     ) -> VerificationResult<Self::TargetInstance>;

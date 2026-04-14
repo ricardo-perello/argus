@@ -294,19 +294,12 @@ fn warp_ir_dsfs_prove_verify() {
     };
 
     let session = spongefish::session!("warp IR test");
-    let proof = dsfs::prove_reduction::<WARPReduction<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>>(
-        session,
-        &instance,
-        &witness,
-    );
+    let ir = WARPReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default();
+    let proof = dsfs::prove_reduction(&ir, session, &instance, &witness);
     println!("IR NARG string: {} bytes", proof.len());
 
-    let target = dsfs::verify_reduction::<WARPReduction<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>>(
-        session,
-        &instance,
-        &proof,
-    )
-    .expect("IR verification failed");
+    let target = dsfs::verify_reduction(&ir, session, &instance, &proof)
+        .expect("IR verification failed");
 
     println!("IR verification: OK");
     println!("  target root count: {}", target.acc_instance.0.len());
@@ -346,14 +339,12 @@ fn warp_full_ia_dsfs_prove_verify() {
     };
 
     let session = spongefish::session!("warp FullWARP test");
-    let proof = dsfs::prove::<FullWARP<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>>(
-        session,
-        &instance,
-        &witness,
-    );
+    let full = FullWARP::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default();
+    let proof = dsfs::prove(&full, session, &instance, &witness);
     println!("FullWARP NARG string: {} bytes", proof.len());
 
-    dsfs::verify::<FullWARP<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>>(
+    dsfs::verify(
+        &full,
         session,
         &instance,
         &proof,

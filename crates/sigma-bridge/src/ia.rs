@@ -26,7 +26,7 @@ use alloc::vec::Vec;
 
 use ia_core::{InteractiveArgument, ProverChannel, VerificationError, VerificationResult, VerifierChannel};
 use rand_chacha::rand_core::SeedableRng;
-use sigma_proofs::traits::{SigmaProtocol, StaticSigmaProtocol};
+use sigma_proofs::traits::SigmaProtocol;
 use spongefish::Encoding;
 
 /// Wraps a [`StaticSigmaProtocol`] as an [`InteractiveArgument`].
@@ -38,20 +38,21 @@ pub struct SigmaIA<S>(pub S);
 
 impl<S> InteractiveArgument for SigmaIA<S>
 where
-    S: StaticSigmaProtocol,
+    S: SigmaProtocol,
 {
     type Instance = SigmaIA<S>;
     type Witness = (S::Witness, [u8; 32]);
 
-    fn protocol_id() -> [u8; 32] {
-        // Take the first 32 bytes of the 64-byte sigma-proofs identifier.
-        // sigma-proofs zero-pads short ASCII labels (e.g. "sigma-proofs_Shake128_BLS12381"),
-        // so bytes 0..32 carry the meaningful label and bytes 32..64 are zeros.
-        // DSFS appends the sponge tag in bytes 32..64 to form the full domain separator.
-        S::static_protocol_id()[..32].try_into().unwrap()
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        // The full 64-byte sigma-proofs identifier. For `ComposedRelation` this
+        // is computed at runtime from the composition tree; for canonical
+        // sigma protocols it is a static ASCII label zero-padded to 64 bytes.
+        // DSFS compacts and mixes this with the sponge tag via BLAKE3 (Stage 1)
+        // or SHA-256 `DomainSeparator::derive` (Stage 3).
+        self.0.protocol_identifier()
     }
 
-    fn prove<P: ProverChannel>(ch: &mut P, instance: &SigmaIA<S>, witness: &(S::Witness, [u8; 32])) {
+    fn prove<P: ProverChannel>(&self, ch: &mut P, instance: &SigmaIA<S>, witness: &(S::Witness, [u8; 32])) {
         let (w, seed) = witness;
         let mut rng = rand_chacha::ChaCha20Rng::from_seed(*seed);
 
@@ -76,7 +77,7 @@ where
         }
     }
 
-    fn verify<V: VerifierChannel>(ch: &mut V, instance: &SigmaIA<S>) -> VerificationResult<()> {
+    fn verify<V: VerifierChannel>(&self, ch: &mut V, instance: &SigmaIA<S>) -> VerificationResult<()> {
         let mut commitment = Vec::with_capacity(instance.0.commitment_len());
         for _ in 0..instance.0.commitment_len() {
             commitment.push(ch.read_prover_message::<S::Commitment>()?);

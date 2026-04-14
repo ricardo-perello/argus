@@ -44,7 +44,7 @@ impl SecurityErrorBound {
 /// Composition structs (`ChainedReduction`, `ReducedArgument`) provide conditional
 /// impls when both sub-protocols implement this.
 pub trait ProtocolSecurity {
-    fn security() -> SecurityProfile;
+    fn security(&self) -> SecurityProfile;
 }
 
 impl core::fmt::Debug for SecurityErrorBound {
@@ -78,6 +78,15 @@ pub struct SecurityProfile {
     /// Length equals the number of public-coin rounds.
     pub rbr_soundness_errors: Vec<SecurityErrorBound>,
     /// State-restoration knowledge soundness error kappa^sr(t).
+    ///
+    /// TODO(Alessandro): this is currently a flat stored field set by protocol
+    /// authors.  If CY24 provides a round-by-round knowledge soundness notion
+    /// analogous to RBR soundness, this should become a *derived* field with the
+    /// correct formula:
+    ///   kappa^sr(s, t, n) <= (t + k) * kappa^rbr(n)
+    /// (CY24 Theorem 31.3.1).  If knowledge soundness is only defined at the SR
+    /// level (as in DSFS Theorem 6.2), the flat stored field is correct.
+    /// Please confirm before changing.
     pub sr_knowledge_soundness_error: SecurityErrorBound,
     /// Honest-verifier zero-knowledge error z(t).
     pub hvzk_error: SecurityErrorBound,
@@ -95,6 +104,14 @@ impl SecurityProfile {
     ///
     /// This is the bound used by DSFS Theorem 6.1 to lift interactive
     /// soundness to NARG soundness.
+    ///
+    /// TODO(Alessandro): this formula gives *standard* soundness via union bound
+    /// (CY24 Claim 31.1.3), not SR soundness.  The correct SR soundness bound is
+    ///   epsilon^sr(s, t, n) <= (t + k) * epsilon^rbr(n)
+    /// where t is the adversary's query budget, k = num_rounds() is the round
+    /// complexity, and epsilon^rbr(n) is the (uniform) per-round RBR error
+    /// (CY24 Theorem 31.2.1).  For heterogeneous per-round errors the exact
+    /// statement should be confirmed against CY24 before implementing.
     pub fn sr_soundness_error(&self) -> SecurityErrorBound {
         self.rbr_soundness_errors
             .iter()

@@ -58,11 +58,12 @@ impl InteractiveReduction for Accumulate {
     type SourceWitness = Vec<Fr>;
     type TargetWitness = ();
 
-    fn protocol_id() -> [u8; 32] {
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"warp-style rlc accumulator")
     }
 
     fn prove<P: ProverChannel>(
+        &self,
         ch: &mut P,
         instance: &SourceInstance,
         witness: &Vec<Fr>,
@@ -87,6 +88,7 @@ impl InteractiveReduction for Accumulate {
     }
 
     fn verify<V: VerifierChannel>(
+        &self,
         ch: &mut V,
         instance: &SourceInstance,
     ) -> VerificationResult<TargetInstance> {
@@ -117,7 +119,7 @@ impl InteractiveReduction for Accumulate {
 }
 
 impl ProtocolSecurity for Accumulate {
-    fn security() -> SecurityProfile {
+    fn security(&self) -> SecurityProfile {
         SecurityProfile {
             plain_soundness_error: SecurityErrorBound::zero(),
             rbr_soundness_errors: vec![SecurityErrorBound::zero()],
@@ -156,8 +158,8 @@ mod tests {
         let witness = values;
 
         let session = spongefish::session!("argus example: warp accumulate");
-        let proof = dsfs::prove_reduction::<Accumulate>(session, &instance, &witness);
-        let target = dsfs::verify_reduction::<Accumulate>(session, &instance, &proof)
+        let proof = dsfs::prove_reduction(&Accumulate, session, &instance, &witness);
+        let target = dsfs::verify_reduction(&Accumulate, session, &instance, &proof)
             .expect("reduction failed");
         decide(&target).expect("decider rejected");
     }
@@ -178,14 +180,14 @@ fn main() {
 
     let session = spongefish::session!("argus example: warp accumulate");
 
-    let proof = dsfs::prove_reduction::<Accumulate>(session, &instance, &witness);
+    let proof = dsfs::prove_reduction(&Accumulate, session, &instance, &witness);
     println!(
         "Accumulation proof ({n} instances, {} bytes):\n{}",
         proof.len(),
         hex::encode(&proof)
     );
 
-    let target = dsfs::verify_reduction::<Accumulate>(session, &instance, &proof)
+    let target = dsfs::verify_reduction(&Accumulate, session, &instance, &proof)
         .expect("reduction failed");
     println!(
         "Reduction succeeded -> target instance:\n  acc_claim = {:?}\n  acc_value = {:?}",

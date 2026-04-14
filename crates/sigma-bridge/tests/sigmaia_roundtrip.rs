@@ -1,7 +1,8 @@
 //! Roundtrip tests for `SigmaIA<S>` via the full DSFS pipeline.
 //!
-//! Now that Q1 is resolved (StaticSigmaProtocol gives us a static protocol_id),
-//! these tests go through dsfs::prove / dsfs::verify end-to-end.
+//! After the Stage 1 domain-separation refactor, `SigmaIA`'s `protocol_id(&self)`
+//! returns the full 64-byte `protocol_identifier()` from the underlying sigma
+//! protocol. DSFS compacts it (Stage 1: BLAKE3) into the 32-byte domain separator slot.
 
 use curve25519_dalek::{
     constants::RISTRETTO_BASEPOINT_POINT, ristretto::RistrettoPoint, scalar::Scalar,
@@ -37,17 +38,22 @@ fn sigmaia_dsfs_roundtrip() {
 
     let session = spongefish::session!("sigmaia-roundtrip-test");
 
-    let proof = dsfs::prove::<SigmaIA<_>>(session, &instance, &sigma_witness);
-    dsfs::verify::<SigmaIA<_>>(session, &instance, &proof).expect("verification must succeed");
+    let proof = dsfs::prove(&instance, session, &instance, &sigma_witness);
+    dsfs::verify(&instance, session, &instance, &proof).expect("verification must succeed");
 }
 
 #[test]
-fn sigmaia_protocol_id_is_first_32_bytes_of_sigma_proofs_id() {
+fn sigmaia_protocol_id_is_full_sigma_proofs_identifier() {
     let (instance, _) = make_schnorr();
 
-    // SigmaIA::protocol_id() should be first 32 bytes of protocol_identifier()
+    // SigmaIA::protocol_id(&self) now returns the full 64-byte sigma-proofs identifier
+    // (as an `impl AsRef<[u8]>`), not the first 32 bytes.
     let full_id = instance.0.protocol_identifier();
-    let ia_id = <SigmaIA<CanonicalLinearRelation<RistrettoPoint>> as InteractiveArgument>::protocol_id();
+    let ia_id = instance.protocol_id();
 
-    assert_eq!(ia_id, full_id[..32], "SigmaIA protocol_id must be first 32 bytes of sigma-proofs identifier");
+    assert_eq!(
+        ia_id.as_ref(),
+        &full_id[..],
+        "SigmaIA::protocol_id must return the full sigma-proofs identifier"
+    );
 }

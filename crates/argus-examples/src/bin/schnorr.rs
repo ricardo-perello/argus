@@ -30,6 +30,12 @@ use ia_core::{
 
 struct Schnorr<G: CurveGroup>(core::marker::PhantomData<G>);
 
+impl<G: CurveGroup> Default for Schnorr<G> {
+    fn default() -> Self {
+        Self(core::marker::PhantomData)
+    }
+}
+
 impl<G> InteractiveArgument for Schnorr<G>
 where
     G: CurveGroup + PrimeGroup + Encoding + Deserialize,
@@ -38,12 +44,12 @@ where
     type Instance = [G; 2]; // [generator, public_key]
     type Witness = G::ScalarField;
 
-    fn protocol_id() -> [u8; 32] {
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"schnorr")
     }
 
     #[allow(non_snake_case)]
-    fn prove<P: ProverChannel>(ch: &mut P, instance: &[G; 2], witness: &G::ScalarField) {
+    fn prove<P: ProverChannel>(&self, ch: &mut P, instance: &[G; 2], witness: &G::ScalarField) {
         let k = G::ScalarField::rand(&mut OsRng);
         let K = instance[0] * k;
 
@@ -54,7 +60,7 @@ where
     }
 
     #[allow(non_snake_case)]
-    fn verify<V: VerifierChannel>(ch: &mut V, instance: &[G; 2]) -> VerificationResult<()> {
+    fn verify<V: VerifierChannel>(&self, ch: &mut V, instance: &[G; 2]) -> VerificationResult<()> {
         let (G_gen, X) = (instance[0], instance[1]);
 
         let K: G = ch.read_prover_message()?;
@@ -73,7 +79,7 @@ impl<G: CurveGroup> ProtocolSecurity for Schnorr<G>
 where
     G::ScalarField: PrimeField,
 {
-    fn security() -> SecurityProfile {
+    fn security(&self) -> SecurityProfile {
         fn one_over_q<F: PrimeField>(_t: u64) -> f64 {
             2_f64.powi(-(F::MODULUS_BIT_SIZE as i32))
         }
@@ -103,10 +109,11 @@ fn run_dsfs(instance: &[ark_curve25519::EdwardsProjective; 2], sk: &ark_curve255
 
     let session = spongefish::session!("spongefish examples");
 
-    let narg_string = dsfs::prove::<Schnorr<G>>(session, instance, sk);
+    let schnorr = Schnorr::<G>::default();
+    let narg_string = dsfs::prove(&schnorr, session, instance, sk);
     println!("Proof:\n{}", hex::encode(&narg_string));
 
-    dsfs::verify::<Schnorr<G>>(session, instance, &narg_string).expect("verification failed");
+    dsfs::verify(&schnorr, session, instance, &narg_string).expect("verification failed");
     println!("Verification succeeded");
 }
 
@@ -123,13 +130,13 @@ fn run_live(instance: [ark_curve25519::EdwardsProjective; 2], sk: ark_curve25519
 
     let prover_instance = instance;
     let prover_handle = thread::spawn(move || {
-        Schnorr::<G>::prove(&mut prover_ch, &prover_instance, &sk);
+        Schnorr::<G>::default().prove(&mut prover_ch, &prover_instance, &sk);
         println!("[Prover]   Done.");
     });
 
     let verifier_instance = instance;
     let verifier_handle = thread::spawn(move || {
-        let result = Schnorr::<G>::verify(&mut verifier_ch, &verifier_instance);
+        let result = Schnorr::<G>::default().verify(&mut verifier_ch, &verifier_instance);
         match result {
             Ok(()) => println!("[Verifier] Verification succeeded!"),
             Err(_) => println!("[Verifier] Verification FAILED."),
@@ -176,7 +183,7 @@ mod tests {
 
     #[test]
     fn schnorr_ia_soundness_is_one_over_q() {
-        let profile = Schnorr::<G>::security();
+        let profile = Schnorr::<G>::default().security();
         let expected = 2_f64.powi(-(F::MODULUS_BIT_SIZE as i32));
 
         // Plain soundness = 1/q
@@ -198,14 +205,14 @@ mod tests {
 
     #[test]
     fn schnorr_ia_hvzk_is_zero() {
-        let profile = Schnorr::<G>::security();
+        let profile = Schnorr::<G>::default().security();
         assert_eq!(profile.hvzk_error.evaluate(0), 0.0);
         assert_eq!(profile.hvzk_error.evaluate(1 << 40), 0.0);
     }
 
     #[test]
     fn schnorr_narg_soundness_adds_sponge_term() {
-        let narg = dsfs::security::<Schnorr<G>>();
+        let narg = dsfs::security(&Schnorr::<G>::default());
 
         let t: u64 = 1 << 40;
         let t_f = t as f64;
@@ -224,7 +231,7 @@ mod tests {
 
     #[test]
     fn schnorr_narg_soundness_bits_above_128() {
-        let narg = dsfs::security::<Schnorr<G>>();
+        let narg = dsfs::security(&Schnorr::<G>::default());
         let t: u64 = 1 << 40;
         let bits = narg.soundness_bits(t);
         assert!(
@@ -235,7 +242,7 @@ mod tests {
 
     #[test]
     fn schnorr_narg_zk_is_purely_sponge() {
-        let narg = dsfs::security::<Schnorr<G>>();
+        let narg = dsfs::security(&Schnorr::<G>::default());
         let t: u64 = 1 << 40;
         let t_f = t as f64;
 
@@ -262,8 +269,9 @@ mod tests {
         let instance = [generator, pk];
 
         let session = spongefish::session!("spongefish examples");
-        let narg = dsfs::prove::<Schnorr<G>>(session, &instance, &sk);
-        dsfs::verify::<Schnorr<G>>(session, &instance, &narg).expect("dsfs verification failed");
+        let schnorr = Schnorr::<G>::default();
+        let narg = dsfs::prove(&schnorr, session, &instance, &sk);
+        dsfs::verify(&schnorr, session, &instance, &narg).expect("dsfs verification failed");
     }
 
     #[test]
@@ -277,12 +285,12 @@ mod tests {
 
         let prover_instance = instance;
         let prover_handle = thread::spawn(move || {
-            Schnorr::<G>::prove(&mut prover_ch, &prover_instance, &sk);
+            Schnorr::<G>::default().prove(&mut prover_ch, &prover_instance, &sk);
         });
 
         let verifier_instance = instance;
         let verifier_handle = thread::spawn(move || {
-            Schnorr::<G>::verify(&mut verifier_ch, &verifier_instance)
+            Schnorr::<G>::default().verify(&mut verifier_ch, &verifier_instance)
         });
 
         prover_handle.join().unwrap();

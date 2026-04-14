@@ -127,12 +127,12 @@ impl InteractiveArgument for CommittedSumcheck {
     type Instance = Instance;
     type Witness = Vec<Fr>;
 
-    fn protocol_id() -> [u8; 32] {
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"committed sumcheck sha256")
     }
 
     #[allow(non_snake_case)]
-    fn prove<P: ProverChannel>(ch: &mut P, instance: &Instance, evals: &Vec<Fr>) {
+    fn prove<P: ProverChannel>(&self, ch: &mut P, instance: &Instance, evals: &Vec<Fr>) {
         let n = instance.n as usize;
         let (tree, root) = Self::build_merkle_tree(evals);
         assert_eq!(root.as_slice(), instance.root.0.as_slice());
@@ -181,7 +181,7 @@ impl InteractiveArgument for CommittedSumcheck {
         });
     }
 
-    fn verify<V: VerifierChannel>(ch: &mut V, instance: &Instance) -> VerificationResult<()> {
+    fn verify<V: VerifierChannel>(&self, ch: &mut V, instance: &Instance) -> VerificationResult<()> {
         let n = instance.n as usize;
 
         let root: Bytes = ch.read_prover_message()?;
@@ -240,7 +240,7 @@ impl InteractiveArgument for CommittedSumcheck {
 }
 
 impl ProtocolSecurity for CommittedSumcheck {
-    fn security() -> SecurityProfile {
+    fn security(&self) -> SecurityProfile {
         SecurityProfile {
             plain_soundness_error: SecurityErrorBound::zero(),
             rbr_soundness_errors: vec![],
@@ -285,14 +285,14 @@ fn run_dsfs(instance: &Instance, evals: &Vec<Fr>) {
 
     let session = spongefish::session!("argus warmup: committed sumcheck");
 
-    let narg_string = dsfs::prove::<CommittedSumcheck>(session, instance, evals);
+    let narg_string = dsfs::prove(&CommittedSumcheck, session, instance, evals);
     println!(
         "Proof ({} bytes):\n{}",
         narg_string.len(),
         hex::encode(&narg_string)
     );
 
-    dsfs::verify::<CommittedSumcheck>(session, instance, &narg_string).expect("Invalid proof");
+    dsfs::verify(&CommittedSumcheck, session, instance, &narg_string).expect("Invalid proof");
     println!("Verification succeeded");
 }
 
@@ -308,13 +308,13 @@ fn run_live(instance: Instance, evals: Vec<Fr>) {
     let prover_instance = instance.clone();
     let prover_evals = evals.clone();
     let prover_handle = thread::spawn(move || {
-        CommittedSumcheck::prove(&mut prover_ch, &prover_instance, &prover_evals);
+        CommittedSumcheck.prove(&mut prover_ch, &prover_instance, &prover_evals);
         println!("[Prover]   Done.");
     });
 
     let verifier_instance = instance;
     let verifier_handle = thread::spawn(move || {
-        let result = CommittedSumcheck::verify(&mut verifier_ch, &verifier_instance);
+        let result = CommittedSumcheck.verify(&mut verifier_ch, &verifier_instance);
         match result {
             Ok(()) => println!("[Verifier] Verification succeeded!"),
             Err(_) => println!("[Verifier] Verification FAILED."),

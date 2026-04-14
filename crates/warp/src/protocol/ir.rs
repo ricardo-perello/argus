@@ -20,7 +20,13 @@ use crate::utils::poly::{eq_poly, Hypercube};
 // WARPReduction: the full IOR as a single InteractiveReduction
 // -----------------------------------------------------------------------
 
-pub struct WARPReduction<F, P, C, MT>(PhantomData<(F, P, C, MT)>);
+pub struct WARPReduction<F, P, C, MT>(pub PhantomData<(F, P, C, MT)>);
+
+impl<F, P, C, MT> Default for WARPReduction<F, P, C, MT> {
+    fn default() -> Self {
+        Self(PhantomData)
+    }
+}
 
 impl<F, P, C, MT> InteractiveReduction for WARPReduction<F, P, C, MT>
 where
@@ -34,11 +40,12 @@ where
     type TargetInstance = DeciderInstance<F, P, C, MT>;
     type TargetWitness = DeciderWitness<F, MT>;
 
-    fn protocol_id() -> [u8; 32] {
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"argus::warp::reduction")
     }
 
     fn prove<Ch: ProverChannel>(
+        &self,
         ch: &mut Ch,
         instance: &WARPInstance<F, P, C, MT>,
         witness: &WARPWitness<F, MT>,
@@ -65,6 +72,7 @@ where
     }
 
     fn verify<Ch: VerifierChannel>(
+        &self,
         ch: &mut Ch,
         instance: &WARPInstance<F, P, C, MT>,
     ) -> VerificationResult<DeciderInstance<F, P, C, MT>> {
@@ -90,7 +98,7 @@ where
     C: LinearCode<F> + Clone,
     MT: Config,
 {
-    fn security() -> SecurityProfile {
+    fn security(&self) -> SecurityProfile {
         // TODO: Conservative placeholder bound until a full, parameterized WARP analysis
         // is encoded in the type-level IA metadata.
         SecurityProfile {
@@ -107,7 +115,13 @@ where
 // WARPDeciderIA: the decider as an InteractiveArgument
 // -----------------------------------------------------------------------
 
-pub struct WARPDeciderIA<F, P, C, MT>(PhantomData<(F, P, C, MT)>);
+pub struct WARPDeciderIA<F, P, C, MT>(pub PhantomData<(F, P, C, MT)>);
+
+impl<F, P, C, MT> Default for WARPDeciderIA<F, P, C, MT> {
+    fn default() -> Self {
+        Self(PhantomData)
+    }
+}
 
 impl<F, P, C, MT> InteractiveArgument for WARPDeciderIA<F, P, C, MT>
 where
@@ -119,11 +133,11 @@ where
     type Instance = DeciderInstance<F, P, C, MT>;
     type Witness = DeciderWitness<F, MT>;
 
-    fn protocol_id() -> [u8; 32] {
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"argus::warp::decider")
     }
 
-    fn prove<Ch: ProverChannel>(ch: &mut Ch, _instance: &DeciderInstance<F, P, C, MT>, witness: &DeciderWitness<F, MT>) {
+    fn prove<Ch: ProverChannel>(&self, ch: &mut Ch, _instance: &DeciderInstance<F, P, C, MT>, witness: &DeciderWitness<F, MT>) {
         let (_trees, codewords, w_parts) = witness;
         for val in &codewords[0] {
             ch.send_prover_message(val);
@@ -134,6 +148,7 @@ where
     }
 
     fn verify<Ch: VerifierChannel>(
+        &self,
         ch: &mut Ch,
         instance: &DeciderInstance<F, P, C, MT>,
     ) -> VerificationResult<()> {
@@ -199,7 +214,7 @@ where
     C: LinearCode<F> + Clone,
     MT: Config,
 {
-    fn security() -> SecurityProfile {
+    fn security(&self) -> SecurityProfile {
         SecurityProfile {
             plain_soundness_error: SecurityErrorBound::zero(),
             rbr_soundness_errors: Vec::new(),

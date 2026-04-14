@@ -50,6 +50,7 @@ struct AccPair {
 //     (claims[2k] - values[2k]) + r * (claims[2k+1] - values[2k+1])
 // ---------------------------------------------------------------------------
 
+#[derive(Default)]
 struct FoldPairs;
 
 impl InteractiveReduction for FoldPairs {
@@ -58,11 +59,11 @@ impl InteractiveReduction for FoldPairs {
     type SourceWitness = Values;
     type TargetWitness = Values;
 
-    fn protocol_id() -> [u8; 32] {
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"fold pairs")
     }
 
-    fn prove<P: ProverChannel>(ch: &mut P, instance: &Claims, witness: &Values) -> (Claims, Values) {
+    fn prove<P: ProverChannel>(&self, ch: &mut P, instance: &Claims, witness: &Values) -> (Claims, Values) {
         let n = instance.0.len();
         assert!(n % 2 == 0 && n >= 2);
 
@@ -81,7 +82,7 @@ impl InteractiveReduction for FoldPairs {
         (Claims(folded_claims), Values(folded_values))
     }
 
-    fn verify<V: VerifierChannel>(ch: &mut V, instance: &Claims) -> VerificationResult<Claims> {
+    fn verify<V: VerifierChannel>(&self, ch: &mut V, instance: &Claims) -> VerificationResult<Claims> {
         let n = instance.0.len();
 
         // Read prover-committed values (absorbed into transcript before the
@@ -101,7 +102,7 @@ impl InteractiveReduction for FoldPairs {
 }
 
 impl ProtocolSecurity for FoldPairs {
-    fn security() -> SecurityProfile {
+    fn security(&self) -> SecurityProfile {
         SecurityProfile {
             plain_soundness_error: SecurityErrorBound::zero(),
             rbr_soundness_errors: vec![SecurityErrorBound::zero()],
@@ -116,6 +117,7 @@ impl ProtocolSecurity for FoldPairs {
 // IR: Accumulate -- reduces n claims+values to a single (acc_claim, acc_value)
 // ---------------------------------------------------------------------------
 
+#[derive(Default)]
 struct Accumulate;
 
 impl InteractiveReduction for Accumulate {
@@ -124,11 +126,11 @@ impl InteractiveReduction for Accumulate {
     type SourceWitness = Values;
     type TargetWitness = ();
 
-    fn protocol_id() -> [u8; 32] {
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"accumulate")
     }
 
-    fn prove<P: ProverChannel>(ch: &mut P, instance: &Claims, witness: &Values) -> (AccPair, ()) {
+    fn prove<P: ProverChannel>(&self, ch: &mut P, instance: &Claims, witness: &Values) -> (AccPair, ()) {
         let n = instance.0.len();
 
         for w_i in &witness.0 {
@@ -148,7 +150,7 @@ impl InteractiveReduction for Accumulate {
         (AccPair { claim: acc_claim, value: acc_value }, ())
     }
 
-    fn verify<V: VerifierChannel>(ch: &mut V, instance: &Claims) -> VerificationResult<AccPair> {
+    fn verify<V: VerifierChannel>(&self, ch: &mut V, instance: &Claims) -> VerificationResult<AccPair> {
         let n = instance.0.len();
 
         let mut values = Vec::with_capacity(n);
@@ -172,7 +174,7 @@ impl InteractiveReduction for Accumulate {
 }
 
 impl ProtocolSecurity for Accumulate {
-    fn security() -> SecurityProfile {
+    fn security(&self) -> SecurityProfile {
         SecurityProfile {
             plain_soundness_error: SecurityErrorBound::zero(),
             rbr_soundness_errors: vec![SecurityErrorBound::zero()],
@@ -187,19 +189,20 @@ impl ProtocolSecurity for Accumulate {
 // IA: EqualityCheck -- trivial decider that checks acc_claim == acc_value
 // ---------------------------------------------------------------------------
 
+#[derive(Default)]
 struct EqualityCheck;
 
 impl InteractiveArgument for EqualityCheck {
     type Instance = AccPair;
     type Witness = ();
 
-    fn protocol_id() -> [u8; 32] {
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"equality check")
     }
 
-    fn prove<P: ProverChannel>(_ch: &mut P, _instance: &AccPair, _witness: &()) {}
+    fn prove<P: ProverChannel>(&self, _ch: &mut P, _instance: &AccPair, _witness: &()) {}
 
-    fn verify<V: VerifierChannel>(_ch: &mut V, instance: &AccPair) -> VerificationResult<()> {
+    fn verify<V: VerifierChannel>(&self, _ch: &mut V, instance: &AccPair) -> VerificationResult<()> {
         if instance.claim == instance.value {
             Ok(())
         } else {
@@ -209,7 +212,7 @@ impl InteractiveArgument for EqualityCheck {
 }
 
 impl ProtocolSecurity for EqualityCheck {
-    fn security() -> SecurityProfile {
+    fn security(&self) -> SecurityProfile {
         SecurityProfile {
             plain_soundness_error: SecurityErrorBound::zero(),
             rbr_soundness_errors: vec![],
@@ -249,8 +252,9 @@ mod tests {
         let witness = Values(values);
 
         let session = spongefish::session!("argus example: composition");
-        let proof = dsfs::prove::<FullProtocol>(session, &instance, &witness);
-        dsfs::verify::<FullProtocol>(session, &instance, &proof).expect("verification failed");
+        let protocol = FullProtocol::default();
+        let proof = dsfs::prove(&protocol, session, &instance, &witness);
+        dsfs::verify(&protocol, session, &instance, &proof).expect("verification failed");
     }
 }
 
@@ -274,10 +278,11 @@ fn main() {
     println!("=== ChainedReduction: FoldPairs . FoldPairs (IR . IR -> IR) ===");
     println!("    8 values -> 4 -> 2\n");
 
-    let proof = dsfs::prove_reduction::<TwoFolds>(session, &instance, &witness);
+    let two_folds = TwoFolds::default();
+    let proof = dsfs::prove_reduction(&two_folds, session, &instance, &witness);
     println!("  proof ({} bytes): {}", proof.len(), hex::encode(&proof));
 
-    let target = dsfs::verify_reduction::<TwoFolds>(session, &instance, &proof)
+    let target = dsfs::verify_reduction(&two_folds, session, &instance, &proof)
         .expect("two-fold reduction failed");
     println!("  target claims (2 elements): {:?}", target.0);
     println!("  [OK] two-fold reduction verified\n");
@@ -287,10 +292,11 @@ fn main() {
     println!("=== ReducedArgument: (Fold . Fold . Accumulate) . EqualityCheck ===");
     println!("    8 values -> 4 -> 2 -> AccPair -> accept/reject\n");
 
-    let proof = dsfs::prove::<FullProtocol>(session, &instance, &witness);
+    let full = FullProtocol::default();
+    let proof = dsfs::prove(&full, session, &instance, &witness);
     println!("  proof ({} bytes): {}", proof.len(), hex::encode(&proof));
 
-    dsfs::verify::<FullProtocol>(session, &instance, &proof)
+    dsfs::verify(&full, session, &instance, &proof)
         .expect("full protocol verification failed");
     println!("  [OK] full composed protocol verified");
 }
