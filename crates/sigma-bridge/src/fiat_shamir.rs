@@ -8,37 +8,15 @@
 //! responses are recorded via `prover_messages` and the proof is the complete NARG string.
 
 use alloc::vec::Vec;
-use core::any::TypeId;
 
-use dsfs::{ByteDuplexSponge, Keccak, SpongeProver, SpongeVerifier};
+use dsfs::{ByteDuplexSponge, SpongeProver, SpongeVerifier};
 use ia_core::{ProverChannel, VerifierChannel};
 use sigma_proofs::{
     errors::Error,
     traits::{ScalarRng, SigmaProtocol},
 };
-use spongefish::protocol_id as spongefish_protocol_id;
 
 use crate::session::derive_session_id;
-
-/// 64-byte domain tag absorbed inside the Keccak transcript’s first full-rate block.
-///
-/// `CanonicalLinearRelation` uses the Shake128 σ-proofs label for [`SigmaProtocol::protocol_identifier`],
-/// while `sigma/OWKeccak1600+Bls12381` vectors carry the Keccak ciphersuite string in that slot.
-fn transcript_protocol_id<P, H>(protocol: &P) -> [u8; 64]
-where
-    P: SigmaProtocol,
-    H: ByteDuplexSponge + dsfs::TranscriptSponge + 'static,
-{
-    let id = protocol.protocol_identifier();
-    if TypeId::of::<H>() == TypeId::of::<Keccak>() {
-        let bls_shake =
-            spongefish_protocol_id(core::format_args!("sigma-proofs_Shake128_BLS12381"));
-        if id == bls_shake {
-            return spongefish_protocol_id(core::format_args!("sigma/OWKeccak1600+Bls12381"));
-        }
-    }
-    id
-}
 
 /// Prove a sigma protocol through the DSFS IA pipeline.
 ///
@@ -59,7 +37,7 @@ where
 {
     let instance_label = protocol.instance_label().as_ref().to_vec();
     let session = derive_session_id(session_id);
-    let protocol_id = transcript_protocol_id::<P, H>(protocol);
+    let protocol_id = protocol.protocol_identifier();
     let mut ch = SpongeProver::new(sponge.prover_state(protocol_id, session, &instance_label));
 
     let (commitment, ip_state) = protocol.prover_commit(witness, rng)?;
@@ -77,11 +55,10 @@ where
 }
 
 /// Like [`prove`], but the 64-byte spongefish domain tag is `protocol_domain` (e.g. the spec JSON
-/// `ciphersuite` field) instead of [`transcript_protocol_id`].
+/// `ciphersuite` field) instead of [`SigmaProtocol::protocol_identifier`].
 ///
-/// Use this for spec test vectors where the Fiat–Shamir protocol id in the transcript is **not**
-/// [`SigmaProtocol::protocol_identifier`] (common for cross-ciphersuite JSON that still uses
-/// `std_prover` / SHAKE128).
+/// Use this for spec test vectors where the Fiat–Shamir protocol id in the transcript differs from
+/// the protocol's own identifier (e.g. legacy JSON vectors that predate the clean protocol id scheme).
 pub fn prove_with_protocol_domain<P, H>(
     sponge: H,
     session_id: &[u8],
@@ -177,7 +154,7 @@ where
 {
     let instance_label = protocol.instance_label().as_ref().to_vec();
     let session = derive_session_id(session_id);
-    let protocol_id = transcript_protocol_id::<P, H>(protocol);
+    let protocol_id = protocol.protocol_identifier();
     let mut ch = SpongeVerifier::new(sponge.verifier_state(
         protocol_id,
         session,
