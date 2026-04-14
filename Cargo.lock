@@ -1752,7 +1752,6 @@ dependencies = [
 [[package]]
 name = "sigma-proofs"
 version = "0.3.0"
-source = "git+https://github.com/ricardo-perello/sigma-proofs.git?branch=argus%2Fstatic-protocol-id#4f85027f7e47fd4d3e131f065d15aa6925c12134"
 dependencies = [
  "ahash",
  "bls12_381",

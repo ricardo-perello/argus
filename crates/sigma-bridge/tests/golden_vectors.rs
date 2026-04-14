@@ -1,10 +1,10 @@
 //! Golden-vector tests for σ-proofs compatibility (batchable proofs, PR #130+).
 //!
-//! `sigma-proofs::Nizk` uses spongefish `std_prover` / `std_verifier` (SHAKE128). For byte-for-byte
-//! equality with `Nizk::prove_batchable`, use [`dsfs::StdHash`] in [`sigma_bridge::prove`].
+//! `sigma-proofs::Nizk` uses spongefish `std_prover` / `std_verifier` (SHAKE128) with the same
+//! `DomainSeparator::derive` inputs as [`sigma_bridge::prove`] when using [`dsfs::StdHash`].
 //!
-//! The Shake128 vectors (`sigma-proofs_Shake128_BLS12381.json`) match σ-proofs spec testdata: we
-//! assert **byte-identical** `"Batchable Proof"` bytes.
+//! The Shake128 vectors (`sigma-proofs_Shake128_BLS12381.json`) pin expected `"Batchable Proof"`
+//! bytes for this workspace’s transcript layout.
 //!
 //! `sigma_Keccak1600_BLS12381.json`: same **SHAKE128** / `std_prover` stack; the `ciphersuite`
 //! string is the 64-byte protocol tag. `proof_batchable` in that file does **not** currently match
@@ -16,6 +16,7 @@
 use bls12_381::G1Projective as Bls12381G1;
 use group::{ff::PrimeField, prime::PrimeGroup};
 use p256::ProjectivePoint as P256ProjectivePoint;
+use dsfs::{SpongeInfo, StdHash};
 use spongefish::{
     protocol_id as spongefish_protocol_id, Decoding, DomainSeparator, Encoding, NargDeserialize,
     NargSerialize,
@@ -141,11 +142,14 @@ where
     G::Scalar: Encoding<[u8]> + NargSerialize + NargDeserialize + Decoding<[u8]>,
 {
     let instance_label = protocol.instance_label().as_ref().to_vec();
-    #[allow(deprecated)]
-    let mut transcript = DomainSeparator::new(protocol_id)
-        .session(sigma_bridge::derive_session_id(session_id))
-        .instance(&instance_label)
-        .std_prover();
+    let session = sigma_bridge::derive_session_id(session_id);
+    let mut transcript = DomainSeparator::derive(
+        protocol_id.as_ref(),
+        StdHash::SPONGE_INFO,
+        session.as_ref(),
+    )
+    .instance(&instance_label)
+    .std_prover();
 
     let (commitment, ip_state) = protocol.prover_commit(witness, rng)?;
     let mut commitment_bytes = Vec::new();

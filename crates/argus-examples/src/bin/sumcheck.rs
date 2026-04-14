@@ -2,6 +2,7 @@ use ark_curve25519::Fr;
 use ark_ff::{One, Zero};
 use ark_std::UniformRand;
 use rand::rngs::OsRng;
+use dsfs::{Keccak, SpongeInfo};
 use spongefish::{protocol_id, DomainSeparator, Encoding, ProverState};
 
 struct Sumcheck;
@@ -120,10 +121,12 @@ mod tests {
 
         let instance = Instance { n, evals, claimed_sum };
 
-        #[allow(deprecated)]
-        let domain_separator = DomainSeparator::new(Sumcheck::protocol_id())
-            .session(spongefish::session!("argus examples"))
-            .instance(&instance);
+        let domain_separator = DomainSeparator::derive(
+            Sumcheck::protocol_id().as_ref(),
+            Keccak::SPONGE_INFO,
+            spongefish::session!("argus examples").as_slice(),
+        )
+        .instance(&instance);
 
         let mut prover_state = domain_separator.std_prover();
         let narg = Sumcheck::prove(&mut prover_state, &instance).to_vec();
@@ -148,10 +151,12 @@ fn main() {
         claimed_sum,
     };
 
-    #[allow(deprecated)]
-    let domain_separator = DomainSeparator::new(Sumcheck::protocol_id())
-        .session(spongefish::session!("argus examples"))
-        .instance(&instance);
+    let domain_separator = DomainSeparator::derive(
+        Sumcheck::protocol_id().as_ref(),
+        Keccak::SPONGE_INFO,
+        spongefish::session!("argus examples").as_slice(),
+    )
+    .instance(&instance);
 
     let mut prover_state = domain_separator.std_prover();
     let narg_string = Sumcheck::prove(&mut prover_state, &instance);

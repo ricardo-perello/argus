@@ -26,7 +26,7 @@ use warp::{
     FullWARP, WARPReduction,
 };
 
-use dsfs::{Keccak, SpongeProver, SpongeVerifier};
+use dsfs::{Keccak, SpongeInfo, SpongeProver, SpongeVerifier};
 
 type MT = Blake3MerkleTreeParams<Fp>;
 
@@ -35,20 +35,24 @@ static INSTANCE_TAG: &[u8; 16] = b"warp-test-inst00";
 fn make_prover() -> SpongeProver {
     let protocol_id = spongefish::protocol_id(core::format_args!("argus::warp::test"));
     let session = spongefish::session!("warp test session");
-    #[allow(deprecated)]
-    let domsep = spongefish::DomainSeparator::new(protocol_id)
-        .session(session)
-        .instance(INSTANCE_TAG);
+    let domsep = spongefish::DomainSeparator::derive(
+        protocol_id.as_ref(),
+        Keccak::SPONGE_INFO,
+        session.as_slice(),
+    )
+    .instance(INSTANCE_TAG);
     SpongeProver::new(domsep.to_prover(Keccak::default()))
 }
 
 fn make_verifier(narg_string: &[u8]) -> SpongeVerifier<'_> {
     let protocol_id = spongefish::protocol_id(core::format_args!("argus::warp::test"));
     let session = spongefish::session!("warp test session");
-    #[allow(deprecated)]
-    let domsep = spongefish::DomainSeparator::new(protocol_id)
-        .session(session)
-        .instance(INSTANCE_TAG);
+    let domsep = spongefish::DomainSeparator::derive(
+        protocol_id.as_ref(),
+        Keccak::SPONGE_INFO,
+        session.as_slice(),
+    )
+    .instance(INSTANCE_TAG);
     SpongeVerifier::new(domsep.to_verifier(Keccak::default(), narg_string))
 }
 
