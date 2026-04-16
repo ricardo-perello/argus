@@ -59,7 +59,7 @@ impl NargSecurity {
     /// SR soundness is derived from the per-round RBR errors.
     pub fn soundness_error(&self, t: u64) -> f64 {
         let t_f = t as f64;
-        self.ia.sr_soundness_error().evaluate(t)
+        self.ia.sr_soundness_error(t)
             + 25.0 * t_f * t_f / self.sponge_sigma_to(self.sponge.capacity)
     }
 
@@ -149,8 +149,8 @@ mod tests {
 
         let t = 2_u64;
         let additive = 25.0 * (t as f64) * (t as f64) / 2_f64.powf(4.0);
-        // SR soundness = 2 * 0.005 = 0.01
-        assert!((sec.soundness_error(t) - (0.01 + additive)).abs() < 1e-12);
+        // SR soundness (CY24 Thm 31.2.1 tighter form): t*max + sum = 2*0.005 + 0.01 = 0.02
+        assert!((sec.soundness_error(t) - (0.02 + additive)).abs() < 1e-12);
         assert!((sec.knowledge_soundness_error(t) - (0.02 + additive)).abs() < 1e-12);
     }
 
@@ -172,7 +172,8 @@ mod tests {
         };
 
         let t = 100_u64;
-        let expected_ia = 100.0 / 1_000_000.0;
+        // 1 round, rbr(100) = 100/1M. SR = t*max + sum = 100*(100/1M) + 100/1M = 10100/1M
+        let expected_ia = 10100.0 / 1_000_000.0;
         let expected_sponge = 25.0 * 100.0 * 100.0 / 256.0_f64.powf(2.0);
         assert!((sec.soundness_error(t) - (expected_ia + expected_sponge)).abs() < 1e-12);
     }
@@ -216,8 +217,10 @@ mod tests {
             hvzk_error: SecurityErrorBound::zero(),
             verifier_challenge_lengths: alloc::vec![1, 1, 1],
         };
-        // SR = sum of RBR = 0.01 + 0.02 + 0.03 = 0.06
-        assert!((profile.sr_soundness_error().evaluate(0) - 0.06).abs() < 1e-12);
+        // At t=0: SR = 0 * max + sum = 0.01 + 0.02 + 0.03 = 0.06
+        assert!((profile.sr_soundness_error(0) - 0.06).abs() < 1e-12);
+        // At t=10: SR = 10 * 0.03 + 0.06 = 0.36
+        assert!((profile.sr_soundness_error(10) - 0.36).abs() < 1e-12);
     }
 
     #[test]
@@ -245,8 +248,10 @@ mod tests {
         assert_eq!(composed.rbr_soundness_errors.len(), 3);
         assert_eq!(composed.num_rounds(), 3);
 
-        // SR derived from concatenated RBR: 0.005 + 0.005 + 0.02 = 0.03
-        assert!((composed.sr_soundness_error().evaluate(0) - 0.03).abs() < 1e-12);
+        // At t=0: SR = 0 * max + sum = 0.005 + 0.005 + 0.02 = 0.03
+        assert!((composed.sr_soundness_error(0) - 0.03).abs() < 1e-12);
+        // At t=5: SR = 5 * 0.02 + 0.03 = 0.13
+        assert!((composed.sr_soundness_error(5) - 0.13).abs() < 1e-12);
 
         // Plain soundness composed via union bound: 0.01 + 0.02 = 0.03
         assert!((composed.plain_soundness_error.evaluate(0) - 0.03).abs() < 1e-12);

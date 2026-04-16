@@ -100,22 +100,23 @@ impl SecurityProfile {
         self.rbr_soundness_errors.len()
     }
 
-    /// Derive SR soundness from RBR: epsilon^sr(t) = sum_i epsilon_i^rbr(t).
+    /// Derive SR soundness error at adversary query budget `t`.
     ///
-    /// This is the bound used by DSFS Theorem 6.1 to lift interactive
-    /// soundness to NARG soundness.
+    /// Uses the tighter heterogeneous form of CY24 Theorem 31.2.1:
+    ///   epsilon^sr(t) <= t * max_i epsilon_i^rbr(t) + sum_i epsilon_i^rbr(t)
     ///
-    /// TODO(Alessandro): this formula gives *standard* soundness via union bound
-    /// (CY24 Claim 31.1.3), not SR soundness.  The correct SR soundness bound is
-    ///   epsilon^sr(s, t, n) <= (t + k) * epsilon^rbr(n)
-    /// where t is the adversary's query budget, k = num_rounds() is the round
-    /// complexity, and epsilon^rbr(n) is the (uniform) per-round RBR error
-    /// (CY24 Theorem 31.2.1).  For heterogeneous per-round errors the exact
-    /// statement should be confirmed against CY24 before implementing.
-    pub fn sr_soundness_error(&self) -> SecurityErrorBound {
-        self.rbr_soundness_errors
-            .iter()
-            .fold(SecurityErrorBound::zero(), |acc, e| acc.compose(e))
+    /// The `t` adversarial SR moves each target the worst-case round;
+    /// the k protocol completion moves each contribute their own per-round error.
+    /// Returns 0.0 for protocols with no rounds.
+    pub fn sr_soundness_error(&self, t: u64) -> f64 {
+        if self.rbr_soundness_errors.is_empty() {
+            return 0.0;
+        }
+        let evaluated: alloc::vec::Vec<f64> =
+            self.rbr_soundness_errors.iter().map(|e| e.evaluate(t)).collect();
+        let max_rbr = evaluated.iter().cloned().fold(0.0_f64, f64::max);
+        let sum_rbr: f64 = evaluated.iter().sum();
+        (t as f64) * max_rbr + sum_rbr
     }
 
     /// Compose two protocol profiles sequentially.

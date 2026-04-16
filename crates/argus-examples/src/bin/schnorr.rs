@@ -194,8 +194,8 @@ mod tests {
             F::MODULUS_BIT_SIZE,
         );
 
-        // SR soundness (derived from 1-round RBR) = 1/q
-        let eps_sr = profile.sr_soundness_error().evaluate(0);
+        // SR soundness at t=0: (0 * 1/q) + 1/q = 1/q
+        let eps_sr = profile.sr_soundness_error(0);
         assert!(
             (eps_sr - expected).abs() < 1e-30,
             "IA SR soundness should be 1/q = 2^-{}, got {eps_sr}",
@@ -217,7 +217,9 @@ mod tests {
         let t: u64 = 1 << 40;
         let t_f = t as f64;
 
-        let eps_sr = 2_f64.powi(-(F::MODULUS_BIT_SIZE as i32));
+        // 1 round, rbr = 1/q. SR formula (CY24 Thm 31.2.1): t * (1/q) + (1/q) = (t+1)/q
+        let one_over_q = 2_f64.powi(-(F::MODULUS_BIT_SIZE as i32));
+        let eps_sr = (t_f + 1.0) * one_over_q;
         let sp = STD_SPONGE_PARAMS;
         let sponge_term = 25.0 * t_f * t_f / sp.alphabet_size.powf(sp.capacity as f64);
         let expected = eps_sr + sponge_term;
