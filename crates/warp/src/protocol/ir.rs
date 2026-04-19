@@ -20,11 +20,26 @@ use crate::utils::poly::{eq_poly, Hypercube};
 // WARPReduction: the full IOR as a single InteractiveReduction
 // -----------------------------------------------------------------------
 
-pub struct WARPReduction<F, P, C, MT>(pub PhantomData<(F, P, C, MT)>);
+pub struct WARPReduction<F, P, C, MT> {
+    /// Number of twin-sumcheck folding rounds (= log2 of total instance count l).
+    pub log_l: usize,
+    /// Number of batching-sumcheck rounds (= log2 of codeword length n).
+    pub log_n: usize,
+    /// log2 of the number of R1CS constraints M. Used to compute the polynomial
+    /// degree for the twin sumcheck per-round RBR error bound.
+    pub log_m: usize,
+    _phantom: PhantomData<(F, P, C, MT)>,
+}
+
+impl<F, P, C, MT> WARPReduction<F, P, C, MT> {
+    pub fn new(log_l: usize, log_n: usize, log_m: usize) -> Self {
+        Self { log_l, log_n, log_m, _phantom: PhantomData }
+    }
+}
 
 impl<F, P, C, MT> Default for WARPReduction<F, P, C, MT> {
     fn default() -> Self {
-        Self(PhantomData)
+        Self::new(0, 0, 0)
     }
 }
 
@@ -93,20 +108,61 @@ where
 
 impl<F, P, C, MT> ProtocolSecurity for WARPReduction<F, P, C, MT>
 where
-    F: Field,
+    F: PrimeField,
     P: BundledPESAT<F>,
     C: LinearCode<F> + Clone,
     MT: Config,
 {
     fn security(&self) -> SecurityProfile {
-        // TODO: Conservative placeholder bound until a full, parameterized WARP analysis
-        // is encoded in the type-level IA metadata.
+        // Per-round RBR error via Schwartz–Zippel: deg/|F| where deg is the
+        // polynomial degree sent by the prover in that round.
+        //
+        // Twin sumcheck (log_l rounds, protocol/twin_sumcheck.rs):
+        //   n_coeffs = 2 + max(log_n + 1, log_m + 2)
+        //   degree   = n_coeffs - 1 = 1 + max(log_n, log_m + 1)
+        //
+        // Batching sumcheck (log_n rounds, protocol/batching_sumcheck.rs):
+        //   sends sum_00, sum_11, sum_0110 → degree 2
+        //
+        // SecurityErrorBound stores bare fn pointers (no closures). To represent
+        // deg/|F|, we store `deg` copies of the 1/|F| function and rely on the
+        // additive evaluation: sum of deg identical terms = deg * (1/|F|).
+        //
+        // WARP is public-coin with no ZK, so hvzk_error = 0.
+        fn one_over_field_size<F: PrimeField>(_t: u64) -> f64 {
+            2_f64.powi(-(F::MODULUS_BIT_SIZE as i32))
+        }
+
+        // Twin sumcheck degree = 1 + max(log_n, log_m + 1).
+        // When log_m = 0 (unknown / not set), this is at least 1.
+        let twin_deg = 1 + self.log_n.max(self.log_m + 1);
+        // Batching sumcheck degree = 2 (three scalars per round → degree-2 polynomial).
+        let batch_deg: usize = 2;
+
+        // Build a SecurityErrorBound representing deg/|F| by composing `deg`
+        // single-term bounds of 1/|F|. This uses only the public API.
+        let make_deg_bound = |deg: usize| -> SecurityErrorBound {
+            let single = SecurityErrorBound::new(one_over_field_size::<F>);
+            (1..deg).fold(single.clone(), |acc, _| acc.compose(&single))
+        };
+
+        let twin_rbr: Vec<SecurityErrorBound> = (0..self.log_l)
+            .map(|_| make_deg_bound(twin_deg))
+            .collect();
+        let batch_rbr: Vec<SecurityErrorBound> = (0..self.log_n)
+            .map(|_| make_deg_bound(batch_deg))
+            .collect();
+
+        let mut rbr = twin_rbr;
+        rbr.extend(batch_rbr);
+
         SecurityProfile {
-            plain_soundness_error: SecurityErrorBound::new(|_t| 1.0),
-            rbr_soundness_errors: Vec::new(),
-            sr_knowledge_soundness_error: SecurityErrorBound::new(|_t| 1.0),
-            hvzk_error: SecurityErrorBound::new(|_t| 1.0),
-            verifier_challenge_lengths: Vec::new(),
+            plain_soundness_error: SecurityErrorBound::zero(),
+            rbr_soundness_errors: rbr.clone(),
+            rbr_knowledge_soundness_errors: rbr,
+            hvzk_error: SecurityErrorBound::zero(),
+            // Each round squeezes one field element as a challenge.
+            verifier_challenge_lengths: vec![1; self.log_l + self.log_n],
         }
     }
 }
@@ -215,10 +271,11 @@ where
     MT: Config,
 {
     fn security(&self) -> SecurityProfile {
+        // The decider is a deterministic local check (no challenges, no rounds).
         SecurityProfile {
             plain_soundness_error: SecurityErrorBound::zero(),
             rbr_soundness_errors: Vec::new(),
-            sr_knowledge_soundness_error: SecurityErrorBound::zero(),
+            rbr_knowledge_soundness_errors: Vec::new(),
             hvzk_error: SecurityErrorBound::zero(),
             verifier_challenge_lengths: Vec::new(),
         }

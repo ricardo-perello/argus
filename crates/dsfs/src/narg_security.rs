@@ -66,7 +66,7 @@ impl NargSecurity {
     /// Theorem 6.2: `kappa_narg(t) <= kappa_sr_ip(t) + 25*t^2/|Sigma|^c`.
     pub fn knowledge_soundness_error(&self, t: u64) -> f64 {
         let t_f = t as f64;
-        self.ia.sr_knowledge_soundness_error.evaluate(t)
+        self.ia.sr_knowledge_soundness_error(t)
             + 25.0 * t_f * t_f / self.sponge_sigma_to(self.sponge.capacity)
     }
 
@@ -123,7 +123,9 @@ mod tests {
             rbr_soundness_errors: (0..num_rounds)
                 .map(|_| SecurityErrorBound::new(rbr_per_round))
                 .collect(),
-            sr_knowledge_soundness_error: SecurityErrorBound::new(knowledge_soundness),
+            rbr_knowledge_soundness_errors: (0..num_rounds)
+                .map(|_| SecurityErrorBound::new(knowledge_soundness))
+                .collect(),
             hvzk_error: SecurityErrorBound::new(hvzk),
             verifier_challenge_lengths: challenge_lengths,
         }
@@ -151,7 +153,9 @@ mod tests {
         let additive = 25.0 * (t as f64) * (t as f64) / 2_f64.powf(4.0);
         // SR soundness (CY24 Thm 31.2.1 tighter form): t*max + sum = 2*0.005 + 0.01 = 0.02
         assert!((sec.soundness_error(t) - (0.02 + additive)).abs() < 1e-12);
-        assert!((sec.knowledge_soundness_error(t) - (0.02 + additive)).abs() < 1e-12);
+        // SR knowledge (CY24 Thm 31.3.1 tighter form): 2 rounds of 0.02 each
+        // t*max + sum = 2*0.02 + (0.02+0.02) = 0.04 + 0.04 = 0.08
+        assert!((sec.knowledge_soundness_error(t) - (0.08 + additive)).abs() < 1e-12);
     }
 
     #[test]
@@ -213,7 +217,7 @@ mod tests {
                 SecurityErrorBound::new(|_| 0.02),
                 SecurityErrorBound::new(|_| 0.03),
             ],
-            sr_knowledge_soundness_error: SecurityErrorBound::zero(),
+            rbr_knowledge_soundness_errors: alloc::vec![],
             hvzk_error: SecurityErrorBound::zero(),
             verifier_challenge_lengths: alloc::vec![1, 1, 1],
         };
@@ -231,14 +235,17 @@ mod tests {
                 SecurityErrorBound::new(|_| 0.005),
                 SecurityErrorBound::new(|_| 0.005),
             ],
-            sr_knowledge_soundness_error: SecurityErrorBound::zero(),
+            rbr_knowledge_soundness_errors: alloc::vec![
+                SecurityErrorBound::new(|_| 0.005),
+                SecurityErrorBound::new(|_| 0.005),
+            ],
             hvzk_error: SecurityErrorBound::zero(),
             verifier_challenge_lengths: alloc::vec![1, 1],
         };
         let p2 = SecurityProfile {
             plain_soundness_error: SecurityErrorBound::new(|_| 0.02),
             rbr_soundness_errors: alloc::vec![SecurityErrorBound::new(|_| 0.02)],
-            sr_knowledge_soundness_error: SecurityErrorBound::zero(),
+            rbr_knowledge_soundness_errors: alloc::vec![SecurityErrorBound::new(|_| 0.02)],
             hvzk_error: SecurityErrorBound::zero(),
             verifier_challenge_lengths: alloc::vec![1],
         };
@@ -248,10 +255,17 @@ mod tests {
         assert_eq!(composed.rbr_soundness_errors.len(), 3);
         assert_eq!(composed.num_rounds(), 3);
 
-        // At t=0: SR = 0 * max + sum = 0.005 + 0.005 + 0.02 = 0.03
+        // At t=0: SR soundness = 0 * max + sum = 0.005 + 0.005 + 0.02 = 0.03
         assert!((composed.sr_soundness_error(0) - 0.03).abs() < 1e-12);
-        // At t=5: SR = 5 * 0.02 + 0.03 = 0.13
+        // At t=5: SR soundness = 5 * 0.02 + 0.03 = 0.13
         assert!((composed.sr_soundness_error(5) - 0.13).abs() < 1e-12);
+
+        // RBR knowledge vectors also concatenated (same values)
+        assert_eq!(composed.rbr_knowledge_soundness_errors.len(), 3);
+        // At t=0: SR knowledge = 0 * max + sum = 0.03
+        assert!((composed.sr_knowledge_soundness_error(0) - 0.03).abs() < 1e-12);
+        // At t=5: SR knowledge = 5 * 0.02 + 0.03 = 0.13
+        assert!((composed.sr_knowledge_soundness_error(5) - 0.13).abs() < 1e-12);
 
         // Plain soundness composed via union bound: 0.01 + 0.02 = 0.03
         assert!((composed.plain_soundness_error.evaluate(0) - 0.03).abs() < 1e-12);

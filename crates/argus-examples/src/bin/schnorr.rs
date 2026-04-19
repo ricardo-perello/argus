@@ -90,7 +90,7 @@ where
             // 1 round, RBR error = 1/q (SR soundness derived as sum = 1/q).
             rbr_soundness_errors: vec![SecurityErrorBound::new(one_over_q::<G::ScalarField>)],
             // Special soundness extractor succeeds except with prob 1/q.
-            sr_knowledge_soundness_error: SecurityErrorBound::new(one_over_q::<G::ScalarField>),
+            rbr_knowledge_soundness_errors: vec![SecurityErrorBound::new(one_over_q::<G::ScalarField>)],
             // Perfect HVZK (simulator picks c first, computes K = rG - cX).
             hvzk_error: SecurityErrorBound::zero(),
             verifier_challenge_lengths: vec![1],

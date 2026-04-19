@@ -30,7 +30,7 @@ soundness_error: self.soundness_error.compose(&other.soundness_error),
 
 ---
 
-## After
+## After (current state)
 
 ```rust
 pub struct SecurityProfile {
@@ -38,8 +38,8 @@ pub struct SecurityProfile {
     pub plain_soundness_error: SecurityErrorBound,
     /// Per-round RBR errors [ε_1^rbr, ..., ε_μ^rbr]. Length = num_rounds.
     pub rbr_soundness_errors: Vec<SecurityErrorBound>,
-    /// SR knowledge soundness κ^sr(t). Input to DSFS Theorem 6.2.
-    pub sr_knowledge_soundness_error: SecurityErrorBound,
+    /// Per-round RBR knowledge errors [κ_1^rbr, ..., κ_μ^rbr]. Length = num_rounds.
+    pub rbr_knowledge_soundness_errors: Vec<SecurityErrorBound>,
     /// HVZK error z(t). Input to DSFS Theorem 7.1.
     pub hvzk_error: SecurityErrorBound,
     /// Verifier challenge lengths l_V(i) in sponge alphabet units.
@@ -47,78 +47,85 @@ pub struct SecurityProfile {
 }
 ```
 
-`num_rounds` is now a derived method:
+`num_rounds` and SR-level errors are now derived:
 
 ```rust
 pub fn num_rounds(&self) -> usize { self.rbr_soundness_errors.len() }
+
+// CY24 Theorem 31.2.1 (tighter heterogeneous form):
+//   ε^sr(t) ≤ t * max_i ε_i^rbr(t) + Σ_i ε_i^rbr(t)
+pub fn sr_soundness_error(&self, t: u64) -> f64 { ... }
+
+// CY24 Theorem 31.3.1 (tighter heterogeneous form):
+//   κ^sr(t) ≤ t * max_i κ_i^rbr(t) + Σ_i κ_i^rbr(t)
+pub fn sr_knowledge_soundness_error(&self, t: u64) -> f64 { ... }
 ```
 
-SR soundness is now a derived method — not stored:
-
-```rust
-pub fn sr_soundness_error(&self) -> SecurityErrorBound {
-    self.rbr_soundness_errors
-        .iter()
-        .fold(SecurityErrorBound::zero(), |acc, e| acc.compose(e))
-}
-```
-
-`compose()` now concatenates RBR vectors:
+`compose()` now concatenates both RBR vectors:
 
 ```rust
 rbr_soundness_errors: [self.rbr_soundness_errors, other.rbr_soundness_errors].concat()
-// SR soundness of composed = Σ_i ε_i^rbr (derived on demand, always correct)
+rbr_knowledge_soundness_errors: [self.rbr_knowledge_soundness_errors, other.rbr_knowledge_soundness_errors].concat()
+// SR soundness/knowledge derived on demand from the combined vector
 ```
 
-`NargSecurity::soundness_error(t)` in `crates/dsfs/src/narg_security.rs` now calls `self.ia.sr_soundness_error().evaluate(t)`, which routes through the RBR derivation before applying Theorem 6.1.
+`NargSecurity::soundness_error(t)` in `crates/dsfs/src/narg_security.rs` calls
+`self.ia.sr_soundness_error(t)` and `self.ia.sr_knowledge_soundness_error(t)`.
 
 ---
 
 ## Theorem chain (for reference)
 
 ```
-Protocol author specifies:   ε_i^rbr  per round  (round-by-round soundness)
-                                      ↓
-ia-core derives:             ε^sr = Σ_i ε_i^rbr  (state-restoration soundness)
-                                      ↓
-DSFS Theorem 6.1 applies:    ε_NARG(t) ≤ ε^sr(t) + 25t²/|Σ|^c
+Protocol author specifies:   ε_i^rbr  and  κ_i^rbr  per round
+                                       ↓
+ia-core derives (CY24 Thm 31.2.1):  ε^sr(t) ≤ t·max_i ε_i^rbr(t) + Σ_i ε_i^rbr(t)
+ia-core derives (CY24 Thm 31.3.1):  κ^sr(t) ≤ t·max_i κ_i^rbr(t) + Σ_i κ_i^rbr(t)
+                                       ↓
+DSFS Theorem 6.1:    ε_NARG(t) ≤ ε^sr(t) + 25t²/|Σ|^c
+DSFS Theorem 6.2:    κ_NARG(t) ≤ κ^sr(t) + 25t²/|Σ|^c
 ```
 
-Chiesa–Orrù 2025 (eprint 2025/536) Theorems 6.1/6.2/7.1 take `ε^sr` as input.  
-The RBR → SR derivation step is from [CY24] / [BCS16] (not in this paper).
+Why tighter heterogeneous form (not CY24's uniform `(t+k)·ε^rbr`):
+- The `t` adversarial SR moves each attack the worst-case round (max term).
+- The `k` protocol completion moves each use their own round's error (sum term).
+- The uniform form `(t+k)·max` upper-bounds the sum term by `k·max`.
+- For protocols with heterogeneous per-round errors the tighter form is strictly better.
 
 ---
 
-## Correctness questions for Alessandro
+## Q1 — Exact form of the RBR→SR theorem (resolved)
 
-### Q1 — Exact form of the RBR→SR theorem
-
-We are using:
+We confirmed via CY24 Chapter 31:
 
 ```
-ε^sr(t) = Σ_{i=1}^{μ} ε_i^rbr(t)
+ε^sr(t) ≤ t · max_i ε_i^rbr(t) + Σ_i ε_i^rbr(t)
 ```
 
-i.e., the SR soundness of a μ-round protocol is the sum of per-round RBR errors (with the *same* adversary budget `t` plugged into each). Is this the exact statement from [CY24] you have in mind? Alternatives we've seen in the literature:
+This is the tighter heterogeneous form derived from the proof of Theorem 31.2.1.
+The simpler `(t+k)·ε^rbr` (uniform per-round) is a valid but looser upper bound.
 
-- `ε^sr(t) ≤ μ · ε^rbr(t)` (uniform per-round error, factor of μ)
-- `ε^sr(t) ≤ μ · t · ε^rbr` (factor of both μ and t for statistical/information-theoretic arguments)
+## Q2 — Should knowledge soundness also have an RBR analog? (resolved)
 
-The formula we chose is the most natural for heterogeneous per-round errors, but we want to confirm it matches the theorem in CY24.
+Yes. CY24 Theorem 31.3.1 gives an exact parallel:
 
-### Q2 — Should knowledge soundness also have an RBR analog?
+```
+κ^sr(t) ≤ t · max_i κ_i^rbr(t) + Σ_i κ_i^rbr(t)
+```
 
-Currently `sr_knowledge_soundness_error` is a flat stored field — protocol authors specify it directly. There is no `rbr_knowledge_soundness_errors: Vec<...>`.
+`rbr_knowledge_soundness_errors` was added alongside `rbr_soundness_errors`.
+Both compose by concatenation; both are derived at the SR level on demand.
 
-- If CY24 also has a round-by-round knowledge soundness notion with an analogous derivation, we should add `rbr_knowledge_soundness_errors` and make `sr_knowledge_soundness_error()` derived.
-- If knowledge soundness is only defined at the SR level (as in the DSFS paper's Theorem 6.2), the current flat field is correct.
+## Q3 — Is plain soundness composition via union bound correct? (still open)
 
-### Q3 — Is plain soundness composition via union bound correct?
-
-For the live-channel case (no Fiat–Shamir), we compose `plain_soundness_error` via a simple union bound:
+For the live-channel case (no Fiat–Shamir), `plain_soundness_error` is composed
+additively (union bound):
 
 ```
 ε_composed(t) = ε_1(t) + ε_2(t)
 ```
 
-Is this the right composition rule for classical (plain) soundness in sequential protocol composition, or does it need a different treatment?
+This is correct for sequential public-coin composition under standard (non-SR)
+soundness: an adversary that breaks the composed protocol must break either the
+first or the second sub-protocol, and a union bound applies. No SR rewind budget
+is involved.

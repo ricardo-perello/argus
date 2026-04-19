@@ -106,7 +106,7 @@ impl ProtocolSecurity for FoldPairs {
         SecurityProfile {
             plain_soundness_error: SecurityErrorBound::zero(),
             rbr_soundness_errors: vec![SecurityErrorBound::zero()],
-            sr_knowledge_soundness_error: SecurityErrorBound::zero(),
+            rbr_knowledge_soundness_errors: vec![],
             hvzk_error: SecurityErrorBound::zero(),
             verifier_challenge_lengths: vec![1],
         }
@@ -178,7 +178,7 @@ impl ProtocolSecurity for Accumulate {
         SecurityProfile {
             plain_soundness_error: SecurityErrorBound::zero(),
             rbr_soundness_errors: vec![SecurityErrorBound::zero()],
-            sr_knowledge_soundness_error: SecurityErrorBound::zero(),
+            rbr_knowledge_soundness_errors: vec![],
             hvzk_error: SecurityErrorBound::zero(),
             verifier_challenge_lengths: vec![1],
         }
@@ -216,7 +216,7 @@ impl ProtocolSecurity for EqualityCheck {
         SecurityProfile {
             plain_soundness_error: SecurityErrorBound::zero(),
             rbr_soundness_errors: vec![],
-            sr_knowledge_soundness_error: SecurityErrorBound::zero(),
+            rbr_knowledge_soundness_errors: vec![],
             hvzk_error: SecurityErrorBound::zero(),
             verifier_challenge_lengths: vec![],
         }

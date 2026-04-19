@@ -244,7 +244,7 @@ impl ProtocolSecurity for CommittedSumcheck {
         SecurityProfile {
             plain_soundness_error: SecurityErrorBound::zero(),
             rbr_soundness_errors: vec![],
-            sr_knowledge_soundness_error: SecurityErrorBound::zero(),
+            rbr_knowledge_soundness_errors: vec![],
             hvzk_error: SecurityErrorBound::zero(),
             verifier_challenge_lengths: vec![],
         }

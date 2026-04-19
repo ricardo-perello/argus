@@ -65,10 +65,11 @@ impl core::fmt::Debug for SecurityErrorBound {
 /// - **Round-by-round (RBR) soundness** (`rbr_soundness_errors`): per-round
 ///   local soundness condition.  Composes by concatenation.
 /// - **State-restoration (SR) soundness**: derived from RBR via
-///   `sr_soundness_error() = sum_i rbr_soundness_errors[i]`.  This is the
-///   input to DSFS Theorem 6.1.
-/// - **SR knowledge soundness** (`sr_knowledge_soundness_error`): used by
-///   DSFS Theorem 6.2.
+///   `sr_soundness_error(t)`.  This is the input to DSFS Theorem 6.1.
+/// - **RBR knowledge soundness** (`rbr_knowledge_soundness_errors`): per-round
+///   local knowledge condition.  Composes by concatenation.  SR knowledge
+///   soundness is derived from this via `sr_knowledge_soundness_error(t)`.
+///   This is the input to DSFS Theorem 6.2.
 #[derive(Debug, Clone)]
 pub struct SecurityProfile {
     /// Plain soundness error epsilon(t).
@@ -77,17 +78,9 @@ pub struct SecurityProfile {
     /// Per-round RBR soundness errors [epsilon_1^rbr, ..., epsilon_mu^rbr].
     /// Length equals the number of public-coin rounds.
     pub rbr_soundness_errors: Vec<SecurityErrorBound>,
-    /// State-restoration knowledge soundness error kappa^sr(t).
-    ///
-    /// TODO(Alessandro): this is currently a flat stored field set by protocol
-    /// authors.  If CY24 provides a round-by-round knowledge soundness notion
-    /// analogous to RBR soundness, this should become a *derived* field with the
-    /// correct formula:
-    ///   kappa^sr(s, t, n) <= (t + k) * kappa^rbr(n)
-    /// (CY24 Theorem 31.3.1).  If knowledge soundness is only defined at the SR
-    /// level (as in DSFS Theorem 6.2), the flat stored field is correct.
-    /// Please confirm before changing.
-    pub sr_knowledge_soundness_error: SecurityErrorBound,
+    /// Per-round RBR knowledge soundness errors [kappa_1^rbr, ..., kappa_mu^rbr].
+    /// Length equals the number of public-coin rounds.
+    pub rbr_knowledge_soundness_errors: Vec<SecurityErrorBound>,
     /// Honest-verifier zero-knowledge error z(t).
     pub hvzk_error: SecurityErrorBound,
     /// Verifier challenge lengths `l_V(i)` in sponge alphabet units.
@@ -119,10 +112,30 @@ impl SecurityProfile {
         (t as f64) * max_rbr + sum_rbr
     }
 
+    /// Derive SR knowledge soundness error at adversary query budget `t`.
+    ///
+    /// Uses the tighter heterogeneous form of CY24 Theorem 31.3.1:
+    ///   kappa^sr(t) <= t * max_i kappa_i^rbr(t) + sum_i kappa_i^rbr(t)
+    ///
+    /// Returns 0.0 for protocols with no rounds.
+    pub fn sr_knowledge_soundness_error(&self, t: u64) -> f64 {
+        if self.rbr_knowledge_soundness_errors.is_empty() {
+            return 0.0;
+        }
+        let evaluated: alloc::vec::Vec<f64> = self
+            .rbr_knowledge_soundness_errors
+            .iter()
+            .map(|e| e.evaluate(t))
+            .collect();
+        let max_rbr = evaluated.iter().cloned().fold(0.0_f64, f64::max);
+        let sum_rbr: f64 = evaluated.iter().sum();
+        (t as f64) * max_rbr + sum_rbr
+    }
+
     /// Compose two protocol profiles sequentially.
     ///
-    /// - RBR soundness errors: concatenated (the correct composition).
-    /// - Plain soundness / SR knowledge soundness / HVZK: union bound.
+    /// - RBR soundness / knowledge errors: concatenated (the correct composition).
+    /// - Plain soundness / HVZK: union bound.
     /// - Challenge lengths: concatenated.
     pub fn compose(&self, other: &Self) -> Self {
         let mut rbr_soundness_errors = Vec::with_capacity(
@@ -130,6 +143,15 @@ impl SecurityProfile {
         );
         rbr_soundness_errors.extend_from_slice(&self.rbr_soundness_errors);
         rbr_soundness_errors.extend_from_slice(&other.rbr_soundness_errors);
+
+        let mut rbr_knowledge_soundness_errors = Vec::with_capacity(
+            self.rbr_knowledge_soundness_errors.len()
+                + other.rbr_knowledge_soundness_errors.len(),
+        );
+        rbr_knowledge_soundness_errors
+            .extend_from_slice(&self.rbr_knowledge_soundness_errors);
+        rbr_knowledge_soundness_errors
+            .extend_from_slice(&other.rbr_knowledge_soundness_errors);
 
         let mut verifier_challenge_lengths = Vec::with_capacity(
             self.verifier_challenge_lengths.len() + other.verifier_challenge_lengths.len(),
@@ -142,9 +164,7 @@ impl SecurityProfile {
                 .plain_soundness_error
                 .compose(&other.plain_soundness_error),
             rbr_soundness_errors,
-            sr_knowledge_soundness_error: self
-                .sr_knowledge_soundness_error
-                .compose(&other.sr_knowledge_soundness_error),
+            rbr_knowledge_soundness_errors,
             hvzk_error: self.hvzk_error.compose(&other.hvzk_error),
             verifier_challenge_lengths,
         }

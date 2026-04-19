@@ -152,6 +152,61 @@ impl WARP<F, P, C, MT> {
 
 The `ark-crypto-primitives` dependency uses a [patched fork](https://github.com/dmpierre/crypto-primitives/tree/dev/blake3) that adds Blake3 support.
 
+## Security profile (ProtocolSecurity)
+
+`WARPReduction` implements `ProtocolSecurity` with Schwartz–Zippel per-round error
+bounds derived from the polynomial degrees in each sumcheck phase. **The per-round
+degrees are read directly from the code; the formal soundness theorem from
+eprint 2025/753 should be checked to confirm these match the paper's analysis.**
+
+### Round structure
+
+`WARPReduction::new(log_l, log_n, log_m)` produces a profile with `log_l + log_n`
+rounds, where `log_m` is log₂ of the R1CS constraint count:
+
+| Rounds | Phase | Protocol |
+|---|---|---|
+| `log_l` | Twin sumcheck | ProtoGalaxy-style folding |
+| `log_n` | Batching sumcheck | CBBZ23 inner product |
+
+### Per-round polynomial degrees (from code)
+
+**Batching sumcheck** (`batching_sumcheck.rs`): sends 3 values per round
+(`sum_00`, `sum_11`, `sum_0110`), so the polynomial is degree 2.
+Schwartz–Zippel per-round error: **2/|F|**.
+
+**Twin sumcheck** (`twin_sumcheck.rs`): sends `n_coeffs` values per round where
+
+```rust
+n_coeffs = 2 + (log_n + 1).max(log_m + 2)
+```
+
+The polynomial degree is `n_coeffs - 1 = 1 + max(log_n, log_m + 1)`.
+Schwartz–Zippel per-round error: **(n_coeffs - 1) / |F|**, which is
+instance-dependent (typically ~10–20× larger than `1/|F|` in practice).
+
+### Implemented bounds
+
+`WARPReduction::security()` computes correct per-round degrees using `log_l`,
+`log_n`, and `log_m`:
+
+| Phase | Per-round error | Notes |
+|---|---|---|
+| Twin sumcheck (`log_l` rounds) | `(1 + max(log_n, log_m+1)) / \|F\|` | requires `log_m` to be set |
+| Batching sumcheck (`log_n` rounds) | `2 / \|F\|` | fixed degree |
+
+`SecurityErrorBound` stores bare `fn(u64) -> f64` pointers (no closures). A
+degree-`d` bound is represented as `d` copies of the `1/|F|` function composed
+additively, which evaluates correctly to `d/|F|`.
+
+`Default` uses `log_l = log_n = log_m = 0` and is only for tests that do not
+exercise the security profile.
+
+`WARPDeciderIA` has no public-coin rounds (deterministic local check), so all
+its error bounds are zero.
+
+---
+
 ## Differences from the original `~/Developer/warp`
 
 The original warp codebase uses spongefish directly (`ProverState` / `VerifierState`) and defines its own `WARPDomainSeparator` that builds a precise absorb/squeeze pattern upfront. The Argus port replaces all spongefish calls with channel trait calls, deferring the sponge management to whichever channel backend is plugged in.
