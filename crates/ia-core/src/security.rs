@@ -2,20 +2,23 @@
 
 extern crate alloc;
 
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 /// An error bound expressed as a function of the adversary's query budget `t`.
 ///
-/// Internally stored as a sum of `fn(u64) -> f64` terms so that sequential
-/// composition (union bound) is just vector concatenation -- no closures or
-/// heap-allocated trait objects required.
+/// Internally stored as a sum of `Arc<dyn Fn(u64) -> f64 + Send + Sync>` terms
+/// so that sequential composition (union bound) is just vector concatenation.
+/// Closures capturing protocol parameters (field sizes, code distances, list
+/// sizes, etc.) are fully supported; bare `fn` pointers are accepted as-is
+/// since all `fn` items implement `Fn + Send + Sync`.
 #[derive(Clone)]
-pub struct SecurityErrorBound(Vec<fn(u64) -> f64>);
+pub struct SecurityErrorBound(Vec<Arc<dyn Fn(u64) -> f64 + Send + Sync>>);
 
 impl SecurityErrorBound {
-    /// A single-term error function.
-    pub fn new(f: fn(u64) -> f64) -> Self {
-        Self(alloc::vec![f])
+    /// A single-term error function.  Accepts both bare `fn` items and closures.
+    pub fn new(f: impl Fn(u64) -> f64 + Send + Sync + 'static) -> Self {
+        Self(alloc::vec![Arc::new(f)])
     }
 
     /// The zero error function (identically 0 for all `t`).
@@ -31,10 +34,37 @@ impl SecurityErrorBound {
     /// Additive composition: `(self + other)(t) = self(t) + other(t)`.
     pub fn compose(&self, other: &Self) -> Self {
         let mut terms = Vec::with_capacity(self.0.len() + other.0.len());
-        terms.extend_from_slice(&self.0);
-        terms.extend_from_slice(&other.0);
+        terms.extend(self.0.iter().cloned());
+        terms.extend(other.0.iter().cloned());
         Self(terms)
     }
+}
+
+/// Code-level security parameters for protocols built on linear codes.
+///
+/// Protocols like WARP incorporate three code-specific error terms that are not
+/// captured by per-round Schwartz–Zippel bounds alone:
+///
+/// - `proximity_generator_error` — `err_PG(C, d, δ)` (ProtoGalaxy folding step)
+/// - `list_size_bound` — `|Λ(C, δ)|` (OOD / commitment phase)
+/// - `distance` — `δ = 1 − ρ` (shift-sampling / consistency check)
+///
+/// Implement this trait on your code type (or a newtype wrapper) and pass it into
+/// the protocol's `security()` construction so the returned `SecurityProfile` can
+/// close over the code parameters.
+pub trait CodeSecurityParams {
+    /// Relative minimum distance δ = 1 − rate of the code.
+    fn distance(&self) -> f64;
+
+    /// An upper bound on `|Λ(C, δ)|`, the list-decoding list size at radius δ.
+    fn list_size_bound(&self) -> f64;
+
+    /// Upper bound on the proximity-generator error `err_PG(C, degree, δ)`.
+    ///
+    /// This is the probability that a random degree-`degree` linear combination
+    /// of vectors that are individually δ-close to codewords is still δ-close.
+    /// For Reed-Solomon codes over large fields a standard bound is ≈ n² / |F|.
+    fn proximity_generator_error(&self, degree: usize) -> f64;
 }
 
 /// Security metadata provider for an interactive protocol.

@@ -44,4 +44,4 @@ pub use compose::{ChainedReduction, ReducedArgument};
 pub use deserialize::Deserialize;
 pub use error::{VerificationError, VerificationResult};
 pub use reduction::InteractiveReduction;
-pub use security::{ProtocolSecurity, SecurityErrorBound, SecurityProfile};
+pub use security::{CodeSecurityParams, ProtocolSecurity, SecurityErrorBound, SecurityProfile};

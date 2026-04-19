@@ -7,7 +7,8 @@ use ark_codes::{
     traits::LinearCode,
 };
 use ark_crypto_primitives::crh::poseidon::{constraints::CRHGadget, CRH};
-use ark_ff::UniformRand;
+use ark_ff::{PrimeField, UniformRand};
+use ark_std::log2;
 use rand::thread_rng;
 
 use warp::{
@@ -23,7 +24,7 @@ use warp::{
     },
     types::{AccumulatorInstances, AccumulatorWitnesses},
     utils::poseidon,
-    FullWARP, WARPReduction,
+    FullWARP, ReedSolomonParams, WARPDeciderIA, WARPReduction,
 };
 
 use dsfs::{Keccak, SpongeInfo, SpongeProver, SpongeVerifier};
@@ -300,7 +301,19 @@ fn warp_ir_dsfs_prove_verify() {
     };
 
     let session = spongefish::session!("warp IR test");
-    let ir = WARPReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default();
+    let code_params = ReedSolomonParams::new(
+        code.code_len(),
+        code.message_len(),
+        Fp::MODULUS_BIT_SIZE,
+    );
+    let ir = WARPReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new(
+        log2(l1) as usize,
+        log2(code.code_len()) as usize,
+        log2(r1cs.m) as usize,
+        code_params,
+        8,  // ood_samples (matches WARPConfig s=8)
+        7,  // shift_queries (matches WARPConfig t=7)
+    );
     let proof = dsfs::prove_reduction(&ir, &session, &instance, &witness);
     println!("IR NARG string: {} bytes", proof.len());
 
@@ -345,7 +358,23 @@ fn warp_full_ia_dsfs_prove_verify() {
     };
 
     let session = spongefish::session!("warp FullWARP test");
-    let full = FullWARP::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default();
+    let code_params = ReedSolomonParams::new(
+        code.code_len(),
+        code.message_len(),
+        Fp::MODULUS_BIT_SIZE,
+    );
+    let reduction = WARPReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new(
+        log2(l1) as usize,
+        log2(code.code_len()) as usize,
+        log2(r1cs.m) as usize,
+        code_params,
+        8,  // ood_samples (matches WARPConfig s=8)
+        7,  // shift_queries (matches WARPConfig t=7)
+    );
+    let full = FullWARP::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new(
+        reduction,
+        WARPDeciderIA::default(),
+    );
     let proof = dsfs::prove(&full, &session, &instance, &witness);
     println!("FullWARP NARG string: {} bytes", proof.len());
 

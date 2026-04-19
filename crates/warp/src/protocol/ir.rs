@@ -7,9 +7,11 @@ use ark_poly::{DenseMultilinearExtension, Polynomial};
 use ark_std::log2;
 
 use ia_core::{
-    InteractiveArgument, InteractiveReduction, ProtocolSecurity, ProverChannel,
+    CodeSecurityParams, InteractiveArgument, InteractiveReduction, ProtocolSecurity, ProverChannel,
     ReducedArgument, SecurityErrorBound, SecurityProfile, VerificationResult, VerifierChannel,
 };
+
+use crate::rs_params::ReedSolomonParams;
 
 use crate::protocol::warp::{DeciderInstance, DeciderWitness, WARPInstance, WARPWitness};
 use crate::relations::r1cs::R1CSConstraints;
@@ -28,18 +30,26 @@ pub struct WARPReduction<F, P, C, MT> {
     /// log2 of the number of R1CS constraints M. Used to compute the polynomial
     /// degree for the twin sumcheck per-round RBR error bound.
     pub log_m: usize,
+    /// Reed-Solomon code security parameters (n, k, |F|-bits).
+    /// Used by `ProtocolSecurity::security()` to compute the full paper bounds.
+    pub code_params: ReedSolomonParams,
+    /// Number of OOD samples s (from `WARPConfig.s`).
+    pub ood_samples: usize,
+    /// Number of shift queries t (from `WARPConfig.t`).
+    pub shift_queries: usize,
     _phantom: PhantomData<(F, P, C, MT)>,
 }
 
 impl<F, P, C, MT> WARPReduction<F, P, C, MT> {
-    pub fn new(log_l: usize, log_n: usize, log_m: usize) -> Self {
-        Self { log_l, log_n, log_m, _phantom: PhantomData }
-    }
-}
-
-impl<F, P, C, MT> Default for WARPReduction<F, P, C, MT> {
-    fn default() -> Self {
-        Self::new(0, 0, 0)
+    pub fn new(
+        log_l: usize,
+        log_n: usize,
+        log_m: usize,
+        code_params: ReedSolomonParams,
+        ood_samples: usize,
+        shift_queries: usize,
+    ) -> Self {
+        Self { log_l, log_n, log_m, code_params, ood_samples, shift_queries, _phantom: PhantomData }
     }
 }
 
@@ -114,50 +124,70 @@ where
     MT: Config,
 {
     fn security(&self) -> SecurityProfile {
-        // Per-round RBR error via Schwartz–Zippel: deg/|F| where deg is the
-        // polynomial degree sent by the prover in that round.
+        // Security bounds follow eprint 2025/753.
         //
-        // Twin sumcheck (log_l rounds, protocol/twin_sumcheck.rs):
-        //   n_coeffs = 2 + max(log_n + 1, log_m + 2)
-        //   degree   = n_coeffs - 1 = 1 + max(log_n, log_m + 1)
+        // Twin sumcheck (log_l rounds, §6.1–6.2):
+        //   degree   = 1 + max(log_n + 1, log_m + 2)  [warp.rs:293 + eprint §6.1, d=2]
+        //   per-round RBR error at round j (0-indexed):
+        //     Schwartz–Zippel:   deg / |F|
+        //     errPG contribution: (ℓ / 2^j) · err_PG(C, 2, δ)  [§6.2]
         //
-        // Batching sumcheck (log_n rounds, protocol/batching_sumcheck.rs):
-        //   sends sum_00, sum_11, sum_0110 → degree 2
+        // Batching sumcheck (log_n rounds, §8):
+        //   degree 2 (sends sum_00, sum_11, sum_0110)
+        //   per-round RBR error: 2 / |F|
         //
-        // SecurityErrorBound stores bare fn pointers (no closures). To represent
-        // deg/|F|, we store `deg` copies of the 1/|F| function and rely on the
-        // additive evaluation: sum of deg identical terms = deg * (1/|F|).
+        // Commitment / OOD / PESAT terms (non-SR, one-time costs, §5.2 + §7):
+        //   |Λ(C,δ)|² · log_n / |F|  +  (1 − δ)^shift_queries  +  |Λ| · log_M / |F|
+        //   These don't participate in the SR adversary budget — they are absorbed
+        //   in the commitment phase and do not correspond to interactive rounds.
+        //   Placed in plain_soundness_error pending Q2 confirmation with Chiesa.
         //
         // WARP is public-coin with no ZK, so hvzk_error = 0.
-        fn one_over_field_size<F: PrimeField>(_t: u64) -> f64 {
-            2_f64.powi(-(F::MODULUS_BIT_SIZE as i32))
-        }
 
-        // Twin sumcheck degree = 1 + max(log_n, log_m + 1).
-        // When log_m = 0 (unknown / not set), this is at least 1.
-        let twin_deg = 1 + self.log_n.max(self.log_m + 1);
-        // Batching sumcheck degree = 2 (three scalars per round → degree-2 polynomial).
-        let batch_deg: usize = 2;
+        let field_bits = F::MODULUS_BIT_SIZE as i32;
+        let field_inv = 2_f64.powi(-field_bits);
 
-        // Build a SecurityErrorBound representing deg/|F| by composing `deg`
-        // single-term bounds of 1/|F|. This uses only the public API.
-        let make_deg_bound = |deg: usize| -> SecurityErrorBound {
-            let single = SecurityErrorBound::new(one_over_field_size::<F>);
-            (1..deg).fold(single.clone(), |acc, _| acc.compose(&single))
-        };
+        // Code-specific parameters.
+        let delta = self.code_params.distance();
+        let list_size = self.code_params.list_size_bound();
+        // err_PG for degree 2 (quadratic R1CS, eprint §6.2).
+        let err_pg = self.code_params.proximity_generator_error(2);
+        let ell = (1usize << self.log_l) as f64;
 
+        // Twin sumcheck degree = 1 + max(log_n + 1, log_m + 2).
+        let twin_deg = 1 + (self.log_n + 1).max(self.log_m + 2);
+
+        // Twin sumcheck RBR bounds: round j (0-indexed) adds Schwartz–Zippel + errPG.
         let twin_rbr: Vec<SecurityErrorBound> = (0..self.log_l)
-            .map(|_| make_deg_bound(twin_deg))
+            .map(|j| {
+                let sz = (twin_deg as f64) * field_inv;
+                let pg = (ell / (1u64 << j) as f64) * err_pg;
+                SecurityErrorBound::new(move |_t| sz + pg)
+            })
             .collect();
+
+        // Batching sumcheck RBR bounds: degree 2 per round.
         let batch_rbr: Vec<SecurityErrorBound> = (0..self.log_n)
-            .map(|_| make_deg_bound(batch_deg))
+            .map(|_| SecurityErrorBound::new(move |_t| 2.0 * field_inv))
             .collect();
 
         let mut rbr = twin_rbr;
         rbr.extend(batch_rbr);
 
+        // One-time (non-SR) commitment-phase terms.
+        // OOD + shift-sampling (§7): |Λ|² · log_n / |F| + (1 − δ)^shift_queries
+        let log_n_f = self.log_n as f64;
+        let ood_term = list_size * list_size * log_n_f * field_inv;
+        let shift_term = (1.0 - delta).powi(self.shift_queries as i32);
+        // PESAT → code reduction (§5.2): |Λ| · log_M / |F|
+        let log_m_f = self.log_m as f64;
+        let pesat_term = list_size * log_m_f * field_inv;
+
+        let plain_error =
+            SecurityErrorBound::new(move |_t| ood_term + shift_term + pesat_term);
+
         SecurityProfile {
-            plain_soundness_error: SecurityErrorBound::zero(),
+            plain_soundness_error: plain_error,
             rbr_soundness_errors: rbr.clone(),
             rbr_knowledge_soundness_errors: rbr,
             hvzk_error: SecurityErrorBound::zero(),
