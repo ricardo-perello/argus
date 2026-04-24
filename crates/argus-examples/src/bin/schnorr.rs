@@ -181,7 +181,7 @@ fn main() {
 mod tests {
     use super::*;
     use ark_ff::PrimeField;
-    use ia_core::ProtocolSecurity;
+    use ia_core::{NonInteractiveArgument, ProtocolSecurity};
     use spongefish::dsfs::STD_SPONGE_PARAMS;
     use std::thread;
 
@@ -282,6 +282,24 @@ mod tests {
         let narg = dsfs::prove(&schnorr, &session, &instance, &sk);
         dsfs::verify(&schnorr, &session, &instance, narg.as_bytes())
             .expect("dsfs verification failed");
+    }
+
+    #[test]
+    fn schnorr_dsfs_wrapper_is_non_interactive_argument() {
+        let generator = G::generator();
+        let sk = F::rand(&mut OsRng);
+        let pk = generator * sk;
+        let instance = [generator, pk];
+
+        let session = spongefish::session!("spongefish examples");
+        let schnorr = Schnorr::<G>::default();
+        let narg = dsfs::Dsfs::<_, _>::new(schnorr, dsfs::Keccak::default());
+
+        let proof = narg.prove(&session, &instance, &sk);
+
+        assert!(!proof.is_empty());
+        narg.verify(&session, &instance, &proof)
+            .expect("DSFS-backed NARG verification failed");
     }
 
     #[test]
