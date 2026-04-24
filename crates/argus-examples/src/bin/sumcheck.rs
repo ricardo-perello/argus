@@ -3,7 +3,7 @@ use ark_ff::{One, Zero};
 use ark_std::UniformRand;
 use rand::rngs::OsRng;
 use spongefish::dsfs::{Keccak, SpongeInfo};
-use spongefish::{protocol_id, DomainSeparator, Encoding, ProverState};
+use spongefish::{DomainSeparator, Encoding, ProverState, protocol_id};
 
 struct Sumcheck;
 
@@ -105,35 +105,6 @@ impl Sumcheck {
         verifier_state.check_eof()?;
         Ok(())
     }
-
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn sumcheck_dsfs_roundtrip() {
-        let n: u32 = 4;
-        let size = 1usize << n as usize;
-        let evals: Vec<Fr> = (0..size as u64).map(Fr::from).collect();
-        let claimed_sum = evals.iter().copied().sum();
-
-        let instance = Instance { n, evals, claimed_sum };
-
-        let domain_separator = DomainSeparator::derive(
-            Sumcheck::protocol_id().as_ref(),
-            Keccak::SPONGE_INFO,
-            spongefish::session!("argus examples").as_slice(),
-        )
-        .instance(&instance);
-
-        let mut prover_state = domain_separator.std_prover();
-        let narg = Sumcheck::prove(&mut prover_state, &instance).to_vec();
-
-        let verifier_state = domain_separator.std_verifier(&narg);
-        Sumcheck::verify(verifier_state, &instance).expect("sumcheck verification failed");
-    }
 }
 
 fn main() {
@@ -161,9 +132,40 @@ fn main() {
     let mut prover_state = domain_separator.std_prover();
     let narg_string = Sumcheck::prove(&mut prover_state, &instance);
 
-
     println!("Sumcheck proof bytes:\n{}", hex::encode(narg_string));
 
     let verifier_state = domain_separator.std_verifier(narg_string);
     Sumcheck::verify(verifier_state, &instance).expect("Invalid proof");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sumcheck_dsfs_roundtrip() {
+        let n: u32 = 4;
+        let size = 1usize << n as usize;
+        let evals: Vec<Fr> = (0..size as u64).map(Fr::from).collect();
+        let claimed_sum = evals.iter().copied().sum();
+
+        let instance = Instance {
+            n,
+            evals,
+            claimed_sum,
+        };
+
+        let domain_separator = DomainSeparator::derive(
+            Sumcheck::protocol_id().as_ref(),
+            Keccak::SPONGE_INFO,
+            spongefish::session!("argus examples").as_slice(),
+        )
+        .instance(&instance);
+
+        let mut prover_state = domain_separator.std_prover();
+        let narg = Sumcheck::prove(&mut prover_state, &instance).to_vec();
+
+        let verifier_state = domain_separator.std_verifier(&narg);
+        Sumcheck::verify(verifier_state, &instance).expect("sumcheck verification failed");
+    }
 }

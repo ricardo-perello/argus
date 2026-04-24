@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
-use crate::{codecs::Encoding, error::VerificationError, io::NargDeserialize, VerificationResult};
+use crate::{VerificationResult, codecs::Encoding, error::VerificationError, io::NargDeserialize};
 
 macro_rules! impl_deserialize {
     (impl [$($generics:tt)*] for $type:ty) => {

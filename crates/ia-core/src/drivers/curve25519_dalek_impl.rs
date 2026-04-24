@@ -6,10 +6,10 @@ use curve25519_dalek::{
 };
 
 use crate::{
+    VerificationResult,
     codecs::{Decoding, Encoding},
     error::VerificationError,
     io::NargDeserialize,
-    VerificationResult,
 };
 
 // Implement Decoding for curve25519-dalek Scalar

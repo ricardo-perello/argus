@@ -24,7 +24,9 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-use ia_core::{InteractiveArgument, ProverChannel, VerificationError, VerificationResult, VerifierChannel};
+use ia_core::{
+    InteractiveArgument, ProverChannel, VerificationError, VerificationResult, VerifierChannel,
+};
 use rand_chacha::rand_core::SeedableRng;
 use sigma_proofs::traits::SigmaProtocol;
 use spongefish::Encoding;
@@ -51,7 +53,12 @@ where
         self.0.protocol_identifier()
     }
 
-    fn prove<P: ProverChannel>(&self, ch: &mut P, instance: &SigmaIA<S>, witness: &(S::Witness, [u8; 32])) {
+    fn prove<P: ProverChannel>(
+        &self,
+        ch: &mut P,
+        instance: &SigmaIA<S>,
+        witness: &(S::Witness, [u8; 32]),
+    ) {
         let (w, seed) = witness;
         let mut rng = rand_chacha::ChaCha20Rng::from_seed(*seed);
 
@@ -76,7 +83,11 @@ where
         }
     }
 
-    fn verify<V: VerifierChannel>(&self, ch: &mut V, instance: &SigmaIA<S>) -> VerificationResult<()> {
+    fn verify<V: VerifierChannel>(
+        &self,
+        ch: &mut V,
+        instance: &SigmaIA<S>,
+    ) -> VerificationResult<()> {
         let mut commitment = Vec::with_capacity(instance.0.commitment_len());
         for _ in 0..instance.0.commitment_len() {
             commitment.push(ch.read_prover_message::<S::Commitment>()?);

@@ -174,7 +174,7 @@ mod tests {
     use alloc::vec::Vec;
 
     use super::*;
-    use crate::{pad_protocol_id, NargSerialize};
+    use crate::{NargSerialize, pad_protocol_id};
 
     #[test]
     fn narg_proof_raw_access_roundtrips() {

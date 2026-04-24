@@ -47,5 +47,6 @@ fn sigmaia_composed_and_dsfs_roundtrip() {
     let session = spongefish::session!("composed-relation-smoke");
 
     let proof = dsfs::prove(&ia, &session, &ia, &sigma_witness);
-    dsfs::verify(&ia, &session, &ia, proof.as_bytes()).expect("composed SigmaIA verification must succeed");
+    dsfs::verify(&ia, &session, &ia, proof.as_bytes())
+        .expect("composed SigmaIA verification must succeed");
 }

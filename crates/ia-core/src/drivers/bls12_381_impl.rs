@@ -2,10 +2,10 @@
 use bls12_381::{G1Affine, G1Projective, G2Affine, G2Projective, Scalar};
 
 use crate::{
+    VerificationResult,
     codecs::{Decoding, Encoding},
     error::VerificationError,
     io::NargDeserialize,
-    VerificationResult,
 };
 
 // Implement Decoding for BLS12-381 Scalar

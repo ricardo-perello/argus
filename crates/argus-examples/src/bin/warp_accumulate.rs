@@ -69,8 +69,6 @@ impl InteractiveReduction for Accumulate {
         instance: &SourceInstance,
         witness: &Vec<Fr>,
     ) -> (TargetInstance, ()) {
-        let n = instance.claims.len();
-
         for w_i in witness {
             ch.send_prover_message(w_i);
         }
@@ -79,13 +77,19 @@ impl InteractiveReduction for Accumulate {
         let mut acc_claim = Fr::ZERO;
         let mut acc_value = Fr::ZERO;
         let mut power = Fr::ONE;
-        for i in 0..n {
-            acc_claim += power * instance.claims[i];
-            acc_value += power * witness[i];
+        for (claim_i, witness_i) in instance.claims.iter().zip(witness.iter()) {
+            acc_claim += power * claim_i;
+            acc_value += power * witness_i;
             power *= alpha;
         }
 
-        (TargetInstance { acc_claim, acc_value }, ())
+        (
+            TargetInstance {
+                acc_claim,
+                acc_value,
+            },
+            (),
+        )
     }
 
     fn verify<V: VerifierChannel>(
@@ -106,9 +110,9 @@ impl InteractiveReduction for Accumulate {
         let mut acc_claim = Fr::ZERO;
         let mut acc_value = Fr::ZERO;
         let mut power = Fr::ONE;
-        for i in 0..n {
-            acc_claim += power * instance.claims[i];
-            acc_value += power * values[i];
+        for (claim_i, value_i) in instance.claims.iter().zip(values.iter()) {
+            acc_claim += power * claim_i;
+            acc_value += power * value_i;
             power *= alpha;
         }
 
@@ -144,29 +148,6 @@ fn decide(target: &TargetInstance) -> VerificationResult<()> {
 }
 
 // ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn warp_accumulate_roundtrip() {
-        let n = 8;
-        let values: Vec<Fr> = (0..n as u64).map(Fr::from).collect();
-        let instance = SourceInstance { claims: values.clone() };
-        let witness = values;
-
-        let session = spongefish::session!("argus example: warp accumulate");
-        let proof = dsfs::prove_reduction(&Accumulate, &session, &instance, &witness);
-        let target = dsfs::verify_reduction(&Accumulate, &session, &instance, proof.as_bytes())
-            .expect("reduction failed");
-        decide(&target).expect("decider rejected");
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Main: prove, verify (get target instance), decide
 // ---------------------------------------------------------------------------
 
@@ -197,4 +178,29 @@ fn main() {
 
     decide(&target).expect("decider rejected");
     println!("Decider accepted");
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn warp_accumulate_roundtrip() {
+        let n = 8;
+        let values: Vec<Fr> = (0..n as u64).map(Fr::from).collect();
+        let instance = SourceInstance {
+            claims: values.clone(),
+        };
+        let witness = values;
+
+        let session = spongefish::session!("argus example: warp accumulate");
+        let proof = dsfs::prove_reduction(&Accumulate, &session, &instance, &witness);
+        let target = dsfs::verify_reduction(&Accumulate, &session, &instance, proof.as_bytes())
+            .expect("reduction failed");
+        decide(&target).expect("decider rejected");
+    }
 }

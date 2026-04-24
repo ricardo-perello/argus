@@ -91,7 +91,9 @@ where
             // 1 round, RBR error = 1/q (SR soundness derived as sum = 1/q).
             rbr_soundness_errors: vec![SecurityErrorBound::new(one_over_q::<G::ScalarField>)],
             // Special soundness extractor succeeds except with prob 1/q.
-            rbr_knowledge_soundness_errors: vec![SecurityErrorBound::new(one_over_q::<G::ScalarField>)],
+            rbr_knowledge_soundness_errors: vec![SecurityErrorBound::new(
+                one_over_q::<G::ScalarField>,
+            )],
             // Perfect HVZK (simulator picks c first, computes K = rG - cX).
             hvzk_error: SecurityErrorBound::zero(),
             verifier_challenge_lengths: vec![1],
@@ -111,10 +113,11 @@ fn run_dsfs(instance: &[ark_curve25519::EdwardsProjective; 2], sk: &ark_curve255
     let session = spongefish::session!("spongefish examples");
 
     let schnorr = Schnorr::<G>::default();
-    let narg_string = dsfs::prove(&schnorr, &session, &instance, sk);
+    let narg_string = dsfs::prove(&schnorr, &session, instance, sk);
     println!("Proof:\n{}", hex::encode(narg_string.as_bytes()));
 
-    dsfs::verify(&schnorr, &session, &instance, narg_string.as_bytes()).expect("verification failed");
+    dsfs::verify(&schnorr, &session, instance, narg_string.as_bytes())
+        .expect("verification failed");
     println!("Verification succeeded");
 }
 
@@ -146,7 +149,10 @@ fn run_live(instance: [ark_curve25519::EdwardsProjective; 2], sk: ark_curve25519
     });
 
     prover_handle.join().unwrap();
-    verifier_handle.join().unwrap().expect("live verification failed");
+    verifier_handle
+        .join()
+        .unwrap()
+        .expect("live verification failed");
 }
 
 // ---------------------------------------------------------------------------
@@ -175,8 +181,8 @@ fn main() {
 mod tests {
     use super::*;
     use ark_ff::PrimeField;
-    use spongefish::dsfs::STD_SPONGE_PARAMS;
     use ia_core::ProtocolSecurity;
+    use spongefish::dsfs::STD_SPONGE_PARAMS;
     use std::thread;
 
     type G = ark_curve25519::EdwardsProjective;
@@ -274,7 +280,8 @@ mod tests {
         let session = spongefish::session!("spongefish examples");
         let schnorr = Schnorr::<G>::default();
         let narg = dsfs::prove(&schnorr, &session, &instance, &sk);
-        dsfs::verify(&schnorr, &session, &instance, narg.as_bytes()).expect("dsfs verification failed");
+        dsfs::verify(&schnorr, &session, &instance, narg.as_bytes())
+            .expect("dsfs verification failed");
     }
 
     #[test]
@@ -297,6 +304,9 @@ mod tests {
         });
 
         prover_handle.join().unwrap();
-        verifier_handle.join().unwrap().expect("live verification failed");
+        verifier_handle
+            .join()
+            .unwrap()
+            .expect("live verification failed");
     }
 }

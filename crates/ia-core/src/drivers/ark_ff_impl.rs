@@ -5,10 +5,10 @@ use core::marker::PhantomData;
 use ark_ff::{BigInteger, Field, Fp, FpConfig, PrimeField};
 
 use crate::{
+    VerificationResult,
     codecs::{Decoding, Encoding},
     error::VerificationError,
     io::NargDeserialize,
-    VerificationResult,
 };
 
 fn parse_canonical_prime_field<F: PrimeField>(bytes: &[u8]) -> Option<F> {

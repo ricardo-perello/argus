@@ -905,6 +905,10 @@ dependencies = [
  "curve25519-dalek",
  "k256",
  "p256",
+ "p3-baby-bear",
+ "p3-field",
+ "p3-koala-bear",
+ "p3-mersenne-31",
 ]
 
 [[package]]
@@ -1160,6 +1164,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "p3-baby-bear"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "536fc2d7c0ab48ff916582277424f8973228ea05a99fb9af16f2b2502fd80ec9"
+dependencies = [
+ "p3-challenger",
+ "p3-field",
+ "p3-mds",
+ "p3-monty-31",
+ "p3-poseidon1",
+ "p3-poseidon2",
+ "p3-symmetric",
+ "rand 0.10.0",
+]
+
+[[package]]
 name = "p3-challenger"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1252,6 +1272,27 @@ dependencies = [
  "p3-symmetric",
  "p3-util",
  "rand 0.10.0",
+]
+
+[[package]]
+name = "p3-mersenne-31"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f71ab5340a5b15a613e637f48046723dcd3cf14fa23598586a1691e1dcf33185"
+dependencies = [
+ "itertools 0.14.0",
+ "num-bigint 0.4.6",
+ "p3-challenger",
+ "p3-dft",
+ "p3-field",
+ "p3-matrix",
+ "p3-mds",
+ "p3-poseidon2",
+ "p3-symmetric",
+ "p3-util",
+ "paste",
+ "rand 0.10.0",
+ "serde",
 ]
 
 [[package]]

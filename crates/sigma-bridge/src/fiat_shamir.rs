@@ -9,12 +9,12 @@
 
 use alloc::vec::Vec;
 
-use spongefish::dsfs::{ByteDuplexSponge, SpongeProver, SpongeVerifier, TranscriptSponge};
 use ia_core::{ProverChannel, VerifierChannel};
 use sigma_proofs::{
     errors::Error,
     traits::{ScalarRng, SigmaProtocol},
 };
+use spongefish::dsfs::{ByteDuplexSponge, SpongeProver, SpongeVerifier, TranscriptSponge};
 
 use crate::session::derive_session_id;
 
@@ -141,12 +141,7 @@ where
 ///
 /// The proof is the full NARG string: commitment(s) then response(s), read back via
 /// [`VerifierChannel::read_prover_message`].
-pub fn verify<P, H>(
-    sponge: H,
-    session_id: &[u8],
-    protocol: &P,
-    proof: &[u8],
-) -> Result<(), Error>
+pub fn verify<P, H>(sponge: H, session_id: &[u8], protocol: &P, proof: &[u8]) -> Result<(), Error>
 where
     P: SigmaProtocol,
     P::Challenge: PartialEq,
@@ -155,12 +150,8 @@ where
     let instance_label = protocol.instance_label().as_ref().to_vec();
     let session = derive_session_id(session_id);
     let protocol_id = protocol.protocol_identifier();
-    let mut ch = SpongeVerifier::new(sponge.verifier_state(
-        protocol_id,
-        session,
-        &instance_label,
-        proof,
-    ));
+    let mut ch =
+        SpongeVerifier::new(sponge.verifier_state(protocol_id, session, &instance_label, proof));
 
     let mut commitment = Vec::with_capacity(protocol.commitment_len());
     for _ in 0..protocol.commitment_len() {

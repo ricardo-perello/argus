@@ -15,18 +15,18 @@ use group::{ff::PrimeField, prime::PrimeGroup};
 use p256::ProjectivePoint as P256ProjectivePoint;
 use spongefish::dsfs::{self, SpongeInfo, StdHash};
 use spongefish::{
-    protocol_id as spongefish_protocol_id, Decoding, DomainSeparator, Encoding, NargDeserialize,
-    NargSerialize,
+    Decoding, DomainSeparator, Encoding, NargDeserialize, NargSerialize,
+    protocol_id as spongefish_protocol_id,
 };
 
 use sigma_proofs::{
-    errors::Error, linear_relation::CanonicalLinearRelation, traits::ScalarRng, MultiScalarMul,
+    MultiScalarMul, errors::Error, linear_relation::CanonicalLinearRelation, traits::ScalarRng,
 };
 
 use sigma_bridge::SigmaProtocol;
 
 mod spec_rng;
-use spec_rng::{proof_generation_rng, MockScalarRng};
+use spec_rng::{MockScalarRng, proof_generation_rng};
 
 use serde_with::{hex, serde_as};
 
@@ -139,13 +139,10 @@ where
 {
     let instance_label = protocol.instance_label().as_ref().to_vec();
     let session = sigma_bridge::derive_session_id(session_id);
-    let mut transcript = DomainSeparator::derive(
-        protocol_id.as_ref(),
-        StdHash::SPONGE_INFO,
-        session.as_ref(),
-    )
-    .instance(&instance_label)
-    .std_prover();
+    let mut transcript =
+        DomainSeparator::derive(protocol_id.as_ref(), StdHash::SPONGE_INFO, session.as_ref())
+            .instance(&instance_label)
+            .std_prover();
 
     let (commitment, ip_state) = protocol.prover_commit(witness, rng)?;
     let mut commitment_bytes = Vec::new();
@@ -208,8 +205,7 @@ where
             })
             .collect();
 
-        let randomness_vecs: Vec<Vec<u8>> =
-            v.randomness.iter().map(|h| h.0.clone()).collect();
+        let randomness_vecs: Vec<Vec<u8>> = v.randomness.iter().map(|h| h.0.clone()).collect();
         let mut rng = MockScalarRng(randomness_vecs.into_iter());
 
         let protocol_domain = spongefish_protocol_id(core::format_args!("{}", v.ciphersuite));
@@ -251,14 +247,16 @@ fn golden_bls12381_keccak() {
 /// the same `protocol_id` (e.g. JSON `ciphersuite`).
 #[test]
 fn prove_with_protocol_domain_matches_inlined_nizk_prove_batchable() {
-    let vectors: Vec<KeccakVector> = serde_json::from_str(include_str!(
-        "./testdata/sigma_Keccak1600_BLS12381.json"
-    ))
-    .expect("parse json");
-    let v = vectors.iter().find(|x| x.protocol == "dlog").expect("dlog vector");
+    let vectors: Vec<KeccakVector> =
+        serde_json::from_str(include_str!("./testdata/sigma_Keccak1600_BLS12381.json"))
+            .expect("parse json");
+    let v = vectors
+        .iter()
+        .find(|x| x.protocol == "dlog")
+        .expect("dlog vector");
 
-    let parsed_instance = CanonicalLinearRelation::<Bls12381G1>::from_label(&v.statement.0)
-        .expect("from_label");
+    let parsed_instance =
+        CanonicalLinearRelation::<Bls12381G1>::from_label(&v.statement.0).expect("from_label");
     let witness: Vec<bls12_381::Scalar> = v
         .witness
         .iter()

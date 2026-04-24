@@ -64,7 +64,12 @@ impl InteractiveReduction for FoldPairs {
         ia_core::pad_protocol_id(b"fold pairs")
     }
 
-    fn prove<P: ProverChannel>(&self, ch: &mut P, instance: &Claims, witness: &Values) -> (Claims, Values) {
+    fn prove<P: ProverChannel>(
+        &self,
+        ch: &mut P,
+        instance: &Claims,
+        witness: &Values,
+    ) -> (Claims, Values) {
         let n = instance.0.len();
         assert!(n % 2 == 0 && n >= 2);
 
@@ -83,7 +88,11 @@ impl InteractiveReduction for FoldPairs {
         (Claims(folded_claims), Values(folded_values))
     }
 
-    fn verify<V: VerifierChannel>(&self, ch: &mut V, instance: &Claims) -> VerificationResult<Claims> {
+    fn verify<V: VerifierChannel>(
+        &self,
+        ch: &mut V,
+        instance: &Claims,
+    ) -> VerificationResult<Claims> {
         let n = instance.0.len();
 
         // Read prover-committed values (absorbed into transcript before the
@@ -131,7 +140,12 @@ impl InteractiveReduction for Accumulate {
         ia_core::pad_protocol_id(b"accumulate")
     }
 
-    fn prove<P: ProverChannel>(&self, ch: &mut P, instance: &Claims, witness: &Values) -> (AccPair, ()) {
+    fn prove<P: ProverChannel>(
+        &self,
+        ch: &mut P,
+        instance: &Claims,
+        witness: &Values,
+    ) -> (AccPair, ()) {
         let n = instance.0.len();
 
         for w_i in &witness.0 {
@@ -148,10 +162,20 @@ impl InteractiveReduction for Accumulate {
             power *= alpha;
         }
 
-        (AccPair { claim: acc_claim, value: acc_value }, ())
+        (
+            AccPair {
+                claim: acc_claim,
+                value: acc_value,
+            },
+            (),
+        )
     }
 
-    fn verify<V: VerifierChannel>(&self, ch: &mut V, instance: &Claims) -> VerificationResult<AccPair> {
+    fn verify<V: VerifierChannel>(
+        &self,
+        ch: &mut V,
+        instance: &Claims,
+    ) -> VerificationResult<AccPair> {
         let n = instance.0.len();
 
         let mut values = Vec::with_capacity(n);
@@ -164,13 +188,16 @@ impl InteractiveReduction for Accumulate {
         let mut acc_claim = Fr::ZERO;
         let mut acc_value = Fr::ZERO;
         let mut power = Fr::ONE;
-        for i in 0..n {
-            acc_claim += power * instance.0[i];
-            acc_value += power * values[i];
+        for (claim_i, value_i) in instance.0.iter().zip(values.iter()) {
+            acc_claim += power * claim_i;
+            acc_value += power * value_i;
             power *= alpha;
         }
 
-        Ok(AccPair { claim: acc_claim, value: acc_value })
+        Ok(AccPair {
+            claim: acc_claim,
+            value: acc_value,
+        })
     }
 }
 
@@ -203,7 +230,11 @@ impl InteractiveArgument for EqualityCheck {
 
     fn prove<P: ProverChannel>(&self, _ch: &mut P, _instance: &AccPair, _witness: &()) {}
 
-    fn verify<V: VerifierChannel>(&self, _ch: &mut V, instance: &AccPair) -> VerificationResult<()> {
+    fn verify<V: VerifierChannel>(
+        &self,
+        _ch: &mut V,
+        instance: &AccPair,
+    ) -> VerificationResult<()> {
         if instance.claim == instance.value {
             Ok(())
         } else {
@@ -238,28 +269,6 @@ type FoldAndAccumulate = ChainedReduction<TwoFolds, Accumulate>;
 type FullProtocol = ReducedArgument<FoldAndAccumulate, EqualityCheck>;
 
 // ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn composition_dsfs_roundtrip() {
-        let n = 8;
-        let values: Vec<Fr> = (0..n as u64).map(Fr::from).collect();
-        let instance = Claims(values.clone());
-        let witness = Values(values);
-
-        let session = spongefish::session!("argus example: composition");
-        let protocol = FullProtocol::default();
-        let proof = dsfs::prove(&protocol, &session, &instance, &witness);
-        dsfs::verify(&protocol, &session, &instance, proof.as_bytes()).expect("verification failed");
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -281,7 +290,11 @@ fn main() {
 
     let two_folds = TwoFolds::default();
     let proof = dsfs::prove_reduction(&two_folds, &session, &instance, &witness);
-    println!("  proof ({} bytes): {}", proof.len(), hex::encode(proof.as_bytes()));
+    println!(
+        "  proof ({} bytes): {}",
+        proof.len(),
+        hex::encode(proof.as_bytes())
+    );
 
     let target = dsfs::verify_reduction(&two_folds, &session, &instance, proof.as_bytes())
         .expect("two-fold reduction failed");
@@ -295,9 +308,36 @@ fn main() {
 
     let full = FullProtocol::default();
     let proof = dsfs::prove(&full, &session, &instance, &witness);
-    println!("  proof ({} bytes): {}", proof.len(), hex::encode(proof.as_bytes()));
+    println!(
+        "  proof ({} bytes): {}",
+        proof.len(),
+        hex::encode(proof.as_bytes())
+    );
 
     dsfs::verify(&full, &session, &instance, proof.as_bytes())
         .expect("full protocol verification failed");
     println!("  [OK] full composed protocol verified");
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn composition_dsfs_roundtrip() {
+        let n = 8;
+        let values: Vec<Fr> = (0..n as u64).map(Fr::from).collect();
+        let instance = Claims(values.clone());
+        let witness = Values(values);
+
+        let session = spongefish::session!("argus example: composition");
+        let protocol = FullProtocol::default();
+        let proof = dsfs::prove(&protocol, &session, &instance, &witness);
+        dsfs::verify(&protocol, &session, &instance, proof.as_bytes())
+            .expect("verification failed");
+    }
 }

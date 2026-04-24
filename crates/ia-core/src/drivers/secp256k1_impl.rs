@@ -1,18 +1,18 @@
 //! secp256k1 (k256) codec implementations
 use k256::{
+    AffinePoint, EncodedPoint, ProjectivePoint, Scalar,
     elliptic_curve::{
         bigint::U512,
         ff::PrimeField,
         sec1::{FromEncodedPoint, ToEncodedPoint},
     },
-    AffinePoint, EncodedPoint, ProjectivePoint, Scalar,
 };
 
 use crate::{
+    VerificationResult,
     codecs::{Decoding, Encoding},
     error::VerificationError,
     io::NargDeserialize,
-    VerificationResult,
 };
 
 // Implement Decoding for k256 Scalar

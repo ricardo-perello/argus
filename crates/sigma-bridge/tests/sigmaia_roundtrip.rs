@@ -11,11 +11,14 @@ use rand_core::SeedableRng;
 
 use ia_core::InteractiveArgument;
 use sigma_bridge::{SigmaIA, SigmaProtocol};
-use sigma_proofs::linear_relation::CanonicalLinearRelation;
 use sigma_proofs::LinearRelation;
+use sigma_proofs::linear_relation::CanonicalLinearRelation;
 use spongefish::dsfs;
 
-fn make_schnorr() -> (SigmaIA<CanonicalLinearRelation<RistrettoPoint>>, Vec<Scalar>) {
+fn make_schnorr() -> (
+    SigmaIA<CanonicalLinearRelation<RistrettoPoint>>,
+    Vec<Scalar>,
+) {
     let mut rel = LinearRelation::<RistrettoPoint>::new();
     let [var_x] = rel.allocate_scalars::<1>();
     let [var_g] = rel.allocate_elements::<1>();
@@ -40,7 +43,8 @@ fn sigmaia_dsfs_roundtrip() {
     let session = spongefish::session!("sigmaia-roundtrip-test");
 
     let proof = dsfs::prove(&instance, &session, &instance, &sigma_witness);
-    dsfs::verify(&instance, &session, &instance, proof.as_bytes()).expect("verification must succeed");
+    dsfs::verify(&instance, &session, &instance, proof.as_bytes())
+        .expect("verification must succeed");
 }
 
 #[test]

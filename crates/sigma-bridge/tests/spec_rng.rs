@@ -1,7 +1,7 @@
 use core::{array::from_fn, iter::repeat_with};
 use std::vec::Vec;
 
-use group::{ff::PrimeField, prime::PrimeGroup, Group};
+use group::{Group, ff::PrimeField, prime::PrimeGroup};
 use sha3::digest::{ExtendableOutput, Update, XofReader};
 use spongefish::Decoding;
 
@@ -46,7 +46,9 @@ where
     <G::Scalar as Decoding<[u8]>>::Repr: Default + AsMut<[u8]>,
 {
     let mut drng = TestDrng::from_seed(seed_label);
-    (0..count).map(|_| drng.random_scalar_bytes::<G>()).collect()
+    (0..count)
+        .map(|_| drng.random_scalar_bytes::<G>())
+        .collect()
 }
 
 struct TestDrng {
@@ -97,4 +99,3 @@ fn fixed_seed(label: &[u8]) -> [u8; 32] {
     seed[..label.len()].copy_from_slice(label);
     seed
 }
-

@@ -135,8 +135,11 @@ impl SecurityProfile {
         if self.rbr_soundness_errors.is_empty() {
             return 0.0;
         }
-        let evaluated: alloc::vec::Vec<f64> =
-            self.rbr_soundness_errors.iter().map(|e| e.evaluate(t)).collect();
+        let evaluated: alloc::vec::Vec<f64> = self
+            .rbr_soundness_errors
+            .iter()
+            .map(|e| e.evaluate(t))
+            .collect();
         let max_rbr = evaluated.iter().cloned().fold(0.0_f64, f64::max);
         let sum_rbr: f64 = evaluated.iter().sum();
         (t as f64) * max_rbr + sum_rbr
@@ -168,20 +171,16 @@ impl SecurityProfile {
     /// - Plain soundness / HVZK: union bound.
     /// - Challenge lengths: concatenated.
     pub fn compose(&self, other: &Self) -> Self {
-        let mut rbr_soundness_errors = Vec::with_capacity(
-            self.rbr_soundness_errors.len() + other.rbr_soundness_errors.len(),
-        );
+        let mut rbr_soundness_errors =
+            Vec::with_capacity(self.rbr_soundness_errors.len() + other.rbr_soundness_errors.len());
         rbr_soundness_errors.extend_from_slice(&self.rbr_soundness_errors);
         rbr_soundness_errors.extend_from_slice(&other.rbr_soundness_errors);
 
         let mut rbr_knowledge_soundness_errors = Vec::with_capacity(
-            self.rbr_knowledge_soundness_errors.len()
-                + other.rbr_knowledge_soundness_errors.len(),
+            self.rbr_knowledge_soundness_errors.len() + other.rbr_knowledge_soundness_errors.len(),
         );
-        rbr_knowledge_soundness_errors
-            .extend_from_slice(&self.rbr_knowledge_soundness_errors);
-        rbr_knowledge_soundness_errors
-            .extend_from_slice(&other.rbr_knowledge_soundness_errors);
+        rbr_knowledge_soundness_errors.extend_from_slice(&self.rbr_knowledge_soundness_errors);
+        rbr_knowledge_soundness_errors.extend_from_slice(&other.rbr_knowledge_soundness_errors);
 
         let mut verifier_challenge_lengths = Vec::with_capacity(
             self.verifier_challenge_lengths.len() + other.verifier_challenge_lengths.len(),

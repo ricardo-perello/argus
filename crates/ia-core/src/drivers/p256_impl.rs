@@ -1,16 +1,16 @@
 //! p256 codec implementations
 
 use p256::{
-    elliptic_curve::{group::GroupEncoding, ops::Reduce, sec1::ToEncodedPoint, PrimeField},
     AffinePoint, ProjectivePoint, Scalar, U256,
+    elliptic_curve::{PrimeField, group::GroupEncoding, ops::Reduce, sec1::ToEncodedPoint},
 };
 
 use crate::{
+    VerificationResult,
     codecs::{Decoding, Encoding},
     drivers::Array64,
     error::VerificationError,
     io::NargDeserialize,
-    VerificationResult,
 };
 
 // Implement Decoding for p256 Scalar

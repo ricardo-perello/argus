@@ -45,9 +45,9 @@ impl<First, Second> InteractiveReduction for ChainedReduction<First, Second>
 where
     First: InteractiveReduction,
     Second: InteractiveReduction<
-        SourceInstance = First::TargetInstance,
-        SourceWitness = First::TargetWitness,
-    >,
+            SourceInstance = First::TargetInstance,
+            SourceWitness = First::TargetWitness,
+        >,
 {
     type SourceInstance = First::SourceInstance;
     type TargetInstance = Second::TargetInstance;
@@ -86,9 +86,9 @@ impl<First, Second> ProtocolSecurity for ChainedReduction<First, Second>
 where
     First: InteractiveReduction + ProtocolSecurity,
     Second: InteractiveReduction<
-        SourceInstance = First::TargetInstance,
-        SourceWitness = First::TargetWitness,
-    > + ProtocolSecurity,
+            SourceInstance = First::TargetInstance,
+            SourceWitness = First::TargetWitness,
+        > + ProtocolSecurity,
 {
     fn security(&self) -> SecurityProfile {
         self.first.security().compose(&self.second.security())
@@ -119,17 +119,17 @@ pub struct ReducedArgument<Reduction, Argument> {
 
 impl<R, A> ReducedArgument<R, A> {
     pub fn new(reduction: R, argument: A) -> Self {
-        Self { reduction, argument }
+        Self {
+            reduction,
+            argument,
+        }
     }
 }
 
 impl<R, A> InteractiveArgument for ReducedArgument<R, A>
 where
     R: InteractiveReduction,
-    A: InteractiveArgument<
-        Instance = R::TargetInstance,
-        Witness = R::TargetWitness,
-    >,
+    A: InteractiveArgument<Instance = R::TargetInstance, Witness = R::TargetWitness>,
 {
     type Instance = R::SourceInstance;
     type Witness = R::SourceWitness;
@@ -165,10 +165,8 @@ where
 impl<R, A> ProtocolSecurity for ReducedArgument<R, A>
 where
     R: InteractiveReduction + ProtocolSecurity,
-    A: InteractiveArgument<
-        Instance = R::TargetInstance,
-        Witness = R::TargetWitness,
-    > + ProtocolSecurity,
+    A: InteractiveArgument<Instance = R::TargetInstance, Witness = R::TargetWitness>
+        + ProtocolSecurity,
 {
     fn security(&self) -> SecurityProfile {
         self.reduction.security().compose(&self.argument.security())
