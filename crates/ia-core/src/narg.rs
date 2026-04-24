@@ -1,4 +1,13 @@
 //! Non-interactive argument abstractions.
+//!
+//! The IA traits model public-coin protocols as channel programs. The traits in
+//! this module model the result after a compiler such as DSFS has removed the
+//! verifier's live randomness and produced a single non-interactive artifact.
+//!
+//! `ia-core` owns these types because they are abstract protocol vocabulary:
+//! they say what a non-interactive argument or reduction is, but they do not
+//! specify Fiat-Shamir, duplex sponges, domain separation, or any concrete proof
+//! layout. Concrete compilers live outside this crate and implement these traits.
 
 extern crate alloc;
 
@@ -14,26 +23,41 @@ use crate::{
 /// `NargProof` deliberately carries no transcript semantics: sponge choice,
 /// salt policy, domain separation, and proof layout are owned by the compiler
 /// that produced the bytes.
+///
+/// The top-level proof artifact is raw bytes: [`NargProof::as_bytes`] and
+/// [`NargProof::into_bytes`] expose exactly the byte string emitted by the
+/// compiler. When a proof itself is sent as a channel message, its
+/// [`Encoding`] implementation is length-delimited as
+/// `u64_le(length) || proof_bytes`. This keeps "proof as an artifact" separate
+/// from "proof as a typed prover message", where variable-length data must be
+/// self-delimiting.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct NargProof(Vec<u8>);
 
 impl NargProof {
+    /// Wrap raw proof bytes produced by a non-interactive compiler.
+    ///
+    /// The bytes are not interpreted or normalized.
     pub fn from_bytes(bytes: Vec<u8>) -> Self {
         Self(bytes)
     }
 
+    /// Consume the proof and return the raw proof bytes.
     pub fn into_bytes(self) -> Vec<u8> {
         self.0
     }
 
+    /// Borrow the raw proof bytes.
     pub fn as_bytes(&self) -> &[u8] {
         &self.0
     }
 
+    /// Return the raw proof length in bytes.
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
+    /// Return whether the raw proof byte string is empty.
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -71,14 +95,34 @@ impl NargDeserialize for NargProof {
 }
 
 /// Abstract non-interactive argument.
+///
+/// A `NonInteractiveArgument` verifies membership of an `Instance` using a
+/// `Proof`, with optional session data bound into the compiled transcript.
+/// Unlike [`InteractiveArgument`], there is no channel: the prover returns a
+/// proof artifact and the verifier checks that artifact.
+///
+/// The trait intentionally does not require the proof to be [`NargProof`].
+/// Compilers that expose structured proofs can use their own proof type, while
+/// byte-oriented compilers such as DSFS use [`NargProof`].
 pub trait NonInteractiveArgument {
+    /// Public session or context data bound into the non-interactive proof.
     type Session;
+    /// Public statement being proved.
     type Instance;
+    /// Private witness used by the prover.
     type Witness;
+    /// Proof artifact checked by the verifier.
     type Proof;
 
+    /// Protocol identifier for the non-interactive argument.
+    ///
+    /// For compilers, this should identify the compiled proof system, not only
+    /// the underlying interactive protocol. If the proof layout, sponge choice,
+    /// salt policy, or transcript derivation changes, the compiler-level domain
+    /// separation must change as well.
     fn protocol_id(&self) -> impl AsRef<[u8]>;
 
+    /// Produce a non-interactive proof for `instance` using `witness`.
     fn prove(
         &self,
         session: &Self::Session,
@@ -86,6 +130,7 @@ pub trait NonInteractiveArgument {
         witness: &Self::Witness,
     ) -> Self::Proof;
 
+    /// Verify a non-interactive proof for `instance`.
     fn verify(
         &self,
         session: &Self::Session,
@@ -95,16 +140,31 @@ pub trait NonInteractiveArgument {
 }
 
 /// Abstract non-interactive reduction.
+///
+/// A non-interactive reduction proves that a source instance reduces to a target
+/// instance. Verification returns the target instance instead of a boolean
+/// accept/reject result, mirroring [`InteractiveReduction`].
+///
+/// Proving returns the proof plus the target instance/witness pair so callers can
+/// continue a reduction pipeline without replaying the verifier.
 pub trait NonInteractiveReduction {
+    /// Public session or context data bound into the non-interactive proof.
     type Session;
+    /// Public source statement before reduction.
     type SourceInstance;
+    /// Public target statement produced by the reduction.
     type TargetInstance;
+    /// Private witness for the source statement.
     type SourceWitness;
+    /// Private witness for the target statement produced by the prover.
     type TargetWitness;
+    /// Proof artifact checked by the verifier.
     type Proof;
 
+    /// Protocol identifier for the non-interactive reduction.
     fn protocol_id(&self) -> impl AsRef<[u8]>;
 
+    /// Produce a reduction proof and the reduced target statement/witness pair.
     fn prove(
         &self,
         session: &Self::Session,
@@ -112,6 +172,7 @@ pub trait NonInteractiveReduction {
         witness: &Self::SourceWitness,
     ) -> (Self::Proof, Self::TargetInstance, Self::TargetWitness);
 
+    /// Verify a reduction proof and return the reduced target statement.
     fn verify(
         &self,
         session: &Self::Session,
@@ -125,12 +186,19 @@ pub trait NonInteractiveReduction {
 /// The adapter fixes the NARG session because the `InteractiveArgument` API has
 /// no separate session parameter. Its prover sends exactly one proof message;
 /// its verifier reads that one message and performs the non-interactive check.
+///
+/// This is mostly a conceptual and testing adapter. It formalizes the useful
+/// observation that a NARG can be embedded back into the IA interface as a
+/// single prover-to-verifier message with no verifier challenges.
 pub struct NargAsInteractiveArgument<N: NonInteractiveArgument> {
+    /// The non-interactive argument being viewed interactively.
     pub narg: N,
+    /// Fixed session used for every interactive execution of the adapter.
     pub session: N::Session,
 }
 
 impl<N: NonInteractiveArgument> NargAsInteractiveArgument<N> {
+    /// Create a one-message IA adapter for `narg` under a fixed `session`.
     pub fn new(narg: N, session: N::Session) -> Self {
         Self { narg, session }
     }

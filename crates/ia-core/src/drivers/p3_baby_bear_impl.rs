@@ -43,3 +43,33 @@ impl Encoding<[u8]> for BabyBear {
         self.as_canonical_u32().to_be_bytes()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use alloc::vec::Vec;
+
+    use super::*;
+    use crate::NargSerialize;
+
+    #[test]
+    fn baby_bear_serialize_deserialize_roundtrips() {
+        let element = BabyBear::new(12345);
+        let mut buf = Vec::new();
+        element.serialize_into_narg(&mut buf);
+
+        let decoded = BabyBear::deserialize_from_narg(&mut &buf[..]).unwrap();
+        assert_eq!(element, decoded);
+    }
+
+    #[test]
+    fn baby_bear_rejects_out_of_range_encoding() {
+        let buf = BabyBear::ORDER_U32.to_be_bytes();
+        let before = &buf[..];
+        let mut cursor = before;
+
+        let result = BabyBear::deserialize_from_narg(&mut cursor);
+
+        assert!(result.is_err());
+        assert_eq!(cursor, before);
+    }
+}

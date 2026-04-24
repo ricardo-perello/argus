@@ -38,3 +38,33 @@ impl Encoding<[u8]> for Mersenne31 {
         self.as_canonical_u32().to_be_bytes()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use alloc::vec::Vec;
+
+    use super::*;
+    use crate::NargSerialize;
+
+    #[test]
+    fn mersenne31_serialize_deserialize_roundtrips() {
+        let element = Mersenne31::from_u32(13579);
+        let mut buf = Vec::new();
+        element.serialize_into_narg(&mut buf);
+
+        let decoded = Mersenne31::deserialize_from_narg(&mut &buf[..]).unwrap();
+        assert_eq!(element, decoded);
+    }
+
+    #[test]
+    fn mersenne31_rejects_out_of_range_encoding() {
+        let buf = Mersenne31::ORDER_U32.to_be_bytes();
+        let before = &buf[..];
+        let mut cursor = before;
+
+        let result = Mersenne31::deserialize_from_narg(&mut cursor);
+
+        assert!(result.is_err());
+        assert_eq!(cursor, before);
+    }
+}

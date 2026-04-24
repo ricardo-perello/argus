@@ -141,7 +141,7 @@ impl WARP<F, P, C, MT> {
 | Dependency | Purpose |
 |---|---|
 | `ia-core` | `ProverChannel`, `VerifierChannel` traits |
-| `dsfs` | `SpongeProver`, `SpongeVerifier` (test only) |
+| `spongefish::dsfs` | `SpongeProver`, `SpongeVerifier` (test only) |
 | `spongefish` | `Encoding`, `Decoding` for field elements |
 | `ark-ff`, `ark-poly`, `ark-serialize` | Field arithmetic, polynomials |
 | `ark-relations`, `ark-r1cs-std` | R1CS constraint system |
