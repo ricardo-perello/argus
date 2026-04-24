@@ -13,7 +13,7 @@
 use bls12_381::G1Projective as Bls12381G1;
 use group::{ff::PrimeField, prime::PrimeGroup};
 use p256::ProjectivePoint as P256ProjectivePoint;
-use dsfs::{SpongeInfo, StdHash};
+use spongefish::dsfs::{self, SpongeInfo, StdHash};
 use spongefish::{
     protocol_id as spongefish_protocol_id, Decoding, DomainSeparator, Encoding, NargDeserialize,
     NargSerialize,

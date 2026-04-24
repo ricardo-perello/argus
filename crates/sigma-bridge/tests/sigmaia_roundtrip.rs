@@ -13,6 +13,7 @@ use ia_core::InteractiveArgument;
 use sigma_bridge::{SigmaIA, SigmaProtocol};
 use sigma_proofs::linear_relation::CanonicalLinearRelation;
 use sigma_proofs::LinearRelation;
+use spongefish::dsfs;
 
 fn make_schnorr() -> (SigmaIA<CanonicalLinearRelation<RistrettoPoint>>, Vec<Scalar>) {
     let mut rel = LinearRelation::<RistrettoPoint>::new();
@@ -39,7 +40,7 @@ fn sigmaia_dsfs_roundtrip() {
     let session = spongefish::session!("sigmaia-roundtrip-test");
 
     let proof = dsfs::prove(&instance, &session, &instance, &sigma_witness);
-    dsfs::verify(&instance, &session, &instance, &proof).expect("verification must succeed");
+    dsfs::verify(&instance, &session, &instance, proof.as_bytes()).expect("verification must succeed");
 }
 
 #[test]

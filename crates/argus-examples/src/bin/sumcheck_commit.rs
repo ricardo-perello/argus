@@ -25,7 +25,7 @@ use ia_core::{
     VerificationError, VerificationResult, VerifierChannel,
 };
 
-use spongefish::Encoding;
+use spongefish::{dsfs, Encoding};
 
 use ark_crypto_primitives::crh::sha256::Sha256;
 use ark_crypto_primitives::merkle_tree::{
@@ -289,10 +289,10 @@ fn run_dsfs(instance: &Instance, evals: &Vec<Fr>) {
     println!(
         "Proof ({} bytes):\n{}",
         narg_string.len(),
-        hex::encode(&narg_string)
+        hex::encode(narg_string.as_bytes())
     );
 
-    dsfs::verify(&CommittedSumcheck, &session, instance, &narg_string).expect("Invalid proof");
+    dsfs::verify(&CommittedSumcheck, &session, instance, narg_string.as_bytes()).expect("Invalid proof");
     println!("Verification succeeded");
 }
 

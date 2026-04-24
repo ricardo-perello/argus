@@ -58,7 +58,7 @@ So v2 provides default wrappers that keep call sites simple:
 - `prove_reduction::<IR>(...)` delegates to `prove_reduction_with_salt::<IR, 0>(...)`
 - `verify_reduction::<IR>(...)` delegates to `verify_reduction_with_salt::<IR, 0>(...)`
 
-So users can keep writing `dsfs::prove::<MyIA>(...)` and only use `*_with_salt` when needed.
+So users can keep writing `spongefish::dsfs::prove(...)` and only use `*_with_salt` when needed.
 
 ## Sponge parameters (extension trait)
 
@@ -93,10 +93,10 @@ This replaces the earlier free-function shape that did not compile with correct 
 
 ## Modular sponge (Keccak vs StdHash)
 
-DSFS channels and compile entry points are generic over a byte-oriented duplex sponge `H` (see `ByteDuplexSponge` in `dsfs::compile`).
+DSFS channels and compile entry points are generic over a byte-oriented duplex sponge `H` (see `ByteDuplexSponge` in `spongefish::dsfs`).
 
 - **Default:** existing `prove` / `verify` / `prove_reduction` / `verify_reduction` (and `*_with_salt`) still use **Keccak** (`Keccak::default()`).
-- **Explicit sponge:** use `prove_with_sponge`, `prove_with_sponge_and_salt`, `verify_with_sponge`, `verify_with_sponge_and_salt`, and the reduction variants, passing e.g. `dsfs::StdHash::default()` for spongefish **std_prover** / **std_verifier** (SHAKE128) compatibility.
+- **Explicit sponge:** use `prove_with_sponge`, `prove_with_sponge_and_salt`, `verify_with_sponge`, `verify_with_sponge_and_salt`, and the reduction variants, passing e.g. `spongefish::dsfs::StdHash::default()` for spongefish **std_prover** / **std_verifier** (SHAKE128) compatibility.
 
 Security bookkeeping: `STD_SPONGE_PARAMS` remains tied to Keccak; for StdHash-style transcripts use `STD_HASH_SPONGE_PARAMS` with `NargSecurity::for_ia_with` / `for_reduction_with`.
 

@@ -18,6 +18,7 @@ use ark_ec::{CurveGroup, PrimeGroup};
 use ark_ff::PrimeField;
 use ark_std::UniformRand;
 use rand::rngs::OsRng;
+use spongefish::dsfs;
 
 use ia_core::{
     Decoding, Deserialize, Encoding, InteractiveArgument, ProtocolSecurity, ProverChannel,
@@ -111,9 +112,9 @@ fn run_dsfs(instance: &[ark_curve25519::EdwardsProjective; 2], sk: &ark_curve255
 
     let schnorr = Schnorr::<G>::default();
     let narg_string = dsfs::prove(&schnorr, &session, &instance, sk);
-    println!("Proof:\n{}", hex::encode(&narg_string));
+    println!("Proof:\n{}", hex::encode(narg_string.as_bytes()));
 
-    dsfs::verify(&schnorr, &session, &instance, &narg_string).expect("verification failed");
+    dsfs::verify(&schnorr, &session, &instance, narg_string.as_bytes()).expect("verification failed");
     println!("Verification succeeded");
 }
 
@@ -174,7 +175,7 @@ fn main() {
 mod tests {
     use super::*;
     use ark_ff::PrimeField;
-    use dsfs::STD_SPONGE_PARAMS;
+    use spongefish::dsfs::STD_SPONGE_PARAMS;
     use ia_core::ProtocolSecurity;
     use std::thread;
 
@@ -273,7 +274,7 @@ mod tests {
         let session = spongefish::session!("spongefish examples");
         let schnorr = Schnorr::<G>::default();
         let narg = dsfs::prove(&schnorr, &session, &instance, &sk);
-        dsfs::verify(&schnorr, &session, &instance, &narg).expect("dsfs verification failed");
+        dsfs::verify(&schnorr, &session, &instance, narg.as_bytes()).expect("dsfs verification failed");
     }
 
     #[test]

@@ -2,7 +2,7 @@ use ark_curve25519::Fr;
 use ark_ff::{One, Zero};
 use ark_std::UniformRand;
 use rand::rngs::OsRng;
-use dsfs::{Keccak, SpongeInfo};
+use spongefish::dsfs::{Keccak, SpongeInfo};
 use spongefish::{protocol_id, DomainSeparator, Encoding, ProverState};
 
 struct Sumcheck;

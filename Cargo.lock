@@ -53,12 +53,11 @@ dependencies = [
  "ark-serialize",
  "ark-std",
  "curve25519-dalek",
- "dsfs",
  "hex",
  "ia-core",
  "live-channel",
  "rand 0.8.5",
- "spongefish 0.7.0",
+ "spongefish",
 ]
 
 [[package]]
@@ -673,15 +672,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dsfs"
-version = "0.1.0"
-dependencies = [
- "ia-core",
- "rand_core 0.6.4",
- "spongefish 0.7.0",
-]
-
-[[package]]
 name = "dyn-clone"
 version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -908,8 +898,13 @@ dependencies = [
 name = "ia-core"
 version = "0.1.0"
 dependencies = [
- "sigma-proofs 0.2.1",
- "spongefish 0.7.0",
+ "ark-ec",
+ "ark-ff",
+ "ark-serialize",
+ "bls12_381",
+ "curve25519-dalek",
+ "k256",
+ "p256",
 ]
 
 [[package]]
@@ -1059,7 +1054,6 @@ version = "0.1.0"
 dependencies = [
  "ia-core",
  "rand 0.8.5",
- "spongefish 0.7.0",
 ]
 
 [[package]]
@@ -1706,7 +1700,6 @@ version = "0.1.0"
 dependencies = [
  "bls12_381",
  "curve25519-dalek",
- "dsfs",
  "ff",
  "group",
  "hex",
@@ -1718,35 +1711,8 @@ dependencies = [
  "serde_json",
  "serde_with",
  "sha3 0.10.8",
- "sigma-proofs 0.3.0",
- "spongefish 0.7.0",
-]
-
-[[package]]
-name = "sigma-proofs"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b3ad8e588ea87247ad3672164dfe4eae41862693fd3b6c933c258d406e29b5ef"
-dependencies = [
- "ahash",
- "bls12_381",
- "curve25519-dalek",
- "ff",
- "group",
- "hashbrown 0.15.5",
- "k256",
- "keccak 0.1.6",
- "num-bigint 0.4.6",
- "num-traits",
- "p256",
- "rand 0.8.5",
- "rand_core 0.6.4",
- "sha3 0.10.8",
- "spongefish 0.4.1",
- "subtle",
- "thiserror 1.0.69",
- "zerocopy",
- "zeroize",
+ "sigma-proofs",
+ "spongefish",
 ]
 
 [[package]]
@@ -1767,7 +1733,7 @@ dependencies = [
  "p256",
  "rand_core 0.6.4",
  "sha3 0.10.8",
- "spongefish 0.7.0",
+ "spongefish",
  "subtle",
  "thiserror 1.0.69",
  "zerocopy",
@@ -1805,28 +1771,6 @@ dependencies = [
 
 [[package]]
 name = "spongefish"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b272d43b44123f692db90b5e9c2ffaa31eb885194eb7f74be5ab15fda1b8a4ae"
-dependencies = [
- "ark-ec",
- "ark-ff",
- "ark-serialize",
- "bls12_381",
- "curve25519-dalek",
- "digest 0.10.7",
- "k256",
- "p256",
- "p3-koala-bear",
- "rand 0.8.5",
- "sha2 0.10.9",
- "sha3 0.10.8",
- "spongefish-derive 0.4.1",
- "zeroize",
-]
-
-[[package]]
-name = "spongefish"
 version = "0.7.0"
 dependencies = [
  "ark-ec",
@@ -1835,6 +1779,7 @@ dependencies = [
  "bls12_381",
  "curve25519-dalek",
  "digest 0.11.2",
+ "ia-core",
  "k256",
  "keccak 0.1.6",
  "p256",
@@ -1842,19 +1787,8 @@ dependencies = [
  "rand 0.8.5",
  "sha2 0.11.0",
  "sha3 0.11.0-rc.9",
- "spongefish-derive 0.7.0",
+ "spongefish-derive",
  "zeroize",
-]
-
-[[package]]
-name = "spongefish-derive"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f91b7014144fb488f831acb9ef0de3cc9e1b07ca8c0945aa4fcc85c3394164d8"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.117",
 ]
 
 [[package]]
@@ -2072,14 +2006,13 @@ dependencies = [
  "ark-serialize",
  "ark-std",
  "blake3",
- "dsfs",
  "ia-core",
  "nohash-hasher",
  "rand 0.8.5",
  "rayon",
  "serde",
  "serde_json",
- "spongefish 0.7.0",
+ "spongefish",
  "thiserror 2.0.18",
 ]
 

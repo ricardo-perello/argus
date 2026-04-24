@@ -27,7 +27,7 @@ use warp::{
     FullWARP, ReedSolomonParams, WARPDeciderIA, WARPReduction,
 };
 
-use dsfs::{Keccak, SpongeInfo, SpongeProver, SpongeVerifier};
+use spongefish::dsfs::{self, Keccak, SpongeInfo, SpongeProver, SpongeVerifier};
 
 type MT = Blake3MerkleTreeParams<Fp>;
 
@@ -317,7 +317,7 @@ fn warp_ir_dsfs_prove_verify() {
     let proof = dsfs::prove_reduction(&ir, &session, &instance, &witness);
     println!("IR NARG string: {} bytes", proof.len());
 
-    let target = dsfs::verify_reduction(&ir, &session, &instance, &proof)
+    let target = dsfs::verify_reduction(&ir, &session, &instance, proof.as_bytes())
         .expect("IR verification failed");
 
     println!("IR verification: OK");
@@ -382,7 +382,7 @@ fn warp_full_ia_dsfs_prove_verify() {
         &full,
         &session,
         &instance,
-        &proof,
+        proof.as_bytes(),
     )
     .expect("FullWARP verification failed");
 

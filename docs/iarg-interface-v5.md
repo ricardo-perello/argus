@@ -91,12 +91,12 @@ fn protocol_id() -> [u8; 32] {
 
 ## Impact on sigma-bridge
 
-`SigmaIA<S>` now has `protocol_id() -> [u8; 32]`. For `SigmaIA` proofs through `dsfs::prove`, the domain separator is `protocol_identifier()[:32] || sponge_tag`, which differs from sigma-proofs `Nizk` (which uses the full raw 64-byte `protocol_identifier()` with no sponge tag appended). These are two distinct proof formats:
+`SigmaIA<S>` now has `protocol_id() -> [u8; 32]`. For `SigmaIA` proofs through `spongefish::dsfs::prove`, the domain separator is `protocol_identifier()[:32] || sponge_tag`, which differs from sigma-proofs `Nizk` (which uses the full raw 64-byte `protocol_identifier()` with no sponge tag appended). These are two distinct proof formats:
 
 | Path | Domain sep | Compatible with `Nizk`? |
 |---|---|---|
 | `sigma_bridge::prove` | `protocol_identifier()` raw [64 bytes] | Yes |
-| `SigmaIA` + `dsfs::prove` | `protocol_id()[32] \|\| sponge_tag[32]` | No |
+| `SigmaIA` + `spongefish::dsfs::prove` | `protocol_id()[32] \|\| sponge_tag[32]` | No |
 
 Spec-compatible proofs must still use `sigma_bridge::prove`/`verify` directly.
 
@@ -106,6 +106,6 @@ Spec-compatible proofs must still use `sigma_bridge::prove`/`verify` directly.
 - IOR interface: [../crates/ia-core/src/reduction.rs](../crates/ia-core/src/reduction.rs)
 - Composition: [../crates/ia-core/src/compose.rs](../crates/ia-core/src/compose.rs)
 - `pad_protocol_id`: [../crates/ia-core/src/lib.rs](../crates/ia-core/src/lib.rs)
-- `SpongeTag` + DSFS domain sep: [../crates/dsfs/src/params.rs](../crates/dsfs/src/params.rs), [../crates/dsfs/src/compile.rs](../crates/dsfs/src/compile.rs)
+- `SpongeTag` + DSFS domain sep: `spongefish/spongefish/src/dsfs/params.rs`, `spongefish/spongefish/src/dsfs/compile.rs`
 - `SigmaIA`: [../crates/sigma-bridge/src/ia.rs](../crates/sigma-bridge/src/ia.rs)
 - Prior version: [iarg-interface-v4.md](iarg-interface-v4.md)

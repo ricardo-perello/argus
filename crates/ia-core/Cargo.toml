@@ -3,6 +3,21 @@ name = "ia-core"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+std = []
+ark-ff = ["dep:ark-ff", "dep:ark-serialize"]
+ark-ec = ["ark-ff", "dep:ark-ec"]
+bls12_381 = ["dep:bls12_381"]
+curve25519-dalek = ["dep:curve25519-dalek"]
+p256 = ["dep:p256"]
+k256 = ["dep:k256"]
+
 [dependencies]
-sigma-proofs = "0.2.1"
-spongefish.workspace = true
+ark-ec = { workspace = true, optional = true }
+ark-ff = { workspace = true, optional = true }
+ark-serialize = { workspace = true, optional = true }
+bls12_381 = { version = "0.8", optional = true }
+curve25519-dalek = { version = "4", optional = true }
+k256 = { version = "0.13", optional = true, features = ["arithmetic"] }
+p256 = { version = "0.13", optional = true, features = ["arithmetic"] }

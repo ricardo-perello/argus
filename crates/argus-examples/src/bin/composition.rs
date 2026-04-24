@@ -15,6 +15,7 @@ use ark_curve25519::Fr;
 use ark_ff::{AdditiveGroup, Field};
 use ark_std::UniformRand;
 use rand::rngs::OsRng;
+use spongefish::dsfs;
 
 use ia_core::{
     ChainedReduction, InteractiveArgument, InteractiveReduction, ProtocolSecurity, ProverChannel,
@@ -254,7 +255,7 @@ mod tests {
         let session = spongefish::session!("argus example: composition");
         let protocol = FullProtocol::default();
         let proof = dsfs::prove(&protocol, &session, &instance, &witness);
-        dsfs::verify(&protocol, &session, &instance, &proof).expect("verification failed");
+        dsfs::verify(&protocol, &session, &instance, proof.as_bytes()).expect("verification failed");
     }
 }
 
@@ -280,9 +281,9 @@ fn main() {
 
     let two_folds = TwoFolds::default();
     let proof = dsfs::prove_reduction(&two_folds, &session, &instance, &witness);
-    println!("  proof ({} bytes): {}", proof.len(), hex::encode(&proof));
+    println!("  proof ({} bytes): {}", proof.len(), hex::encode(proof.as_bytes()));
 
-    let target = dsfs::verify_reduction(&two_folds, &session, &instance, &proof)
+    let target = dsfs::verify_reduction(&two_folds, &session, &instance, proof.as_bytes())
         .expect("two-fold reduction failed");
     println!("  target claims (2 elements): {:?}", target.0);
     println!("  [OK] two-fold reduction verified\n");
@@ -294,9 +295,9 @@ fn main() {
 
     let full = FullProtocol::default();
     let proof = dsfs::prove(&full, &session, &instance, &witness);
-    println!("  proof ({} bytes): {}", proof.len(), hex::encode(&proof));
+    println!("  proof ({} bytes): {}", proof.len(), hex::encode(proof.as_bytes()));
 
-    dsfs::verify(&full, &session, &instance, &proof)
+    dsfs::verify(&full, &session, &instance, proof.as_bytes())
         .expect("full protocol verification failed");
     println!("  [OK] full composed protocol verified");
 }

@@ -8,7 +8,10 @@ use bls12_381::G1Projective as Bls12381G1;
 use group::{ff::PrimeField, prime::PrimeGroup, Group};
 use serde::{Deserialize, Serialize};
 use serde_with::{hex, serde_as};
-use spongefish::{protocol_id as spongefish_protocol_id, Decoding, Encoding, NargDeserialize, NargSerialize};
+use spongefish::{
+    dsfs, protocol_id as spongefish_protocol_id, Decoding, Encoding, NargDeserialize,
+    NargSerialize,
+};
 use sigma_proofs::{linear_relation::CanonicalLinearRelation, traits::ScalarRng, MultiScalarMul};
 
 #[serde_as]

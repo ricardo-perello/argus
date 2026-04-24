@@ -21,6 +21,7 @@ use ark_curve25519::Fr;
 use ark_ff::{AdditiveGroup, Field};
 use ark_std::UniformRand;
 use rand::rngs::OsRng;
+use spongefish::dsfs;
 
 use ia_core::{
     InteractiveReduction, ProtocolSecurity, ProverChannel, SecurityErrorBound, SecurityProfile,
@@ -159,7 +160,7 @@ mod tests {
 
         let session = spongefish::session!("argus example: warp accumulate");
         let proof = dsfs::prove_reduction(&Accumulate, &session, &instance, &witness);
-        let target = dsfs::verify_reduction(&Accumulate, &session, &instance, &proof)
+        let target = dsfs::verify_reduction(&Accumulate, &session, &instance, proof.as_bytes())
             .expect("reduction failed");
         decide(&target).expect("decider rejected");
     }
@@ -184,10 +185,10 @@ fn main() {
     println!(
         "Accumulation proof ({n} instances, {} bytes):\n{}",
         proof.len(),
-        hex::encode(&proof)
+        hex::encode(proof.as_bytes())
     );
 
-    let target = dsfs::verify_reduction(&Accumulate, &session, &instance, &proof)
+    let target = dsfs::verify_reduction(&Accumulate, &session, &instance, proof.as_bytes())
         .expect("reduction failed");
     println!(
         "Reduction succeeded -> target instance:\n  acc_claim = {:?}\n  acc_value = {:?}",

@@ -10,18 +10,18 @@ For the older, shorter overview see [`sigma-bridge.md`](./sigma-bridge.md).
 
 - Drives a 3-message sigma protocol through `ia-core` (`ProverChannel` / `VerifierChannel`): commitments and responses are sent with `send_prover_message`, challenges with `read_verifier_message` / `send_verifier_message`.
 - The returned **proof** is the full spongefish **NARG** byte string: serialized commitment(s), then serialized response(s), in protocol order.
-- All Fiat–Shamir sponge operations go through `dsfs::SpongeProver` / `SpongeVerifier`; the sigma protocol implementation does not talk to spongefish directly.
+- All Fiat–Shamir sponge operations go through `spongefish::dsfs::SpongeProver` / `SpongeVerifier`; the sigma protocol implementation does not talk to spongefish directly.
 
 ---
 
 ## Transcript sponge: `StdHash` vs `Keccak`
 
-`dsfs` implements [`TranscriptSponge`](../crates/dsfs/src/channel.rs): how a `DomainSeparator` becomes a `ProverState` / `VerifierState`.
+`spongefish::dsfs` implements `TranscriptSponge`: how a `DomainSeparator` becomes a `ProverState` / `VerifierState`.
 
 | Sponge type | Initialization | Use case |
 |-------------|----------------|----------|
-| **`dsfs::StdHash`** | `DomainSeparator::…::std_prover()` / `std_verifier()` | Same bootstrap as `sigma-proofs::Nizk` on SHAKE128 (spongefish “std” path). |
-| **`dsfs::Keccak`** | `DomainSeparator::…::to_prover(h)` / `to_verifier(h, …)` | Duplex Keccak (protocol id absorbed as a 64-byte public message, then session and instance). |
+| **`spongefish::dsfs::StdHash`** | `DomainSeparator::…::std_prover()` / `std_verifier()` | Same bootstrap as `sigma-proofs::Nizk` on SHAKE128 (spongefish “std” path). |
+| **`spongefish::dsfs::Keccak`** | `DomainSeparator::…::to_prover(h)` / `to_verifier(h, …)` | Duplex Keccak (protocol id absorbed as a 64-byte public message, then session and instance). |
 
 `StdHash::prover_state` / `verifier_state` **ignore** the `self` sponge value on purpose: the state is always created with spongefish’s `std_prover` / `std_verifier` semantics so the transcript matches σ-proofs’ non-interactive path when you use the same domain inputs.
 
@@ -39,7 +39,7 @@ Session binding uses `sigma_bridge::derive_session_id`, aligned with `sigma-proo
 
 `sigma-bridge` uses **`send_prover_message`** for each commitment and each response: each call **absorbs** the encoded element and **appends** its `NargSerialize` bytes to the NARG string.
 
-For **Fiat–Shamir**, `public_message` and `prover_message` call the **same** `absorb` on the encoded payload. For types where `NargSerialize` matches the encoding used for absorb (as for `CanonicalLinearRelation` commitments over BLS12-381 etc.), the squeezed challenge matches `Nizk`, and the final NARG equals `Nizk`’s `commitment_bytes || response_bytes`. That is why the **Shake128** golden file can assert byte equality against `prove(dsfs::StdHash::default(), …)`.
+For **Fiat–Shamir**, `public_message` and `prover_message` call the **same** `absorb` on the encoded payload. For types where `NargSerialize` matches the encoding used for absorb (as for `CanonicalLinearRelation` commitments over BLS12-381 etc.), the squeezed challenge matches `Nizk`, and the final NARG equals `Nizk`’s `commitment_bytes || response_bytes`. That is why the **Shake128** golden file can assert byte equality against `prove(spongefish::dsfs::StdHash::default(), …)`.
 
 ---
 
@@ -75,7 +75,7 @@ If you need the Keccak-named JSON to pass as golden tests, regenerate `proof_bat
 | `prove` / `verify` | `transcript_protocol_id::<P, H>(protocol)` |
 | `prove_with_protocol_domain` / `verify_with_protocol_domain` | Caller-supplied 64-byte tag (e.g. JSON `ciphersuite`) |
 
-Both take a sponge handle (`dsfs::StdHash` or `dsfs::Keccak`), `session_id` bytes, the `SigmaProtocol` value, and batchable proof bytes as above.
+Both take a sponge handle (`spongefish::dsfs::StdHash` or `spongefish::dsfs::Keccak`), `session_id` bytes, the `SigmaProtocol` value, and batchable proof bytes as above.
 
 ---
 
@@ -83,6 +83,7 @@ Both take a sponge handle (`dsfs::StdHash` or `dsfs::Keccak`), `session_id` byte
 
 ```rust
 use sigma_bridge::{prove, verify};
+use spongefish::dsfs;
 
 let mut rng = /* impl sigma_proofs::traits::ScalarRng */;
 let proof = prove(
@@ -104,7 +105,7 @@ verify(
 
 ## Related crates
 
-- `crates/dsfs` — `TranscriptSponge`, `SpongeProver`, `SpongeVerifier`
+- `spongefish::dsfs` — `TranscriptSponge`, `SpongeProver`, `SpongeVerifier`
 - `crates/ia-core` — `ProverChannel`, `VerifierChannel`
 - Tests: `crates/sigma-bridge/tests/golden_vectors.rs`
 

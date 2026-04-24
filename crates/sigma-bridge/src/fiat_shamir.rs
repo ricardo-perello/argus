@@ -9,7 +9,7 @@
 
 use alloc::vec::Vec;
 
-use dsfs::{ByteDuplexSponge, SpongeProver, SpongeVerifier};
+use spongefish::dsfs::{ByteDuplexSponge, SpongeProver, SpongeVerifier, TranscriptSponge};
 use ia_core::{ProverChannel, VerifierChannel};
 use sigma_proofs::{
     errors::Error,
@@ -33,7 +33,7 @@ pub fn prove<P, H>(
 where
     P: SigmaProtocol,
     P::Challenge: PartialEq,
-    H: ByteDuplexSponge + dsfs::TranscriptSponge + 'static,
+    H: ByteDuplexSponge + TranscriptSponge + 'static,
 {
     let instance_label = protocol.instance_label().as_ref().to_vec();
     let session = derive_session_id(session_id);
@@ -70,7 +70,7 @@ pub fn prove_with_protocol_domain<P, H>(
 where
     P: SigmaProtocol,
     P::Challenge: PartialEq,
-    H: ByteDuplexSponge + dsfs::TranscriptSponge + 'static,
+    H: ByteDuplexSponge + TranscriptSponge + 'static,
 {
     let instance_label = protocol.instance_label().as_ref().to_vec();
     let session = derive_session_id(session_id);
@@ -101,7 +101,7 @@ pub fn verify_with_protocol_domain<P, H>(
 where
     P: SigmaProtocol,
     P::Challenge: PartialEq,
-    H: ByteDuplexSponge + dsfs::TranscriptSponge + 'static,
+    H: ByteDuplexSponge + TranscriptSponge + 'static,
 {
     let instance_label = protocol.instance_label().as_ref().to_vec();
     let session = derive_session_id(session_id);
@@ -150,7 +150,7 @@ pub fn verify<P, H>(
 where
     P: SigmaProtocol,
     P::Challenge: PartialEq,
-    H: ByteDuplexSponge + dsfs::TranscriptSponge + 'static,
+    H: ByteDuplexSponge + TranscriptSponge + 'static,
 {
     let instance_label = protocol.instance_label().as_ref().to_vec();
     let session = derive_session_id(session_id);

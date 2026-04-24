@@ -51,7 +51,7 @@ the protocol.
   - Composition:
     - `ChainedReduction` (IR ∘ IR → IR)
     - `ReducedArgument` (IR ∘ IA → IA)
-- **`crates/dsfs`**: a **backend** that compiles IA/IR into NARGs using DSFS.
+- **`spongefish::dsfs`**: a **backend** that compiles IA/IR into NARGs using DSFS.
   - `prove` / `verify` for IAs
   - `prove_reduction` / `verify_reduction` for IORs
   - DSFS security bound evaluation (Theorems 1 & 2 style bounds)
@@ -122,7 +122,7 @@ At a high level:
 
 1. Define your statement/witness types in some crate.
 2. Implement `InteractiveArgument` (or `InteractiveReduction`) **against the channel traits** from `ia-core`.
-3. Compile it non-interactively with `dsfs::prove` / `dsfs::verify` (or the reduction variants).
+3. Compile it non-interactively with `spongefish::dsfs::prove` / `spongefish::dsfs::verify` (or the reduction variants).
 
 Protocol code should only ever call:
 
