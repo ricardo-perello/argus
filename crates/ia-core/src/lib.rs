@@ -16,7 +16,17 @@ mod channel;
 mod codecs;
 mod compose;
 mod deserialize;
-#[cfg(any(feature = "ark-ec", feature = "ark-ff", feature = "curve25519-dalek"))]
+#[cfg(any(
+    feature = "ark-ec",
+    feature = "ark-ff",
+    feature = "bls12_381",
+    feature = "curve25519-dalek",
+    feature = "k256",
+    feature = "p256",
+    feature = "p3-baby-bear",
+    feature = "p3-koala-bear",
+    feature = "p3-mersenne-31"
+))]
 mod drivers;
 mod error;
 mod io;

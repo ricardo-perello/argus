@@ -16,6 +16,14 @@ pub mod p256_impl;
 #[cfg(feature = "k256")]
 pub mod secp256k1_impl;
 
+// Plonky3
+#[cfg(feature = "p3-baby-bear")]
+pub mod p3_baby_bear_impl;
+#[cfg(feature = "p3-koala-bear")]
+pub mod p3_koala_bear_impl;
+#[cfg(feature = "p3-mersenne-31")]
+pub mod p3_mersenne31_impl;
+
 // Buffer of 512 bytes, useful for decoding 256-bit scalars.
 #[allow(dead_code)]
 #[repr(C)]
