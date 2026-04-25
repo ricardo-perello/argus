@@ -16,6 +16,12 @@ you choose a backend:
 This structure ensures **protocol code never touches transcript internals**: transcript mechanics
 (absorb/squeeze ordering, domain separation, deterministic replay) live in the backend.
 
+## Project status
+
+Argus is a research prototype. It is intended for protocol design, experimentation,
+and security-model engineering; it has not received production cryptographic
+review.
+
 ## Architecture
 
 Argus aims to express:
@@ -66,15 +72,29 @@ the protocol.
 
 ## Documentation index
 
-- **IA/IR interface**: `docs/iarg-interface-v6.md` — current trait design, protocol id scheme, instance-aware security metadata
-- **Domain separation**: `docs/domain-separation.md` — `derive(protocol, sponge_info, session)`, `SpongeInfo`, σ-proofs alignment
-- **DSFS compiler**: `docs/dsfs-v2.md` — Keccak transcript, salt, sponge parameters
-- **Interactive reductions**: `docs/interactive-reduction-v2.md` — sequential composition, source/target witness
-- **Sigma bridge**: `docs/sigma-bridge-v3.md` — StdHash vs Keccak, golden vector behavior
-- **WARP**: `docs/warp.md` — protocol overview; `docs/examples-vs-warp.md` — API layers and usage guide
-- **Live channel**: `docs/live-channel.md`
+The documentation is organized as an mdBook-compatible tree:
 
-Prior interface iterations and the April 2026 domain-separation **planning** write-up are in `docs/archive/`.
+- **Start here**: `docs/index.md` and `docs/getting-started.md`
+- **Architecture**: `docs/architecture/overview.md`, `docs/architecture/channel-model.md`,
+  `docs/architecture/ia-ir.md`, `docs/architecture/backends.md`
+- **Security**: `docs/security/overview.md`, `docs/security/transcript-invariants.md`,
+  `docs/security/instance-aware-security.md`, `docs/security/rbr-and-sr.md`,
+  `docs/security/dsfs-bounds.md`, `docs/security/domain-separation.md`
+- **API**: `docs/api/ia-core.md`, `docs/api/spongefish-dsfs.md`, `docs/api/live-channel.md`
+- **Protocols**: `docs/protocols/schnorr.md`, `docs/protocols/sumcheck.md`,
+  `docs/protocols/warp.md`, `docs/protocols/sigma-bridge.md`
+- **Decisions and history**: `docs/adr/README.md` and `docs/history/README.md`
+- **Contribution process**: `CONTRIBUTING.md`
+
+Versioned design notes such as `iarg-interface-v1.md` through
+`iarg-interface-v6.md` are preserved under `docs/history/` so design history is
+readable without Git archaeology.
+
+For API-level documentation, prefer rustdoc on the crate that owns the API:
+
+```bash
+cargo doc --workspace --no-deps
+```
 
 ## Quickstart
 
