@@ -1,6 +1,6 @@
 # Domain separation (DSFS + spongefish)
 
-This note describes how Argus binds **protocol identity**, **compilation / transcript format**, and **session** into the Fiat–Shamir transcript after the domain-separation refactor. For earlier planning options and staged rollout discussion, see [`archive/domain-separation-redesign-2026-04-plan.md`](archive/domain-separation-redesign-2026-04-plan.md).
+This note describes how Argus binds **protocol identity**, **compilation / transcript format**, and **session** into the Fiat–Shamir transcript after the domain-separation refactor. For earlier planning options and staged rollout discussion, see [`../history/domain-separation/domain-separation-redesign-2026-04-plan.md`](../history/domain-separation/domain-separation-redesign-2026-04-plan.md).
 
 ---
 
@@ -46,7 +46,7 @@ StdHash::SPONGE_INFO    = b"dsfs/v2/shake128-r168c32"
 
 `DomainSeparator::derive(ia.protocol_id().as_ref(), H::SPONGE_INFO, session_bytes.as_ref()).instance(instance)`
 
-and attach the duplex sponge or `std_prover` / `std_verifier` as documented in [`dsfs-v2.md`](dsfs-v2.md).
+and attach the duplex sponge or `std_prover` / `std_verifier` as documented in [`../history/backends/dsfs-v2.md`](../history/backends/dsfs-v2.md).
 
 Transcript adapters (`TranscriptSponge` in `spongefish::dsfs`) use the same derivation for both Keccak and `StdHash` so σ-bridge and DSFS agree when both use **`StdHash`** with the same protocol and session fields.
 
@@ -66,6 +66,6 @@ Construction 4.3 initializes the sponge from a hash of session-related material 
 
 ## Related docs
 
-- [`dsfs-v2.md`](dsfs-v2.md) — Keccak vs `StdHash`, salt, sponge parameters.
-- [`sigma-bridge-v3.md`](sigma-bridge-v3.md) — bridge and golden vectors.
-- [`iarg-interface-v5.md`](iarg-interface-v5.md) — `protocol_id(&self)` and IA surface.
+- [`../history/backends/dsfs-v2.md`](../history/backends/dsfs-v2.md) — Keccak vs `StdHash`, salt, sponge parameters.
+- [`../history/protocols/sigma-bridge-v3.md`](../history/protocols/sigma-bridge-v3.md) — bridge and golden vectors.
+- [`../history/interface/iarg-interface-v5.md`](../history/interface/iarg-interface-v5.md) — `protocol_id(&self)` and IA surface.

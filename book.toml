@@ -1,0 +1,8 @@
+[book]
+title = "Argus"
+authors = ["Argus contributors"]
+language = "en"
+src = "docs"
+
+[build]
+build-dir = "book"

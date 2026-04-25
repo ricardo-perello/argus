@@ -7,8 +7,9 @@ use ark_poly::{DenseMultilinearExtension, Polynomial};
 use ark_std::log2;
 
 use ia_core::{
-    CodeSecurityParams, InteractiveArgument, InteractiveReduction, ProtocolSecurity, ProverChannel,
-    ReducedArgument, SecurityErrorBound, SecurityProfile, VerificationResult, VerifierChannel,
+    ArgumentSecurity, CodeSecurityParams, InteractiveArgument, InteractiveReduction, ProverChannel,
+    ReducedArgument, ReductionSecurity, SecurityErrorBound, SecurityProfile, VerificationResult,
+    VerifierChannel,
 };
 
 use crate::rs_params::ReedSolomonParams;
@@ -23,43 +24,43 @@ use crate::utils::poly::{eq_poly, Hypercube};
 // -----------------------------------------------------------------------
 
 pub struct WARPReduction<F, P, C, MT> {
+    _phantom: PhantomData<(F, P, C, MT)>,
+}
+
+impl<F, P, C, MT> WARPReduction<F, P, C, MT> {
+    pub fn new() -> Self {
+        Self {
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<F, P, C, MT> Default for WARPReduction<F, P, C, MT> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Security-relevant WARP parameters derived from a concrete source instance.
+#[derive(Clone, Debug)]
+pub struct WARPSecurityParams {
     /// Number of twin-sumcheck folding rounds (= log2 of total instance count l).
     pub log_l: usize,
     /// Number of batching-sumcheck rounds (= log2 of codeword length n).
     pub log_n: usize,
-    /// log2 of the number of R1CS constraints M. Used to compute the polynomial
-    /// degree for the twin sumcheck per-round RBR error bound.
+    /// log2 of the number of R1CS constraints M.
     pub log_m: usize,
     /// Reed-Solomon code security parameters (n, k, |F|-bits).
-    /// Used by `ProtocolSecurity::security()` to compute the full paper bounds.
     pub code_params: ReedSolomonParams,
     /// Number of OOD samples s (from `WARPConfig.s`).
     pub ood_samples: usize,
     /// Number of shift queries t (from `WARPConfig.t`).
     pub shift_queries: usize,
-    _phantom: PhantomData<(F, P, C, MT)>,
 }
 
-impl<F, P, C, MT> WARPReduction<F, P, C, MT> {
-    pub fn new(
-        log_l: usize,
-        log_n: usize,
-        log_m: usize,
-        code_params: ReedSolomonParams,
-        ood_samples: usize,
-        shift_queries: usize,
-    ) -> Self {
-        Self {
-            log_l,
-            log_n,
-            log_m,
-            code_params,
-            ood_samples,
-            shift_queries,
-            _phantom: PhantomData,
-        }
-    }
-}
+/// Worst-case/adaptive WARP bound. For now this mirrors the concrete parameter
+/// shape, with each field interpreted as a maximum over the instance family.
+pub type WARPSecurityBound = WARPSecurityParams;
 
 impl<F, P, C, MT> InteractiveReduction for WARPReduction<F, P, C, MT>
 where
@@ -130,83 +131,127 @@ where
     }
 }
 
-impl<F, P, C, MT> ProtocolSecurity for WARPReduction<F, P, C, MT>
+impl<F, P, C, MT> ReductionSecurity for WARPReduction<F, P, C, MT>
 where
-    F: PrimeField,
-    P: BundledPESAT<F>,
+    F: Field
+        + PrimeField
+        + Send
+        + Sync
+        + spongefish::Encoding
+        + spongefish::Decoding
+        + ia_core::Deserialize,
+    P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
     C: LinearCode<F> + Clone,
-    MT: Config,
+    MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
 {
-    fn security(&self) -> SecurityProfile {
-        // Security bounds follow eprint 2025/753.
-        //
-        // Twin sumcheck (log_l rounds, §6.1–6.2):
-        //   degree   = 1 + max(log_n + 1, log_m + 2)  [warp.rs:293 + eprint §6.1, d=2]
-        //   per-round RBR error at round j (0-indexed):
-        //     Schwartz–Zippel:   deg / |F|
-        //     errPG contribution: (ℓ / 2^j) · err_PG(C, 2, δ)  [§6.2]
-        //
-        // Batching sumcheck (log_n rounds, §8):
-        //   degree 2 (sends sum_00, sum_11, sum_0110)
-        //   per-round RBR error: 2 / |F|
-        //
-        // Commitment / OOD / PESAT terms (non-SR, one-time costs, §5.2 + §7):
-        //   |Λ(C,δ)|² · log_n / |F|  +  (1 − δ)^shift_queries  +  |Λ| · log_M / |F|
-        //   These don't participate in the SR adversary budget — they are absorbed
-        //   in the commitment phase and do not correspond to interactive rounds.
-        //   Placed in plain_soundness_error pending Q2 confirmation with Chiesa.
-        //
-        // WARP is public-coin with no ZK, so hvzk_error = 0.
+    type SourceParams = WARPSecurityParams;
+    type SourceBound = WARPSecurityBound;
+    type TargetBound = ();
 
-        let field_bits = F::MODULUS_BIT_SIZE as i32;
-        let field_inv = 2_f64.powi(-field_bits);
+    fn source_security_params(&self, instance: &Self::SourceInstance) -> Self::SourceParams {
+        let warp = &instance.warp;
+        let code_len = warp.code.code_len();
 
-        // Code-specific parameters.
-        let delta = self.code_params.distance();
-        let list_size = self.code_params.list_size_bound();
-        // err_PG for degree 2 (quadratic R1CS, eprint §6.2).
-        let err_pg = self.code_params.proximity_generator_error(2);
-        let ell = (1usize << self.log_l) as f64;
-
-        // Twin sumcheck degree = 1 + max(log_n + 1, log_m + 2).
-        let twin_deg = 1 + (self.log_n + 1).max(self.log_m + 2);
-
-        // Twin sumcheck RBR bounds: round j (0-indexed) adds Schwartz–Zippel + errPG.
-        let twin_rbr: Vec<SecurityErrorBound> = (0..self.log_l)
-            .map(|j| {
-                let sz = (twin_deg as f64) * field_inv;
-                let pg = (ell / (1u64 << j) as f64) * err_pg;
-                SecurityErrorBound::new(move |_t| sz + pg)
-            })
-            .collect();
-
-        // Batching sumcheck RBR bounds: degree 2 per round.
-        let batch_rbr: Vec<SecurityErrorBound> = (0..self.log_n)
-            .map(|_| SecurityErrorBound::new(move |_t| 2.0 * field_inv))
-            .collect();
-
-        let mut rbr = twin_rbr;
-        rbr.extend(batch_rbr);
-
-        // One-time (non-SR) commitment-phase terms.
-        // OOD + shift-sampling (§7): |Λ|² · log_n / |F| + (1 − δ)^shift_queries
-        let log_n_f = self.log_n as f64;
-        let ood_term = list_size * list_size * log_n_f * field_inv;
-        let shift_term = (1.0 - delta).powi(self.shift_queries as i32);
-        // PESAT → code reduction (§5.2): |Λ| · log_M / |F|
-        let log_m_f = self.log_m as f64;
-        let pesat_term = list_size * log_m_f * field_inv;
-
-        let plain_error = SecurityErrorBound::new(move |_t| ood_term + shift_term + pesat_term);
-
-        SecurityProfile {
-            plain_soundness_error: plain_error,
-            rbr_soundness_errors: rbr.clone(),
-            rbr_knowledge_soundness_errors: rbr,
-            hvzk_error: SecurityErrorBound::zero(),
-            // Each round squeezes one field element as a challenge.
-            verifier_challenge_lengths: vec![1; self.log_l + self.log_n],
+        WARPSecurityParams {
+            log_l: log2(warp.config.l) as usize,
+            log_n: log2(code_len) as usize,
+            log_m: log2(instance.pk.1) as usize,
+            code_params: ReedSolomonParams::new(
+                code_len,
+                warp.code.message_len(),
+                F::MODULUS_BIT_SIZE,
+            ),
+            ood_samples: warp.config.s,
+            shift_queries: warp.config.t,
         }
+    }
+
+    fn source_bound_for_source_params(&self, params: &Self::SourceParams) -> Self::SourceBound {
+        params.clone()
+    }
+
+    fn target_bound_for_source_params(&self, _params: &Self::SourceParams) -> Self::TargetBound {}
+
+    fn target_bound_for_source_bound(&self, _bound: &Self::SourceBound) -> Self::TargetBound {}
+
+    fn profile_for_source_params(&self, params: &Self::SourceParams) -> SecurityProfile {
+        warp_security_profile::<F>(params)
+    }
+
+    fn profile_for_source_bound(&self, bound: &Self::SourceBound) -> SecurityProfile {
+        warp_security_profile::<F>(bound)
+    }
+}
+
+fn warp_security_profile<F: PrimeField>(params: &WARPSecurityParams) -> SecurityProfile {
+    // Security bounds follow eprint 2025/753.
+    //
+    // Twin sumcheck (log_l rounds, §6.1–6.2):
+    //   degree   = 1 + max(log_n + 1, log_m + 2)  [warp.rs:293 + eprint §6.1, d=2]
+    //   per-round RBR error at round j (0-indexed):
+    //     Schwartz–Zippel:   deg / |F|
+    //     errPG contribution: (ℓ / 2^j) · err_PG(C, 2, δ)  [§6.2]
+    //
+    // Batching sumcheck (log_n rounds, §8):
+    //   degree 2 (sends sum_00, sum_11, sum_0110)
+    //   per-round RBR error: 2 / |F|
+    //
+    // Commitment / OOD / PESAT terms (non-SR, one-time costs, §5.2 + §7):
+    //   |Λ(C,δ)|² · log_n / |F|  +  (1 − δ)^shift_queries  +  |Λ| · log_M / |F|
+    //   These don't participate in the SR adversary budget — they are absorbed
+    //   in the commitment phase and do not correspond to interactive rounds.
+    //   Placed in plain_soundness_error pending Q2 confirmation with Chiesa.
+    //
+    // WARP is public-coin with no ZK, so hvzk_error = 0.
+
+    let field_bits = F::MODULUS_BIT_SIZE as i32;
+    let field_inv = 2_f64.powi(-field_bits);
+
+    // Code-specific parameters.
+    let delta = params.code_params.distance();
+    let list_size = params.code_params.list_size_bound();
+    // err_PG for degree 2 (quadratic R1CS, eprint §6.2).
+    let err_pg = params.code_params.proximity_generator_error(2);
+    let ell = (1usize << params.log_l) as f64;
+
+    // Twin sumcheck degree = 1 + max(log_n + 1, log_m + 2).
+    let twin_deg = 1 + (params.log_n + 1).max(params.log_m + 2);
+
+    // Twin sumcheck RBR bounds: round j (0-indexed) adds Schwartz–Zippel + errPG.
+    let twin_rbr: Vec<SecurityErrorBound> = (0..params.log_l)
+        .map(|j| {
+            let sz = (twin_deg as f64) * field_inv;
+            let pg = (ell / (1u64 << j) as f64) * err_pg;
+            SecurityErrorBound::new(move |_t| sz + pg)
+        })
+        .collect();
+
+    // Batching sumcheck RBR bounds: degree 2 per round.
+    let batch_rbr: Vec<SecurityErrorBound> = (0..params.log_n)
+        .map(|_| SecurityErrorBound::new(move |_t| 2.0 * field_inv))
+        .collect();
+
+    let mut rbr = twin_rbr;
+    rbr.extend(batch_rbr);
+
+    // One-time (non-SR) commitment-phase terms.
+    // OOD + shift-sampling (§7): |Λ|² · log_n / |F| + (1 − δ)^shift_queries
+    let log_n_f = params.log_n as f64;
+    let ood_term = list_size * list_size * log_n_f * field_inv;
+    let shift_term = (1.0 - delta).powi(params.shift_queries as i32);
+    // PESAT → code reduction (§5.2): |Λ| · log_M / |F|
+    let log_m_f = params.log_m as f64;
+    let pesat_term = list_size * log_m_f * field_inv;
+
+    let plain_error = SecurityErrorBound::new(move |_t| ood_term + shift_term + pesat_term);
+
+    SecurityProfile {
+        plain_soundness_error: plain_error,
+        rbr_soundness_errors: rbr.clone(),
+        rbr_knowledge_soundness_errors: rbr,
+        hvzk_error: SecurityErrorBound::zero(),
+        // Each round squeezes one field element as a challenge.
+        verifier_challenge_lengths: vec![1; params.log_l + params.log_n],
     }
 }
 
@@ -317,14 +362,35 @@ where
     }
 }
 
-impl<F, P, C, MT> ProtocolSecurity for WARPDeciderIA<F, P, C, MT>
+impl<F, P, C, MT> ArgumentSecurity for WARPDeciderIA<F, P, C, MT>
 where
-    F: Field,
-    P: BundledPESAT<F>,
+    F: Field
+        + PrimeField
+        + Send
+        + Sync
+        + spongefish::Encoding
+        + spongefish::Decoding
+        + ia_core::Deserialize,
+    P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
     C: LinearCode<F> + Clone,
-    MT: Config,
+    MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
 {
-    fn security(&self) -> SecurityProfile {
+    type InstanceParams = ();
+    type InstanceBound = ();
+
+    fn instance_security_params(&self, _instance: &Self::Instance) -> Self::InstanceParams {}
+
+    fn instance_bound_for_instance_params(
+        &self,
+        _params: &Self::InstanceParams,
+    ) -> Self::InstanceBound {
+    }
+
+    fn profile_for_instance_params(&self, _params: &Self::InstanceParams) -> SecurityProfile {
+        self.profile_for_instance_bound(&())
+    }
+
+    fn profile_for_instance_bound(&self, _bound: &Self::InstanceBound) -> SecurityProfile {
         // The decider is a deterministic local check (no challenges, no rounds).
         SecurityProfile {
             plain_soundness_error: SecurityErrorBound::zero(),

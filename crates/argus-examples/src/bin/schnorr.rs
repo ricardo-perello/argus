@@ -21,7 +21,7 @@ use rand::rngs::OsRng;
 use spongefish::dsfs;
 
 use ia_core::{
-    Decoding, Deserialize, Encoding, InteractiveArgument, ProtocolSecurity, ProverChannel,
+    ArgumentSecurity, Decoding, Deserialize, Encoding, InteractiveArgument, ProverChannel,
     SecurityErrorBound, SecurityProfile, VerificationError, VerificationResult, VerifierChannel,
 };
 
@@ -76,11 +76,27 @@ where
     }
 }
 
-impl<G: CurveGroup> ProtocolSecurity for Schnorr<G>
+impl<G> ArgumentSecurity for Schnorr<G>
 where
-    G::ScalarField: PrimeField,
+    G: CurveGroup + PrimeGroup + Encoding + Deserialize,
+    G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
 {
-    fn security(&self) -> SecurityProfile {
+    type InstanceParams = ();
+    type InstanceBound = ();
+
+    fn instance_security_params(&self, _instance: &Self::Instance) -> Self::InstanceParams {}
+
+    fn instance_bound_for_instance_params(
+        &self,
+        _params: &Self::InstanceParams,
+    ) -> Self::InstanceBound {
+    }
+
+    fn profile_for_instance_params(&self, _params: &Self::InstanceParams) -> SecurityProfile {
+        self.profile_for_instance_bound(&())
+    }
+
+    fn profile_for_instance_bound(&self, _bound: &Self::InstanceBound) -> SecurityProfile {
         fn one_over_q<F: PrimeField>(_t: u64) -> f64 {
             2_f64.powi(-(F::MODULUS_BIT_SIZE as i32))
         }
@@ -181,7 +197,7 @@ fn main() {
 mod tests {
     use super::*;
     use ark_ff::PrimeField;
-    use ia_core::{NonInteractiveArgument, ProtocolSecurity};
+    use ia_core::{ArgumentSecurity, NonInteractiveArgument};
     use spongefish::dsfs::STD_SPONGE_PARAMS;
     use std::thread;
 
@@ -190,7 +206,9 @@ mod tests {
 
     #[test]
     fn schnorr_ia_soundness_is_one_over_q() {
-        let profile = Schnorr::<G>::default().security();
+        let schnorr = Schnorr::<G>::default();
+        let instance = [G::generator(), G::generator()];
+        let profile = schnorr.profile_for_concrete_instance(&instance);
         let expected = 2_f64.powi(-(F::MODULUS_BIT_SIZE as i32));
 
         // Plain soundness = 1/q
@@ -212,14 +230,18 @@ mod tests {
 
     #[test]
     fn schnorr_ia_hvzk_is_zero() {
-        let profile = Schnorr::<G>::default().security();
+        let schnorr = Schnorr::<G>::default();
+        let instance = [G::generator(), G::generator()];
+        let profile = schnorr.profile_for_concrete_instance(&instance);
         assert_eq!(profile.hvzk_error.evaluate(0), 0.0);
         assert_eq!(profile.hvzk_error.evaluate(1 << 40), 0.0);
     }
 
     #[test]
     fn schnorr_narg_soundness_adds_sponge_term() {
-        let narg = dsfs::security(&Schnorr::<G>::default());
+        let schnorr = Schnorr::<G>::default();
+        let instance = [G::generator(), G::generator()];
+        let narg = dsfs::security_for_concrete_instance(&schnorr, &instance);
 
         let t: u64 = 1 << 40;
         let t_f = t as f64;
@@ -240,7 +262,9 @@ mod tests {
 
     #[test]
     fn schnorr_narg_soundness_bits_above_128() {
-        let narg = dsfs::security(&Schnorr::<G>::default());
+        let schnorr = Schnorr::<G>::default();
+        let instance = [G::generator(), G::generator()];
+        let narg = dsfs::security_for_concrete_instance(&schnorr, &instance);
         let t: u64 = 1 << 40;
         let bits = narg.soundness_bits(t);
         assert!(
@@ -251,7 +275,9 @@ mod tests {
 
     #[test]
     fn schnorr_narg_zk_is_purely_sponge() {
-        let narg = dsfs::security(&Schnorr::<G>::default());
+        let schnorr = Schnorr::<G>::default();
+        let instance = [G::generator(), G::generator()];
+        let narg = dsfs::security_for_concrete_instance(&schnorr, &instance);
         let t: u64 = 1 << 40;
         let t_f = t as f64;
 

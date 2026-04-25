@@ -62,4 +62,6 @@ pub use narg::{
     NargAsInteractiveArgument, NargProof, NonInteractiveArgument, NonInteractiveReduction,
 };
 pub use reduction::InteractiveReduction;
-pub use security::{CodeSecurityParams, ProtocolSecurity, SecurityErrorBound, SecurityProfile};
+pub use security::{
+    ArgumentSecurity, CodeSecurityParams, ReductionSecurity, SecurityErrorBound, SecurityProfile,
+};

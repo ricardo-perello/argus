@@ -153,28 +153,26 @@ impl WARP<F, P, C, MT> {
 
 The `ark-crypto-primitives` dependency uses a [patched fork](https://github.com/dmpierre/crypto-primitives/tree/dev/blake3) that adds Blake3 support.
 
-## Security profile (ProtocolSecurity)
+## Security profile (ReductionSecurity)
 
-`WARPReduction` implements `ProtocolSecurity` with bounds from eprint 2025/753.
-Both the Schwartz–Zippel per-round errors and the code-specific one-time terms
+`WARPReduction` implements `ReductionSecurity` with bounds from eprint 2025/753.
+Both the Schwartz-Zippel per-round errors and the code-specific one-time terms
 (errPG, OOD sampling, shift sampling, PESAT→code) are included.
 
 ### Construction
 
-`WARPReduction::new(log_l, log_n, log_m, code_params, ood_samples, shift_queries)`
-where `code_params` is a `ReedSolomonParams` holding `(n, k, field_size_bits)`:
+`WARPReduction::new()` carries no duplicated security fields. The instance-aware
+security API derives `WARPSecurityParams` from the source `WARPInstance`:
 
 ```rust
-let code_params = ReedSolomonParams::new(
-    code.code_len(),    // n
-    code.message_len(), // k
-    F::MODULUS_BIT_SIZE,
-);
-let ir = WARPReduction::new(log_l, log_n, log_m, code_params, s, t);
-// s = WARPConfig.s (OOD samples), t = WARPConfig.t (shift queries)
+let ir = WARPReduction::new();
+let profile = ir.profile_for_source_instance(&source_instance);
 ```
 
-`Default` is not implemented — callers must supply explicit code parameters.
+The derived parameters include `log_l`, `log_n`, `log_m`, Reed-Solomon code
+parameters, `WARPConfig.s`, and `WARPConfig.t`. Worst-case/adaptive evaluation
+uses the same `WARPSecurityBound` shape, interpreted as maxima over the instance
+family.
 
 ### Round structure
 

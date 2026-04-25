@@ -5,6 +5,8 @@ extern crate alloc;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use crate::{InteractiveArgument, InteractiveReduction};
+
 /// An error bound expressed as a function of the adversary's query budget `t`.
 ///
 /// Internally stored as a sum of `Arc<dyn Fn(u64) -> f64 + Send + Sync>` terms
@@ -67,14 +69,109 @@ pub trait CodeSecurityParams {
     fn proximity_generator_error(&self, degree: usize) -> f64;
 }
 
-/// Security metadata provider for an interactive protocol.
+/// Instance-aware security metadata for an interactive argument.
 ///
-/// Separate from `InteractiveArgument` / `InteractiveReduction` so that protocols
-/// without fully specified bounds can still implement the core traits.
-/// Composition structs (`ChainedReduction`, `ReducedArgument`) provide conditional
-/// impls when both sub-protocols implement this.
-pub trait ProtocolSecurity {
-    fn security(&self) -> SecurityProfile;
+/// The returned [`SecurityProfile`] is always tied to either a concrete instance
+/// (via [`Self::profile_for_concrete_instance`]) or to an explicit worst-case instance
+/// bound (via [`Self::profile_for_instance_bound`]). This matches the formal convention
+/// that soundness errors are functions of the false instance `x`, or of a size
+/// bound `n` obtained by maximizing over possible instances.
+///
+/// Protocols with instance-independent security can use `()` for both associated
+/// types and ignore the arguments in `profile_for_instance_params` /
+/// `profile_for_instance_bound`.
+pub trait ArgumentSecurity: InteractiveArgument {
+    /// Compact security-relevant parameters derived from a concrete instance.
+    type InstanceParams;
+    /// A worst-case/adaptive bound for a family of instances.
+    type InstanceBound;
+
+    /// Extract the parameters that the concrete-instance security bound depends on.
+    fn instance_security_params(&self, instance: &Self::Instance) -> Self::InstanceParams;
+
+    /// Convert concrete-instance parameters into a worst-case bound that contains them.
+    fn instance_bound_for_instance_params(
+        &self,
+        params: &Self::InstanceParams,
+    ) -> Self::InstanceBound;
+
+    /// Build the security profile for a concrete instance summarized by `params`.
+    fn profile_for_instance_params(&self, params: &Self::InstanceParams) -> SecurityProfile;
+
+    /// Build the worst-case security profile for all instances covered by `bound`.
+    fn profile_for_instance_bound(&self, bound: &Self::InstanceBound) -> SecurityProfile;
+
+    /// Convenience: extract params from `instance`, then build the concrete profile.
+    fn profile_for_concrete_instance(&self, instance: &Self::Instance) -> SecurityProfile {
+        let params = self.instance_security_params(instance);
+        self.profile_for_instance_params(&params)
+    }
+
+    /// Convenience: extract params from `instance`, then return a covering bound.
+    fn instance_bound_for_concrete_instance(
+        &self,
+        instance: &Self::Instance,
+    ) -> Self::InstanceBound {
+        let params = self.instance_security_params(instance);
+        self.instance_bound_for_instance_params(&params)
+    }
+}
+
+/// Instance-aware security metadata for an interactive reduction.
+///
+/// Reductions need one additional piece of information beyond arguments: a bound
+/// on the target instance produced by the verifier. Sequential composition uses
+/// this target bound to evaluate the security of the next protocol without
+/// needing to run the transcript just to learn the concrete target instance.
+pub trait ReductionSecurity: InteractiveReduction {
+    /// Compact security-relevant parameters derived from a concrete source instance.
+    type SourceParams;
+    /// A worst-case/adaptive bound for source instances.
+    type SourceBound;
+    /// A worst-case/adaptive bound for target instances produced by this reduction.
+    type TargetBound;
+
+    /// Extract the parameters that the concrete-source security bound depends on.
+    fn source_security_params(&self, instance: &Self::SourceInstance) -> Self::SourceParams;
+
+    /// Convert concrete source parameters into a worst-case bound that contains them.
+    fn source_bound_for_source_params(&self, params: &Self::SourceParams) -> Self::SourceBound;
+
+    /// Bound the target instance family produced from concrete source parameters.
+    fn target_bound_for_source_params(&self, params: &Self::SourceParams) -> Self::TargetBound;
+
+    /// Bound the target instance family produced from any source in `bound`.
+    fn target_bound_for_source_bound(&self, bound: &Self::SourceBound) -> Self::TargetBound;
+
+    /// Build the reduction security profile for a concrete source summarized by `params`.
+    fn profile_for_source_params(&self, params: &Self::SourceParams) -> SecurityProfile;
+
+    /// Build the worst-case reduction profile for all source instances covered by `bound`.
+    fn profile_for_source_bound(&self, bound: &Self::SourceBound) -> SecurityProfile;
+
+    /// Convenience: extract params from `instance`, then build the concrete profile.
+    fn profile_for_source_instance(&self, instance: &Self::SourceInstance) -> SecurityProfile {
+        let params = self.source_security_params(instance);
+        self.profile_for_source_params(&params)
+    }
+
+    /// Convenience: extract params from `instance`, then return a covering source bound.
+    fn source_bound_for_concrete_instance(
+        &self,
+        instance: &Self::SourceInstance,
+    ) -> Self::SourceBound {
+        let params = self.source_security_params(instance);
+        self.source_bound_for_source_params(&params)
+    }
+
+    /// Convenience: extract params from `instance`, then return the induced target bound.
+    fn target_bound_for_source_instance(
+        &self,
+        instance: &Self::SourceInstance,
+    ) -> Self::TargetBound {
+        let params = self.source_security_params(instance);
+        self.target_bound_for_source_params(&params)
+    }
 }
 
 impl core::fmt::Debug for SecurityErrorBound {

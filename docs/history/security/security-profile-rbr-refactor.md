@@ -191,7 +191,7 @@ pub trait CodeSecurityParams {
 }
 ```
 
-Exported from `ia_core::` alongside `ProtocolSecurity`.
+Exported from `ia_core::` alongside the instance-aware security traits.
 
 ### `ReedSolomonParams` (warp crate)
 
