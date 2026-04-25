@@ -24,7 +24,7 @@ use rand::rngs::OsRng;
 use spongefish::dsfs;
 
 use ia_core::{
-    InteractiveReduction, ProtocolSecurity, ProverChannel, SecurityErrorBound, SecurityProfile,
+    InteractiveReduction, ProverChannel, ReductionSecurity, SecurityErrorBound, SecurityProfile,
     VerificationError, VerificationResult, VerifierChannel,
 };
 
@@ -123,8 +123,24 @@ impl InteractiveReduction for Accumulate {
     }
 }
 
-impl ProtocolSecurity for Accumulate {
-    fn security(&self) -> SecurityProfile {
+impl ReductionSecurity for Accumulate {
+    type SourceParams = ();
+    type SourceBound = ();
+    type TargetBound = ();
+
+    fn source_security_params(&self, _instance: &Self::SourceInstance) -> Self::SourceParams {}
+
+    fn source_bound_for_source_params(&self, _params: &Self::SourceParams) -> Self::SourceBound {}
+
+    fn target_bound_for_source_params(&self, _params: &Self::SourceParams) -> Self::TargetBound {}
+
+    fn target_bound_for_source_bound(&self, _bound: &Self::SourceBound) -> Self::TargetBound {}
+
+    fn profile_for_source_params(&self, _params: &Self::SourceParams) -> SecurityProfile {
+        self.profile_for_source_bound(&())
+    }
+
+    fn profile_for_source_bound(&self, _bound: &Self::SourceBound) -> SecurityProfile {
         SecurityProfile {
             plain_soundness_error: SecurityErrorBound::zero(),
             rbr_soundness_errors: vec![SecurityErrorBound::zero()],

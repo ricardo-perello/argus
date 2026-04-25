@@ -18,9 +18,9 @@ use rand::rngs::OsRng;
 use spongefish::dsfs;
 
 use ia_core::{
-    ChainedReduction, InteractiveArgument, InteractiveReduction, ProtocolSecurity, ProverChannel,
-    ReducedArgument, SecurityErrorBound, SecurityProfile, VerificationError, VerificationResult,
-    VerifierChannel,
+    ArgumentSecurity, ChainedReduction, InteractiveArgument, InteractiveReduction, ProverChannel,
+    ReducedArgument, ReductionSecurity, SecurityErrorBound, SecurityProfile, VerificationError,
+    VerificationResult, VerifierChannel,
 };
 
 // ---------------------------------------------------------------------------
@@ -111,8 +111,24 @@ impl InteractiveReduction for FoldPairs {
     }
 }
 
-impl ProtocolSecurity for FoldPairs {
-    fn security(&self) -> SecurityProfile {
+impl ReductionSecurity for FoldPairs {
+    type SourceParams = ();
+    type SourceBound = ();
+    type TargetBound = ();
+
+    fn source_security_params(&self, _instance: &Self::SourceInstance) -> Self::SourceParams {}
+
+    fn source_bound_for_source_params(&self, _params: &Self::SourceParams) -> Self::SourceBound {}
+
+    fn target_bound_for_source_params(&self, _params: &Self::SourceParams) -> Self::TargetBound {}
+
+    fn target_bound_for_source_bound(&self, _bound: &Self::SourceBound) -> Self::TargetBound {}
+
+    fn profile_for_source_params(&self, _params: &Self::SourceParams) -> SecurityProfile {
+        self.profile_for_source_bound(&())
+    }
+
+    fn profile_for_source_bound(&self, _bound: &Self::SourceBound) -> SecurityProfile {
         SecurityProfile {
             plain_soundness_error: SecurityErrorBound::zero(),
             rbr_soundness_errors: vec![SecurityErrorBound::zero()],
@@ -201,8 +217,24 @@ impl InteractiveReduction for Accumulate {
     }
 }
 
-impl ProtocolSecurity for Accumulate {
-    fn security(&self) -> SecurityProfile {
+impl ReductionSecurity for Accumulate {
+    type SourceParams = ();
+    type SourceBound = ();
+    type TargetBound = ();
+
+    fn source_security_params(&self, _instance: &Self::SourceInstance) -> Self::SourceParams {}
+
+    fn source_bound_for_source_params(&self, _params: &Self::SourceParams) -> Self::SourceBound {}
+
+    fn target_bound_for_source_params(&self, _params: &Self::SourceParams) -> Self::TargetBound {}
+
+    fn target_bound_for_source_bound(&self, _bound: &Self::SourceBound) -> Self::TargetBound {}
+
+    fn profile_for_source_params(&self, _params: &Self::SourceParams) -> SecurityProfile {
+        self.profile_for_source_bound(&())
+    }
+
+    fn profile_for_source_bound(&self, _bound: &Self::SourceBound) -> SecurityProfile {
         SecurityProfile {
             plain_soundness_error: SecurityErrorBound::zero(),
             rbr_soundness_errors: vec![SecurityErrorBound::zero()],
@@ -243,8 +275,23 @@ impl InteractiveArgument for EqualityCheck {
     }
 }
 
-impl ProtocolSecurity for EqualityCheck {
-    fn security(&self) -> SecurityProfile {
+impl ArgumentSecurity for EqualityCheck {
+    type InstanceParams = ();
+    type InstanceBound = ();
+
+    fn instance_security_params(&self, _instance: &Self::Instance) -> Self::InstanceParams {}
+
+    fn instance_bound_for_instance_params(
+        &self,
+        _params: &Self::InstanceParams,
+    ) -> Self::InstanceBound {
+    }
+
+    fn profile_for_instance_params(&self, _params: &Self::InstanceParams) -> SecurityProfile {
+        self.profile_for_instance_bound(&())
+    }
+
+    fn profile_for_instance_bound(&self, _bound: &Self::InstanceBound) -> SecurityProfile {
         SecurityProfile {
             plain_soundness_error: SecurityErrorBound::zero(),
             rbr_soundness_errors: vec![],

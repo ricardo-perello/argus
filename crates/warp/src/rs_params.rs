@@ -1,13 +1,13 @@
 use ia_core::CodeSecurityParams;
 
-/// Reed-Solomon code security parameters for use in `WARPReduction::security()`.
+/// Reed-Solomon code security parameters for WARP's instance-aware security profile.
 ///
 /// This is a local struct — not `ReedSolomon<F>` itself — so that the orphan
 /// rule is satisfied: `CodeSecurityParams` (from `ia-core`) and `ReedSolomon<F>`
 /// (from `ark-codes`) are both foreign to this crate, but a local struct may
 /// implement a foreign trait.
 ///
-/// Construct from your `ReedSolomon<F>` at the time you build `WARPReduction`:
+/// Construct from your `ReedSolomon<F>` when deriving `WARPSecurityParams`:
 ///
 /// ```ignore
 /// let code_params = ReedSolomonParams::new(
@@ -16,6 +16,7 @@ use ia_core::CodeSecurityParams;
 ///     F::MODULUS_BIT_SIZE,
 /// );
 /// ```
+#[derive(Clone, Debug)]
 pub struct ReedSolomonParams {
     /// Codeword length n.
     pub n: usize,

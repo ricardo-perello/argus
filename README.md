@@ -48,7 +48,7 @@ the protocol.
   - Protocol traits:
     - IA: `InteractiveArgument` (with generic `prove` / `verify` methods)
     - IOR/IR: `InteractiveReduction` (with generic `prove` / `verify` methods)
-    - Security: `ProtocolSecurity` (opt-in; enables DSFS security bound evaluation)
+    - Security: `ArgumentSecurity` / `ReductionSecurity` (opt-in; instance-aware DSFS bound evaluation)
   - Composition:
     - `ChainedReduction` (IR ∘ IR → IR)
     - `ReducedArgument` (IR ∘ IA → IA)
@@ -66,7 +66,7 @@ the protocol.
 
 ## Documentation index
 
-- **IA/IR interface**: `docs/iarg-interface-v5.md` — current trait design, protocol id scheme, security metadata
+- **IA/IR interface**: `docs/iarg-interface-v6.md` — current trait design, protocol id scheme, instance-aware security metadata
 - **Domain separation**: `docs/domain-separation.md` — `derive(protocol, sponge_info, session)`, `SpongeInfo`, σ-proofs alignment
 - **DSFS compiler**: `docs/dsfs-v2.md` — Keccak transcript, salt, sponge parameters
 - **Interactive reductions**: `docs/interactive-reduction-v2.md` — sequential composition, source/target witness

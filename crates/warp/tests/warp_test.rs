@@ -7,8 +7,7 @@ use ark_codes::{
     traits::LinearCode,
 };
 use ark_crypto_primitives::crh::poseidon::{constraints::CRHGadget, CRH};
-use ark_ff::{PrimeField, UniformRand};
-use ark_std::log2;
+use ark_ff::UniformRand;
 use rand::thread_rng;
 
 use warp::{
@@ -26,9 +25,10 @@ use warp::{
     },
     types::{AccumulatorInstances, AccumulatorWitnesses},
     utils::poseidon,
-    FullWARP, ReedSolomonParams, WARPDeciderIA, WARPReduction,
+    FullWARP, WARPDeciderIA, WARPReduction,
 };
 
+use ia_core::ReductionSecurity;
 use spongefish::dsfs::{self, Keccak, SpongeInfo, SpongeProver, SpongeVerifier};
 
 type MT = Blake3MerkleTreeParams<Fp>;
@@ -106,6 +106,55 @@ fn empty_acc() -> (AccumulatorInstances<Fp, MT>, AccumulatorWitnesses<Fp, MT>) {
         (vec![], vec![], vec![], (vec![], vec![]), vec![]),
         (vec![], vec![], vec![]),
     )
+}
+
+#[test]
+fn warp_security_profile_is_derived_from_source_instance() {
+    let (r1cs, code, instances, _) = setup();
+    let pk = (r1cs.clone(), r1cs.m, r1cs.n, r1cs.k);
+    let (empty_inst_a, _) = empty_acc();
+    let (empty_inst_b, _) = empty_acc();
+
+    let warp_small = Arc::new(WARP::<Fp, R1CS<Fp>, _, MT>::new(
+        WARPConfig::new(4, 4, 8, 7, r1cs.config(), code.code_len()),
+        code.clone(),
+        r1cs.clone(),
+        (),
+        (),
+    ));
+    let warp_large = Arc::new(WARP::<Fp, R1CS<Fp>, _, MT>::new(
+        WARPConfig::new(8, 4, 8, 7, r1cs.config(), code.code_len()),
+        code,
+        r1cs,
+        (),
+        (),
+    ));
+
+    let small_instance = WARPInstance {
+        warp: warp_small,
+        pk: pk.clone(),
+        instances: instances.clone(),
+        acc_instances: empty_inst_a,
+    };
+    let large_instance = WARPInstance {
+        warp: warp_large,
+        pk,
+        instances,
+        acc_instances: empty_inst_b,
+    };
+
+    let ir = WARPReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
+    let small_profile = ir.profile_for_source_instance(&small_instance);
+    let large_profile = ir.profile_for_source_instance(&large_instance);
+
+    assert_eq!(
+        large_profile.rbr_soundness_errors.len(),
+        small_profile.rbr_soundness_errors.len() + 1,
+    );
+    assert!(
+        large_profile.sr_soundness_error(0) > small_profile.sr_soundness_error(0),
+        "larger WARP instance should carry a larger concrete RBR sum",
+    );
 }
 
 #[test]
@@ -269,16 +318,7 @@ fn warp_ir_dsfs_prove_verify() {
     };
 
     let session = spongefish::session!("warp IR test");
-    let code_params =
-        ReedSolomonParams::new(code.code_len(), code.message_len(), Fp::MODULUS_BIT_SIZE);
-    let ir = WARPReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new(
-        log2(l1) as usize,
-        log2(code.code_len()) as usize,
-        log2(r1cs.m) as usize,
-        code_params,
-        8, // ood_samples (matches WARPConfig s=8)
-        7, // shift_queries (matches WARPConfig t=7)
-    );
+    let ir = WARPReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
     let proof = dsfs::prove_reduction(&ir, &session, &instance, &witness);
     println!("IR NARG string: {} bytes", proof.len());
 
@@ -323,16 +363,7 @@ fn warp_full_ia_dsfs_prove_verify() {
     };
 
     let session = spongefish::session!("warp FullWARP test");
-    let code_params =
-        ReedSolomonParams::new(code.code_len(), code.message_len(), Fp::MODULUS_BIT_SIZE);
-    let reduction = WARPReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new(
-        log2(l1) as usize,
-        log2(code.code_len()) as usize,
-        log2(r1cs.m) as usize,
-        code_params,
-        8, // ood_samples (matches WARPConfig s=8)
-        7, // shift_queries (matches WARPConfig t=7)
-    );
+    let reduction = WARPReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
     let full =
         FullWARP::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new(reduction, WARPDeciderIA::default());
     let proof = dsfs::prove(&full, &session, &instance, &witness);

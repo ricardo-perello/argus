@@ -129,7 +129,7 @@ DSFS channels and compile entry points are generic over a byte-oriented duplex s
 - **Default:** existing `prove` / `verify` / `prove_reduction` / `verify_reduction` (and `*_with_salt`) still use **Keccak** (`Keccak::default()`).
 - **Explicit sponge:** use `prove_with_sponge`, `prove_with_sponge_and_salt`, `verify_with_sponge`, `verify_with_sponge_and_salt`, and the reduction variants, passing e.g. `spongefish::dsfs::StdHash::default()` for spongefish **std_prover** / **std_verifier** (SHAKE128) compatibility.
 
-Security bookkeeping: `STD_SPONGE_PARAMS` remains tied to Keccak; for StdHash-style transcripts use `STD_HASH_SPONGE_PARAMS` with `NargSecurity::for_ia_with` / `for_reduction_with`.
+Security bookkeeping: `STD_SPONGE_PARAMS` remains tied to Keccak; for StdHash-style transcripts use `STD_HASH_SPONGE_PARAMS` with `NargSecurity::for_argument_concrete_instance_with` / `for_argument_instance_bound_with` or the corresponding reduction helpers.
 
 The `sigma-bridge` crate provides Nizk-layout batchable/compact drivers and σ-proofs–compatible `derive_session_id`.
 
@@ -140,7 +140,7 @@ For the **triple** `(protocol_id, sponge_info, session)` and SHA-512 `domsep` fe
 Core IA protocol traits are unchanged relative to DSFS v1:
 
 - `InteractiveArgument`, `InteractiveReduction`
-- `ProtocolSecurity` and security metadata APIs in `ia-core`
+- `ArgumentSecurity` / `ReductionSecurity` and security metadata APIs in `ia-core`
 
 (Note: separate `Prove<P>`/`Verify<V>` and `ReduceProve<P>`/`ReduceVerify<V>` traits were later collapsed into generic methods on `InteractiveArgument`/`InteractiveReduction` in the v5 interface — see `iarg-interface-v5.md`.)
 

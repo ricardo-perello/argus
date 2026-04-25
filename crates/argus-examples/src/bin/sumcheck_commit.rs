@@ -21,7 +21,7 @@ use rand::rngs::OsRng;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
 use ia_core::{
-    InteractiveArgument, ProtocolSecurity, ProverChannel, SecurityErrorBound, SecurityProfile,
+    ArgumentSecurity, InteractiveArgument, ProverChannel, SecurityErrorBound, SecurityProfile,
     VerificationError, VerificationResult, VerifierChannel,
 };
 
@@ -243,8 +243,23 @@ impl InteractiveArgument for CommittedSumcheck {
     }
 }
 
-impl ProtocolSecurity for CommittedSumcheck {
-    fn security(&self) -> SecurityProfile {
+impl ArgumentSecurity for CommittedSumcheck {
+    type InstanceParams = ();
+    type InstanceBound = ();
+
+    fn instance_security_params(&self, _instance: &Self::Instance) -> Self::InstanceParams {}
+
+    fn instance_bound_for_instance_params(
+        &self,
+        _params: &Self::InstanceParams,
+    ) -> Self::InstanceBound {
+    }
+
+    fn profile_for_instance_params(&self, _params: &Self::InstanceParams) -> SecurityProfile {
+        self.profile_for_instance_bound(&())
+    }
+
+    fn profile_for_instance_bound(&self, _bound: &Self::InstanceBound) -> SecurityProfile {
         SecurityProfile {
             plain_soundness_error: SecurityErrorBound::zero(),
             rbr_soundness_errors: vec![],
