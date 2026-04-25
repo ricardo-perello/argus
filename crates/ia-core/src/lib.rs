@@ -63,5 +63,5 @@ pub use narg::{
 };
 pub use reduction::InteractiveReduction;
 pub use security::{
-    ArgumentSecurity, CodeSecurityParams, ReductionSecurity, SecurityErrorBound, SecurityProfile,
+    ArgumentSecurity, ReductionSecurity, SecurityErrorBound, SecurityProfile,
 };

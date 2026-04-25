@@ -11,10 +11,9 @@ The protocol is an Interactive Oracle Reduction (IOR): the verifier does not out
 ```
 crates/warp/
   src/
-    lib.rs              -- module declarations, re-exports (FullWARP, WARPReduction, WARPDeciderIA, ReedSolomonParams)
+    lib.rs              -- module declarations, re-exports (FullWARP, WARPReduction, WARPDeciderIA)
     config.rs           -- WARPConfig (l, l1, s, t, etc.)
     errors.rs           -- WARPError, WARPProverError, WARPVerifierError, WARPDeciderError
-    rs_params.rs        -- ReedSolomonParams, CodeSecurityParams impl (orphan-rule-safe newtype)
     types.rs            -- all intermediate instance/witness types
     protocol/
       mod.rs            -- sub-module declarations
@@ -209,10 +208,10 @@ the SR adversary budget; they are placed in `plain_soundness_error`:
 |Λ(C,δ)| · log_m / |F|    (PESAT→code reduction, §5.2)
 ```
 
-`ReedSolomonParams` provides these via `CodeSecurityParams` (trait from `ia-core`):
-- `distance()` = 1 − k/n
-- `list_size_bound()` = n (conservative; TODO: tighten via Johnson bound)
-- `proximity_generator_error(d)` = (d+1) · n² / |F|  (BCIKS20 bound)
+`WARPSecurityParams` carries the raw Reed-Solomon parameters (`n`, `k`, `field_bits`); `warp_security_profile` derives the bounds inline:
+- δ = 1 − k/n
+- |Λ(C, δ)| ≤ n  (conservative; TODO: tighten via Johnson bound)
+- err_PG(C, 2, δ) ≤ 3 · n² / |F|  (BCIKS20 bound, degree 2)
 
 ### Placement of commitment terms (open Q for Chiesa)
 

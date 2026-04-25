@@ -42,33 +42,6 @@ impl SecurityErrorBound {
     }
 }
 
-/// Code-level security parameters for protocols built on linear codes.
-///
-/// Protocols like WARP incorporate three code-specific error terms that are not
-/// captured by per-round Schwartz–Zippel bounds alone:
-///
-/// - `proximity_generator_error` — `err_PG(C, d, δ)` (ProtoGalaxy folding step)
-/// - `list_size_bound` — `|Λ(C, δ)|` (OOD / commitment phase)
-/// - `distance` — `δ = 1 − ρ` (shift-sampling / consistency check)
-///
-/// Implement this trait on your code type (or a newtype wrapper) and pass it into
-/// the protocol's `security()` construction so the returned `SecurityProfile` can
-/// close over the code parameters.
-pub trait CodeSecurityParams {
-    /// Relative minimum distance δ = 1 − rate of the code.
-    fn distance(&self) -> f64;
-
-    /// An upper bound on `|Λ(C, δ)|`, the list-decoding list size at radius δ.
-    fn list_size_bound(&self) -> f64;
-
-    /// Upper bound on the proximity-generator error `err_PG(C, degree, δ)`.
-    ///
-    /// This is the probability that a random degree-`degree` linear combination
-    /// of vectors that are individually δ-close to codewords is still δ-close.
-    /// For Reed-Solomon codes over large fields a standard bound is ≈ n² / |F|.
-    fn proximity_generator_error(&self, degree: usize) -> f64;
-}
-
 /// Instance-aware security metadata for an interactive argument.
 ///
 /// The returned [`SecurityProfile`] is always tied to either a concrete instance

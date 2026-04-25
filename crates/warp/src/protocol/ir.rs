@@ -7,12 +7,9 @@ use ark_poly::{DenseMultilinearExtension, Polynomial};
 use ark_std::log2;
 
 use ia_core::{
-    ArgumentSecurity, CodeSecurityParams, InteractiveArgument, InteractiveReduction, ProverChannel,
-    ReducedArgument, ReductionSecurity, SecurityErrorBound, SecurityProfile, VerificationResult,
-    VerifierChannel,
+    ArgumentSecurity, InteractiveArgument, InteractiveReduction, ProverChannel, ReducedArgument,
+    ReductionSecurity, SecurityErrorBound, SecurityProfile, VerificationResult, VerifierChannel,
 };
-
-use crate::rs_params::ReedSolomonParams;
 
 use crate::protocol::warp::{DeciderInstance, DeciderWitness, WARPInstance, WARPWitness};
 use crate::relations::r1cs::R1CSConstraints;
@@ -50,8 +47,12 @@ pub struct WARPSecurityParams {
     pub log_n: usize,
     /// log2 of the number of R1CS constraints M.
     pub log_m: usize,
-    /// Reed-Solomon code security parameters (n, k, |F|-bits).
-    pub code_params: ReedSolomonParams,
+    /// Reed-Solomon codeword length n.
+    pub n: usize,
+    /// Reed-Solomon message length (dimension) k.
+    pub k: usize,
+    /// Approximate bit-length of the field size: |F| ≈ 2^field_bits.
+    pub field_bits: u32,
     /// Number of OOD samples s (from `WARPConfig.s`).
     pub ood_samples: usize,
     /// Number of shift queries t (from `WARPConfig.t`).
@@ -150,17 +151,15 @@ where
 
     fn source_security_params(&self, instance: &Self::SourceInstance) -> Self::SourceParams {
         let warp = &instance.warp;
-        let code_len = warp.code.code_len();
+        let n = warp.code.code_len();
 
         WARPSecurityParams {
             log_l: log2(warp.config.l) as usize,
-            log_n: log2(code_len) as usize,
+            log_n: log2(n) as usize,
             log_m: log2(instance.pk.1) as usize,
-            code_params: ReedSolomonParams::new(
-                code_len,
-                warp.code.message_len(),
-                F::MODULUS_BIT_SIZE,
-            ),
+            n,
+            k: warp.code.message_len(),
+            field_bits: F::MODULUS_BIT_SIZE,
             ood_samples: warp.config.s,
             shift_queries: warp.config.t,
         }
@@ -175,15 +174,15 @@ where
     fn target_bound_for_source_bound(&self, _bound: &Self::SourceBound) -> Self::TargetBound {}
 
     fn profile_for_source_params(&self, params: &Self::SourceParams) -> SecurityProfile {
-        warp_security_profile::<F>(params)
+        warp_security_profile(params)
     }
 
     fn profile_for_source_bound(&self, bound: &Self::SourceBound) -> SecurityProfile {
-        warp_security_profile::<F>(bound)
+        warp_security_profile(bound)
     }
 }
 
-fn warp_security_profile<F: PrimeField>(params: &WARPSecurityParams) -> SecurityProfile {
+fn warp_security_profile(params: &WARPSecurityParams) -> SecurityProfile {
     // Security bounds follow eprint 2025/753.
     //
     // Twin sumcheck (log_l rounds, §6.1–6.2):
@@ -204,14 +203,15 @@ fn warp_security_profile<F: PrimeField>(params: &WARPSecurityParams) -> Security
     //
     // WARP is public-coin with no ZK, so hvzk_error = 0.
 
-    let field_bits = F::MODULUS_BIT_SIZE as i32;
-    let field_inv = 2_f64.powi(-field_bits);
+    let field_inv = 2_f64.powi(-(params.field_bits as i32));
 
-    // Code-specific parameters.
-    let delta = params.code_params.distance();
-    let list_size = params.code_params.list_size_bound();
-    // err_PG for degree 2 (quadratic R1CS, eprint §6.2).
-    let err_pg = params.code_params.proximity_generator_error(2);
+    // Reed-Solomon code-specific bounds.
+    // δ = 1 − k/n (relative minimum distance).
+    let delta = 1.0 - params.k as f64 / params.n as f64;
+    // |Λ(C, δ)| ≤ n (conservative; TODO: tighten via Johnson bound).
+    let list_size = params.n as f64;
+    // err_PG(C, 2, δ) ≤ 3 · n² / |F|  (BCIKS20, degree 2 for quadratic R1CS, eprint §6.2).
+    let err_pg = 3.0 * (params.n as f64).powi(2) * field_inv;
     let ell = (1usize << params.log_l) as f64;
 
     // Twin sumcheck degree = 1 + max(log_n + 1, log_m + 2).
