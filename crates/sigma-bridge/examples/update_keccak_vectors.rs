@@ -5,11 +5,13 @@
 use std::fs;
 
 use bls12_381::G1Projective as Bls12381G1;
-use group::{ff::PrimeField, prime::PrimeGroup, Group};
+use group::{Group, ff::PrimeField, prime::PrimeGroup};
 use serde::{Deserialize, Serialize};
 use serde_with::{hex, serde_as};
-use spongefish::{protocol_id as spongefish_protocol_id, Decoding, Encoding, NargDeserialize, NargSerialize};
-use sigma_proofs::{linear_relation::CanonicalLinearRelation, traits::ScalarRng, MultiScalarMul};
+use sigma_proofs::{MultiScalarMul, linear_relation::CanonicalLinearRelation, traits::ScalarRng};
+use spongefish::{
+    Decoding, Encoding, NargDeserialize, NargSerialize, dsfs, protocol_id as spongefish_protocol_id,
+};
 
 #[serde_as]
 #[derive(Debug, Deserialize, Serialize)]
@@ -89,8 +91,7 @@ where
         let instance = CanonicalLinearRelation::<G>::from_label(&v.statement)
             .unwrap_or_else(|_| panic!("from_label failed for {}", v.protocol));
         let witness = decode_scalars::<G>(&v.witness);
-        let protocol_domain =
-            spongefish_protocol_id(core::format_args!("{}", v.ciphersuite));
+        let protocol_domain = spongefish_protocol_id(core::format_args!("{}", v.ciphersuite));
         let mut rng = FixedScalarRng(v.randomness.clone().into_iter());
 
         let proof = sigma_bridge::prove_with_protocol_domain(
@@ -114,7 +115,5 @@ where
 
 fn main() {
     println!("Updating sigma_Keccak1600_BLS12381 vectors...");
-    update_file::<Bls12381G1>(
-        "crates/sigma-bridge/tests/testdata/sigma_Keccak1600_BLS12381.json",
-    );
+    update_file::<Bls12381G1>("crates/sigma-bridge/tests/testdata/sigma_Keccak1600_BLS12381.json");
 }

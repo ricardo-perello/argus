@@ -4,7 +4,7 @@
 
 The `live-channel` crate provides `ProverChannel` and `VerifierChannel` implementations that enable truly interactive protocol execution. Prover and verifier run concurrently (e.g., in separate threads) and exchange messages through `std::sync::mpsc` channels.
 
-This complements the `dsfs` crate, which compiles interactive arguments into non-interactive proofs via Fiat-Shamir. Both crates implement the same ia-core channel traits, so **identical protocol code** runs against either backend.
+This complements `spongefish::dsfs`, which compiles interactive arguments into non-interactive proofs via Fiat-Shamir. Both backends implement the same ia-core channel traits, so **identical protocol code** runs against either backend.
 
 ```
                     ia-core
@@ -12,7 +12,7 @@ This complements the `dsfs` crate, which compiles interactive arguments into non
                   VerifierChannel
                    /          \
                   /            \
-            dsfs                live-channel
+      spongefish::dsfs          live-channel
      (non-interactive)         (interactive)
     sponge-backed F-S       mpsc-backed threads
     outputs proof bytes     real-time exchange

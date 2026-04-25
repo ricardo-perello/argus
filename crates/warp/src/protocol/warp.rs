@@ -200,10 +200,7 @@ where
             WARPProofData<F, MT>,
         ),
         crate::errors::WARPProverError,
-    >
-    where
-        Ch: ProverChannel,
-    {
+    > {
         debug_assert!(instances.len() > 1);
         debug_assert_eq!(witnesses.len(), instances.len());
 
@@ -274,13 +271,7 @@ where
             .map(|(x, w)| concat_slices(x, w))
             .collect();
 
-        let beta_vecs: Vec<Vec<F>> = acc_instances
-            .3
-             .0
-            .iter()
-            .cloned()
-            .chain(taus.into_iter())
-            .collect();
+        let beta_vecs: Vec<Vec<F>> = acc_instances.3 .0.iter().cloned().chain(taus).collect();
 
         let mut evals = twin_sumcheck::Evals::new(
             concat_slices(&acc_witnesses.1, &codewords),
@@ -291,14 +282,8 @@ where
         );
 
         let n_coeffs = 2 + (log_n + 1).max(log_M + 2);
-        let gamma = twin_sumcheck::prove(
-            ch,
-            &mut evals,
-            self.p.constraints(),
-            omega,
-            log_l,
-            n_coeffs,
-        );
+        let gamma =
+            twin_sumcheck::prove(ch, &mut evals, self.p.constraints(), omega, log_l, n_coeffs);
 
         debug_assert_eq!(gamma.len(), log_l);
 
@@ -374,8 +359,7 @@ where
             .flat_map(byte_to_binary_field_array)
             .take(self.config.t * log_n)
             .collect();
-        let binary_shift_query_chunks: Vec<&[F]> =
-            binary_shift_queries.chunks(log_n).collect();
+        let binary_shift_query_chunks: Vec<&[F]> = binary_shift_queries.chunks(log_n).collect();
 
         let shift_queries_indexes: Vec<usize> = binary_shift_query_chunks
             .iter()
@@ -400,13 +384,7 @@ where
 
         let id_non_0 = cbbz23(&all_zetas, &xi_eq_evals, self.config.s, r);
 
-        let alpha = batching_sumcheck::prove(
-            ch,
-            &mut f.clone(),
-            &ood_evals_vec,
-            &id_non_0,
-            log_n,
-        );
+        let alpha = batching_sumcheck::prove(ch, &mut f.clone(), &ood_evals_vec, &id_non_0, log_n);
 
         // m. new target
         let mu_final = f_hat.fix_variables(&alpha)[0];
@@ -420,11 +398,7 @@ where
             .map(|td_acc| compute_auth_paths(td_acc, &shift_queries_indexes))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let all_codewords: Vec<&Vec<F>> = acc_witnesses
-            .1
-            .iter()
-            .chain(codewords.iter())
-            .collect();
+        let all_codewords: Vec<&Vec<F>> = acc_witnesses.1.iter().chain(codewords.iter()).collect();
 
         let mut shift_queries_answers =
             vec![vec![F::default(); all_codewords.len()]; shift_queries_indexes.len()];
@@ -495,7 +469,9 @@ where
         let mut l1_xs = vec![vec![F::default(); N - k]; l1];
         for inst in l1_xs.iter_mut() {
             for x in inst.iter_mut() {
-                *x = ch.read_prover_message().map_err(|_| WARPVerifierError::SumcheckRound)?;
+                *x = ch
+                    .read_prover_message()
+                    .map_err(|_| WARPVerifierError::SumcheckRound)?;
             }
         }
 
@@ -506,7 +482,9 @@ where
         let rt_0: MT::InnerDigest = self.read_digest(ch)?;
         let mut l1_mus = vec![F::default(); l1];
         for mu in l1_mus.iter_mut() {
-            *mu = ch.read_prover_message().map_err(|_| WARPVerifierError::SumcheckRound)?;
+            *mu = ch
+                .read_prover_message()
+                .map_err(|_| WARPVerifierError::SumcheckRound)?;
         }
 
         let mut l1_taus = vec![vec![F::default(); log_M]; l1];
@@ -524,14 +502,17 @@ where
 
         // twin constraint sumcheck
         let n_coeffs = 2 + (log_n + 1).max(log_M + 2);
-        let (gamma_sumcheck, coeffs_twinc_sumcheck) =
-            twin_sumcheck::verify(ch, n_coeffs, log_l)
-                .map_err(|_| WARPVerifierError::SumcheckRound)?;
+        let (gamma_sumcheck, coeffs_twinc_sumcheck) = twin_sumcheck::verify(ch, n_coeffs, log_l)
+            .map_err(|_| WARPVerifierError::SumcheckRound)?;
 
         // read new commitment and target
         let td_root: MT::InnerDigest = self.read_digest(ch)?;
-        let eta: F = ch.read_prover_message().map_err(|_| WARPVerifierError::SumcheckRound)?;
-        let nu_0: F = ch.read_prover_message().map_err(|_| WARPVerifierError::SumcheckRound)?;
+        let eta: F = ch
+            .read_prover_message()
+            .map_err(|_| WARPVerifierError::SumcheckRound)?;
+        let nu_0: F = ch
+            .read_prover_message()
+            .map_err(|_| WARPVerifierError::SumcheckRound)?;
         let mut nus = vec![nu_0];
 
         // OOD samples
@@ -543,7 +524,9 @@ where
 
         let mut ood_answers = vec![F::default(); self.config.s];
         for ans in ood_answers.iter_mut() {
-            *ans = ch.read_prover_message().map_err(|_| WARPVerifierError::SumcheckRound)?;
+            *ans = ch
+                .read_prover_message()
+                .map_err(|_| WARPVerifierError::SumcheckRound)?;
         }
         nus.extend(&ood_answers);
 
@@ -572,7 +555,9 @@ where
         let mut shift_queries_answers = vec![vec![F::default(); l]; self.config.t];
         for answers in shift_queries_answers.iter_mut() {
             for a in answers.iter_mut() {
-                *a = ch.read_prover_message().map_err(|_| WARPVerifierError::SumcheckRound)?;
+                *a = ch
+                    .read_prover_message()
+                    .map_err(|_| WARPVerifierError::SumcheckRound)?;
             }
         }
 
@@ -586,8 +571,7 @@ where
             .flat_map(byte_to_binary_field_array)
             .take(self.config.t * log_n)
             .collect();
-        let binary_shift_query_chunks: Vec<&[F]> =
-            binary_shift_queries.chunks(log_n).collect();
+        let binary_shift_query_chunks: Vec<&[F]> = binary_shift_queries.chunks(log_n).collect();
 
         let shift_queries_indexes: Vec<usize> = binary_shift_query_chunks
             .iter()
@@ -621,8 +605,7 @@ where
             .fold(F::zero(), |acc, (xi_eq, nu)| acc + *xi_eq * nu);
 
         // ---- Sumcheck round verification ----
-        (coeffs_twinc_sumcheck.len() == log_l)
-            .ok_or_err(WARPVerifierError::NumSumcheckRounds)?;
+        (coeffs_twinc_sumcheck.len() == log_l).ok_or_err(WARPVerifierError::NumSumcheckRounds)?;
 
         let mut target_1 = sigma_1;
         for (coeffs, gamma) in coeffs_twinc_sumcheck.into_iter().zip(&gamma_sumcheck) {
@@ -632,8 +615,7 @@ where
             target_1 = h.evaluate(gamma);
         }
 
-        (sums_batching_sumcheck.len() == log_n)
-            .ok_or_err(WARPVerifierError::NumSumcheckRounds)?;
+        (sums_batching_sumcheck.len() == log_n).ok_or_err(WARPVerifierError::NumSumcheckRounds)?;
         let mut target_2 = sigma_2;
         for ([sum_00, sum_11, sum_0110], alpha) in
             sums_batching_sumcheck.into_iter().zip(&alpha_sumcheck)
@@ -668,10 +650,7 @@ where
             .into_iter()
             .zip(xi_eq_evals)
             .fold(F::zero(), |acc, (a, b)| acc + a * b);
-        let mu_target = target_2
-            * k_sum
-                .inverse()
-                .ok_or(WARPVerifierError::SumcheckTarget)?;
+        let mu_target = target_2 * k_sum.inverse().ok_or(WARPVerifierError::SumcheckTarget)?;
 
         let betas: Vec<Vec<F>> = l2_taus
             .into_iter()
@@ -716,8 +695,7 @@ where
             .ok_or_err(WARPVerifierError::CodeEvaluationPoint)?;
         let expected_beta = concat_slices(&acc_instance.3 .0[0], &acc_instance.3 .1[0]);
         let computed_beta = concat_slices(&result.target.3 .0[0], &result.target.3 .1[0]);
-        (expected_beta == computed_beta)
-            .ok_or_err(WARPVerifierError::CircuitEvaluationPoint)?;
+        (expected_beta == computed_beta).ok_or_err(WARPVerifierError::CircuitEvaluationPoint)?;
 
         self.verify_merkle_paths(proof, &result)?;
         Ok(())
@@ -753,8 +731,7 @@ where
 
         (proof.auth.len() == l2).ok_or_err(WARPVerifierError::NumL2Instances)?;
         for (i, paths) in proof.auth.iter().enumerate() {
-            (paths.len() == self.config.t)
-                .ok_or_err(WARPVerifierError::NumShiftQueries)?;
+            (paths.len() == self.config.t).ok_or_err(WARPVerifierError::NumShiftQueries)?;
             let root = &transcript_result.l2_roots[i];
             for (j, path) in paths.iter().enumerate() {
                 (path.leaf_index == transcript_result.shift_queries_indexes[j])
@@ -799,8 +776,7 @@ where
             log2(self.code.code_len()) as usize,
             &f[0],
         );
-        (f_hat.evaluate(&alpha[0]) == mu[0])
-            .ok_or_err(WARPDeciderError::MLExtensionEvaluation)?;
+        (f_hat.evaluate(&alpha[0]) == mu[0]).ok_or_err(WARPDeciderError::MLExtensionEvaluation)?;
 
         let tau_val = &beta.0[0];
         let tau_zero_evader: Vec<F> = Hypercube::new(tau_val.len())
@@ -953,12 +929,7 @@ where
 
 /// CBBZ23 optimization from hyperplonk: compute non-zero identity evaluations
 /// for shift query zetas.
-fn cbbz23<F: Field>(
-    zetas: &[&[F]],
-    xi_eq_evals: &[F],
-    s: usize,
-    r: usize,
-) -> FastMap<F> {
+fn cbbz23<F: Field>(zetas: &[&[F]], xi_eq_evals: &[F], s: usize, r: usize) -> FastMap<F> {
     let mut id_non_0_eval_sums = FastMap::default();
     for i in 1 + s..r {
         let a = zetas[i]

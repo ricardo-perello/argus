@@ -11,9 +11,10 @@ The protocol is an Interactive Oracle Reduction (IOR): the verifier does not out
 ```
 crates/warp/
   src/
-    lib.rs              -- module declarations, re-exports (FullWARP, WARPReduction, WARPDeciderIA)
+    lib.rs              -- module declarations, re-exports (FullWARP, WARPReduction, WARPDeciderIA, ReedSolomonParams)
     config.rs           -- WARPConfig (l, l1, s, t, etc.)
     errors.rs           -- WARPError, WARPProverError, WARPVerifierError, WARPDeciderError
+    rs_params.rs        -- ReedSolomonParams, CodeSecurityParams impl (orphan-rule-safe newtype)
     types.rs            -- all intermediate instance/witness types
     protocol/
       mod.rs            -- sub-module declarations
@@ -105,15 +106,15 @@ type FullWARP<F, P, C, MT> = ReducedArgument<WARPReduction<F, P, C, MT>, WARPDec
 This gives a single `InteractiveArgument` that can be compiled through DSFS in one call:
 
 ```rust
-let proof = dsfs::prove::<FullWARP<Fp, R1CS<Fp>, RS, MT>>(session, &instance, &witness);
-dsfs::verify::<FullWARP<Fp, R1CS<Fp>, RS, MT>>(session, &instance, &proof)?;
+let proof = spongefish::dsfs::prove::<FullWARP<Fp, R1CS<Fp>, RS, MT>>(session, &instance, &witness);
+spongefish::dsfs::verify::<FullWARP<Fp, R1CS<Fp>, RS, MT>>(session, &instance, proof.as_bytes())?;
 ```
 
 The reduction can also be used standalone for IOR-level verification:
 
 ```rust
-let proof = dsfs::prove_reduction::<WARPReduction<...>>(session, &instance, &witness);
-let target = dsfs::verify_reduction::<WARPReduction<...>>(session, &instance, &proof)?;
+let proof = spongefish::dsfs::prove_reduction::<WARPReduction<...>>(session, &instance, &witness);
+let target = spongefish::dsfs::verify_reduction::<WARPReduction<...>>(session, &instance, proof.as_bytes())?;
 // target.acc_instance is the new AccumulatorInstances
 ```
 
@@ -140,7 +141,7 @@ impl WARP<F, P, C, MT> {
 | Dependency | Purpose |
 |---|---|
 | `ia-core` | `ProverChannel`, `VerifierChannel` traits |
-| `dsfs` | `SpongeProver`, `SpongeVerifier` (test only) |
+| `spongefish::dsfs` | `SpongeProver`, `SpongeVerifier` (test only) |
 | `spongefish` | `Encoding`, `Decoding` for field elements |
 | `ark-ff`, `ark-poly`, `ark-serialize` | Field arithmetic, polynomials |
 | `ark-relations`, `ark-r1cs-std` | R1CS constraint system |
@@ -154,56 +155,76 @@ The `ark-crypto-primitives` dependency uses a [patched fork](https://github.com/
 
 ## Security profile (ProtocolSecurity)
 
-`WARPReduction` implements `ProtocolSecurity` with Schwartz–Zippel per-round error
-bounds derived from the polynomial degrees in each sumcheck phase. **The per-round
-degrees are read directly from the code; the formal soundness theorem from
-eprint 2025/753 should be checked to confirm these match the paper's analysis.**
+`WARPReduction` implements `ProtocolSecurity` with bounds from eprint 2025/753.
+Both the Schwartz–Zippel per-round errors and the code-specific one-time terms
+(errPG, OOD sampling, shift sampling, PESAT→code) are included.
+
+### Construction
+
+`WARPReduction::new(log_l, log_n, log_m, code_params, ood_samples, shift_queries)`
+where `code_params` is a `ReedSolomonParams` holding `(n, k, field_size_bits)`:
+
+```rust
+let code_params = ReedSolomonParams::new(
+    code.code_len(),    // n
+    code.message_len(), // k
+    F::MODULUS_BIT_SIZE,
+);
+let ir = WARPReduction::new(log_l, log_n, log_m, code_params, s, t);
+// s = WARPConfig.s (OOD samples), t = WARPConfig.t (shift queries)
+```
+
+`Default` is not implemented — callers must supply explicit code parameters.
 
 ### Round structure
 
-`WARPReduction::new(log_l, log_n, log_m)` produces a profile with `log_l + log_n`
-rounds, where `log_m` is log₂ of the R1CS constraint count:
+`log_l + log_n` interactive rounds:
 
 | Rounds | Phase | Protocol |
 |---|---|---|
 | `log_l` | Twin sumcheck | ProtoGalaxy-style folding |
 | `log_n` | Batching sumcheck | CBBZ23 inner product |
 
-### Per-round polynomial degrees (from code)
+### Per-round RBR bounds (rbr_soundness_errors)
 
-**Batching sumcheck** (`batching_sumcheck.rs`): sends 3 values per round
-(`sum_00`, `sum_11`, `sum_0110`), so the polynomial is degree 2.
-Schwartz–Zippel per-round error: **2/|F|**.
+**Twin sumcheck** (§6.1–6.2): round j (0-indexed), degree `twin_deg = 1 + max(log_n+1, log_m+2)`:
+```
+ε_j^rbr = twin_deg / |F|  +  (ℓ / 2^j) · err_PG(C, 2, δ)
+```
+The errPG term shrinks geometrically across rounds: the first round folds all ℓ
+instances, so the contribution is largest there.
 
-**Twin sumcheck** (`twin_sumcheck.rs`): sends `n_coeffs` values per round where
-
-```rust
-n_coeffs = 2 + (log_n + 1).max(log_m + 2)
+**Batching sumcheck** (§8): degree 2, all rounds identical:
+```
+ε_i^rbr = 2 / |F|
 ```
 
-The polynomial degree is `n_coeffs - 1 = 1 + max(log_n, log_m + 1)`.
-Schwartz–Zippel per-round error: **(n_coeffs - 1) / |F|**, which is
-instance-dependent (typically ~10–20× larger than `1/|F|` in practice).
+### One-time commitment-phase terms (plain_soundness_error)
 
-### Implemented bounds
+These terms arise from the commitment and OOD/shift-sampling phases (§5.2, §7).
+They do not correspond to interactive sumcheck rounds and do not participate in
+the SR adversary budget; they are placed in `plain_soundness_error`:
 
-`WARPReduction::security()` computes correct per-round degrees using `log_l`,
-`log_n`, and `log_m`:
+```
+|Λ(C,δ)|² · log_n / |F|   (OOD commitment, §7)
+(1 − δ)^shift_queries      (shift-sampling proximity check, §7)
+|Λ(C,δ)| · log_m / |F|    (PESAT→code reduction, §5.2)
+```
 
-| Phase | Per-round error | Notes |
-|---|---|---|
-| Twin sumcheck (`log_l` rounds) | `(1 + max(log_n, log_m+1)) / \|F\|` | requires `log_m` to be set |
-| Batching sumcheck (`log_n` rounds) | `2 / \|F\|` | fixed degree |
+`ReedSolomonParams` provides these via `CodeSecurityParams` (trait from `ia-core`):
+- `distance()` = 1 − k/n
+- `list_size_bound()` = n (conservative; TODO: tighten via Johnson bound)
+- `proximity_generator_error(d)` = (d+1) · n² / |F|  (BCIKS20 bound)
 
-`SecurityErrorBound` stores bare `fn(u64) -> f64` pointers (no closures). A
-degree-`d` bound is represented as `d` copies of the `1/|F|` function composed
-additively, which evaluates correctly to `d/|F|`.
+### Placement of commitment terms (open Q for Chiesa)
 
-`Default` uses `log_l = log_n = log_m = 0` and is only for tests that do not
-exercise the security profile.
+Whether the OOD/shift/PESAT terms should be in `plain_soundness_error` or
+`rbr_soundness_errors` depends on whether the SR adversary can rewind through
+the commitment phase. The current placement (non-SR) matches the intuition that
+these are binding-style terms, not per-round protocol moves. Pending Chiesa Q2.
 
-`WARPDeciderIA` has no public-coin rounds (deterministic local check), so all
-its error bounds are zero.
+`WARPDeciderIA` has no public-coin rounds (deterministic local check) — all its
+error bounds are zero.
 
 ---
 
@@ -219,12 +240,12 @@ Four integration tests in `tests/warp_test.rs`:
 
 - `warp_bootstrap_prove_verify_decide` -- single proof with empty accumulator (l1=4 fresh instances, l2=0 accumulated). Proves, verifies via NARG string replay, runs decider.
 - `warp_full_accumulation_cycle` -- runs 4 bootstrap proofs to build up accumulated state, then a full proof with l1=4 fresh + l2=4 accumulated instances (l=8). Proves, verifies, decides.
-- `warp_ir_dsfs_prove_verify` -- uses `dsfs::prove_reduction` / `dsfs::verify_reduction` with `WARPReduction`. Validates that the IR interface works end-to-end through DSFS.
-- `warp_full_ia_dsfs_prove_verify` -- uses `dsfs::prove` / `dsfs::verify` with `FullWARP` (= `ReducedArgument<WARPReduction, WARPDeciderIA>`). Validates the full composed IA through DSFS.
+- `warp_ir_dsfs_prove_verify` -- uses `spongefish::dsfs::prove_reduction` / `spongefish::dsfs::verify_reduction` with `WARPReduction`. Validates that the IR interface works end-to-end through DSFS.
+- `warp_full_ia_dsfs_prove_verify` -- uses `spongefish::dsfs::prove` / `spongefish::dsfs::verify` with `FullWARP` (= `ReducedArgument<WARPReduction, WARPDeciderIA>`). Validates the full composed IA through DSFS.
 
 All tests use the BLS12-381 scalar field with a Poseidon hash-chain R1CS relation, Reed-Solomon encoding, and Blake3 Merkle trees.
 
 ## Files changed outside `crates/warp/`
 
 - [Cargo.toml](../Cargo.toml) -- added `crates/warp` to workspace members, added `ark-relations`, `ark-r1cs-std`, `ark-crypto-primitives`, `ark-codes`, `thiserror`, `rayon`, `blake3` to workspace deps, added `[patch.crates-io]` for Blake3-enabled `ark-crypto-primitives`
-- [dsfs/src/lib.rs](../crates/dsfs/src/lib.rs) -- added `SpongeProver::new()`, `SpongeProver::narg_string()`, `SpongeVerifier::new()` constructors so test code can create sponge channels directly
+- `spongefish::dsfs` -- provides `SpongeProver::new()`, `SpongeProver::narg_string()`, `SpongeVerifier::new()` constructors so test code can create sponge channels directly

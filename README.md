@@ -8,7 +8,7 @@ Argus’s main contribution is a **clean interface for public-coin interactive p
 Protocols are written **once**, against a **generic channel** interface. Then, in a modular way,
 you choose a backend:
 
-- **`dsfs`**: compile the IA/IR into a **non-interactive proof (NARG)** via the
+- **`spongefish::dsfs`**: compile the IA/IR into a **non-interactive proof (NARG)** via the
   **Duplex-Sponge Fiat–Shamir (DSFS)** transformation (Construction 4.3 of
   _“A Fiat–Shamir Transformation from Duplex Sponges”_ (Chiesa & Orrù, 2025)).
 - **`live-channel`**: run the *same* protocol **interactively** between two parties (threads via `mpsc`).
@@ -44,6 +44,7 @@ the protocol.
 
 - **`crates/ia-core`**: the **IA/IR interface layer**.
   - Channel traits: `ProverChannel`, `VerifierChannel`
+  - NARG traits and proof artifact: `NonInteractiveArgument`, `NonInteractiveReduction`, `NargProof`
   - Protocol traits:
     - IA: `InteractiveArgument` (with generic `prove` / `verify` methods)
     - IOR/IR: `InteractiveReduction` (with generic `prove` / `verify` methods)
@@ -51,9 +52,9 @@ the protocol.
   - Composition:
     - `ChainedReduction` (IR ∘ IR → IR)
     - `ReducedArgument` (IR ∘ IA → IA)
-- **`crates/dsfs`**: a **backend** that compiles IA/IR into NARGs using DSFS.
-  - `prove` / `verify` for IAs
-  - `prove_reduction` / `verify_reduction` for IORs
+- **`spongefish::dsfs`**: a **backend** that compiles IA/IR into NARGs using DSFS.
+  - `prove` / `verify` for IAs (`prove` returns `ia_core::NargProof`)
+  - `prove_reduction` / `verify_reduction` for IORs (`prove_reduction` returns `ia_core::NargProof`)
   - DSFS security bound evaluation (Theorems 1 & 2 style bounds)
 - **`crates/live-channel`**: a **backend** that runs IA/IR interactively (prover/verifier in threads via `mpsc`).
 - **`crates/warp`**: a WARP (ePrint 2025/753) implementation expressed as:
@@ -122,7 +123,7 @@ At a high level:
 
 1. Define your statement/witness types in some crate.
 2. Implement `InteractiveArgument` (or `InteractiveReduction`) **against the channel traits** from `ia-core`.
-3. Compile it non-interactively with `dsfs::prove` / `dsfs::verify` (or the reduction variants).
+3. Compile it non-interactively with `spongefish::dsfs::prove` / `spongefish::dsfs::verify` (or the reduction variants).
 
 Protocol code should only ever call:
 

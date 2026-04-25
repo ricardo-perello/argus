@@ -1,9 +1,0 @@
-[package]
-name = "dsfs"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-ia-core = { path = "../ia-core" }
-spongefish.workspace = true
-rand_core = "0.6"

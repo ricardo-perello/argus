@@ -25,7 +25,7 @@ use ia_core::{
     VerificationError, VerificationResult, VerifierChannel,
 };
 
-use spongefish::Encoding;
+use spongefish::{Encoding, dsfs};
 
 use ark_crypto_primitives::crh::sha256::Sha256;
 use ark_crypto_primitives::merkle_tree::{
@@ -181,7 +181,11 @@ impl InteractiveArgument for CommittedSumcheck {
         });
     }
 
-    fn verify<V: VerifierChannel>(&self, ch: &mut V, instance: &Instance) -> VerificationResult<()> {
+    fn verify<V: VerifierChannel>(
+        &self,
+        ch: &mut V,
+        instance: &Instance,
+    ) -> VerificationResult<()> {
         let n = instance.n as usize;
 
         let root: Bytes = ch.read_prover_message()?;
@@ -260,7 +264,10 @@ impl CommittedSumcheck {
         canonical_to_bytes(x)
     }
 
-    fn merkle_params() -> (LeafParam<Sha256MerkleConfig>, TwoToOneParam<Sha256MerkleConfig>) {
+    fn merkle_params() -> (
+        LeafParam<Sha256MerkleConfig>,
+        TwoToOneParam<Sha256MerkleConfig>,
+    ) {
         ((), ())
     }
 
@@ -268,8 +275,8 @@ impl CommittedSumcheck {
         let leaves: Vec<Vec<u8>> = evals.iter().map(Self::fr_to_leaf_bytes).collect();
         let (leaf_params, two_to_one_params) = Self::merkle_params();
 
-        let tree =
-            MerkleTree::<Sha256MerkleConfig>::new(&leaf_params, &two_to_one_params, leaves).unwrap();
+        let tree = MerkleTree::<Sha256MerkleConfig>::new(&leaf_params, &two_to_one_params, leaves)
+            .unwrap();
 
         let root = tree.root().to_vec();
         (tree, root)
@@ -289,10 +296,16 @@ fn run_dsfs(instance: &Instance, evals: &Vec<Fr>) {
     println!(
         "Proof ({} bytes):\n{}",
         narg_string.len(),
-        hex::encode(&narg_string)
+        hex::encode(narg_string.as_bytes())
     );
 
-    dsfs::verify(&CommittedSumcheck, &session, instance, &narg_string).expect("Invalid proof");
+    dsfs::verify(
+        &CommittedSumcheck,
+        &session,
+        instance,
+        narg_string.as_bytes(),
+    )
+    .expect("Invalid proof");
     println!("Verification succeeded");
 }
 
@@ -323,37 +336,10 @@ fn run_live(instance: Instance, evals: Vec<Fr>) {
     });
 
     prover_handle.join().unwrap();
-    verifier_handle.join().unwrap().expect("live verification failed");
-}
-
-// ---------------------------------------------------------------------------
-// Main
-// ---------------------------------------------------------------------------
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn make_instance(n: u32) -> (Instance, Vec<Fr>) {
-        let size = 1usize << n as usize;
-        let evals: Vec<Fr> = (0..size as u64).map(Fr::from).collect();
-        let claimed_sum = evals.iter().copied().sum::<Fr>();
-        let (_tree, root) = CommittedSumcheck::build_merkle_tree(&evals);
-        let instance = Instance { n, root: Bytes(root), claimed_sum };
-        (instance, evals)
-    }
-
-    #[test]
-    fn committed_sumcheck_dsfs_roundtrip() {
-        let (instance, evals) = make_instance(4);
-        run_dsfs(&instance, &evals);
-    }
-
-    #[test]
-    fn committed_sumcheck_live_roundtrip() {
-        let (instance, evals) = make_instance(4);
-        run_live(instance, evals);
-    }
+    verifier_handle
+        .join()
+        .unwrap()
+        .expect("live verification failed");
 }
 
 fn main() {
@@ -377,5 +363,39 @@ fn main() {
         run_live(instance, evals);
     } else {
         run_dsfs(&instance, &evals);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_instance(n: u32) -> (Instance, Vec<Fr>) {
+        let size = 1usize << n as usize;
+        let evals: Vec<Fr> = (0..size as u64).map(Fr::from).collect();
+        let claimed_sum = evals.iter().copied().sum::<Fr>();
+        let (_tree, root) = CommittedSumcheck::build_merkle_tree(&evals);
+        let instance = Instance {
+            n,
+            root: Bytes(root),
+            claimed_sum,
+        };
+        (instance, evals)
+    }
+
+    #[test]
+    fn committed_sumcheck_dsfs_roundtrip() {
+        let (instance, evals) = make_instance(4);
+        run_dsfs(&instance, &evals);
+    }
+
+    #[test]
+    fn committed_sumcheck_live_roundtrip() {
+        let (instance, evals) = make_instance(4);
+        run_live(instance, evals);
     }
 }

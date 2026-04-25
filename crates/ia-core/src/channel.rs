@@ -1,9 +1,8 @@
 //! Abstract prover/verifier channels (generic over sponge alphabet unit `U`).
 
-use spongefish::{Decoding, Encoding, NargSerialize};
-
 use crate::deserialize::Deserialize;
 use crate::error::VerificationResult;
+use crate::{Decoding, Encoding, NargSerialize};
 
 /// Prover-side channel: send prover messages and read verifier challenges.
 ///

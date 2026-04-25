@@ -5,14 +5,13 @@ use ark_ff::Field;
 ///
 /// eq(tau, x) = prod_i (tau_i * x_i + (1 - tau_i)(1 - x_i))
 pub fn eq_poly<F: Field>(tau: &[F], point: usize) -> F {
-    let n = tau.len();
     let mut result = F::one();
-    for i in 0..n {
+    for (i, tau_i) in tau.iter().enumerate() {
         let bit = (point >> i) & 1;
         if bit == 1 {
-            result *= tau[i];
+            result *= tau_i;
         } else {
-            result *= F::one() - tau[i];
+            result *= F::one() - tau_i;
         }
     }
     result

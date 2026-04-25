@@ -152,7 +152,7 @@ New constant added:
 
 ```rust
 const DSFS_STDHASH_SPONGE_INFO: &[u8] = b"dsfs/v2/shake128-r168c32";
-// must stay byte-identical to dsfs::params::StdHash::SPONGE_INFO
+// must stay byte-identical to spongefish::dsfs::StdHash::SPONGE_INFO
 ```
 
 This makes `Nizk::prove_batchable` and `sigma_bridge::prove` produce identical bytes for the same inputs.
@@ -184,5 +184,4 @@ Also added: `StaticSigmaProtocol` trait for type-level (no-instance) protocol ID
 | Why is `domsep` a public field?                              | Allows test assertions (`a.domsep == b.domsep`) and external inspection. Construction is still controlled (other fields private). Can be made private with an accessor.                                      |
 | `domain_separator!("proto")` with no session — is that safe? | DSFS enforces mandatory session at `prove`/`verify`. Spongefish macro is permissive for simple/test usage; empty session is cryptographically distinct from any real session.                                |
 | CO25 §8.2 — instance placement                               | Construction 4.3 hashes session + instance together into the sponge init. Here session is folded into `domsep`, instance is absorbed separately but still before any proof message. Security argument holds. |
-
 

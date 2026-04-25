@@ -49,13 +49,27 @@ impl<F, P, C, MT> WARPReduction<F, P, C, MT> {
         ood_samples: usize,
         shift_queries: usize,
     ) -> Self {
-        Self { log_l, log_n, log_m, code_params, ood_samples, shift_queries, _phantom: PhantomData }
+        Self {
+            log_l,
+            log_n,
+            log_m,
+            code_params,
+            ood_samples,
+            shift_queries,
+            _phantom: PhantomData,
+        }
     }
 }
 
 impl<F, P, C, MT> InteractiveReduction for WARPReduction<F, P, C, MT>
 where
-    F: Field + PrimeField + Send + Sync + spongefish::Encoding + spongefish::Decoding + ia_core::Deserialize,
+    F: Field
+        + PrimeField
+        + Send
+        + Sync
+        + spongefish::Encoding
+        + spongefish::Decoding
+        + ia_core::Deserialize,
     P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
     C: LinearCode<F> + Clone,
     MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
@@ -183,8 +197,7 @@ where
         let log_m_f = self.log_m as f64;
         let pesat_term = list_size * log_m_f * field_inv;
 
-        let plain_error =
-            SecurityErrorBound::new(move |_t| ood_term + shift_term + pesat_term);
+        let plain_error = SecurityErrorBound::new(move |_t| ood_term + shift_term + pesat_term);
 
         SecurityProfile {
             plain_soundness_error: plain_error,
@@ -211,7 +224,13 @@ impl<F, P, C, MT> Default for WARPDeciderIA<F, P, C, MT> {
 
 impl<F, P, C, MT> InteractiveArgument for WARPDeciderIA<F, P, C, MT>
 where
-    F: Field + PrimeField + Send + Sync + spongefish::Encoding + spongefish::Decoding + ia_core::Deserialize,
+    F: Field
+        + PrimeField
+        + Send
+        + Sync
+        + spongefish::Encoding
+        + spongefish::Decoding
+        + ia_core::Deserialize,
     P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
     C: LinearCode<F> + Clone,
     MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
@@ -223,7 +242,12 @@ where
         ia_core::pad_protocol_id(b"argus::warp::decider")
     }
 
-    fn prove<Ch: ProverChannel>(&self, ch: &mut Ch, _instance: &DeciderInstance<F, P, C, MT>, witness: &DeciderWitness<F, MT>) {
+    fn prove<Ch: ProverChannel>(
+        &self,
+        ch: &mut Ch,
+        _instance: &DeciderInstance<F, P, C, MT>,
+        witness: &DeciderWitness<F, MT>,
+    ) {
         let (_trees, codewords, w_parts) = witness;
         for val in &codewords[0] {
             ch.send_prover_message(val);

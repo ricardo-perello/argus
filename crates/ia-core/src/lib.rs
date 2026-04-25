@@ -3,24 +3,39 @@
 //! Defines channel traits, the `InteractiveArgument` interface, and the
 //! `InteractiveReduction` interface.
 //!
-//! Codec traits (`Encoding`, `Decoding`) are re-exported from spongefish.
-//! `Deserialize` is defined in [`deserialize`] with a blanket impl from
-//! `spongefish::NargDeserialize`.
+//! Codec traits (`Encoding`, `Decoding`, `NargSerialize`, `NargDeserialize`)
+//! live here so the IA/NARG abstraction is independent of any sponge backend.
 //!
-//! Submodules: [`error`], [`security`], [`deserialize`], [`channel`],
-//! [`argument`], [`reduction`], [`compose`].
+//! Submodules: [`error`], [`security`], [`io`], [`codecs`], [`deserialize`],
+//! [`channel`], [`argument`], [`reduction`], [`narg`], [`compose`].
 #![no_std]
 extern crate alloc;
 
 mod argument;
 mod channel;
+mod codecs;
 mod compose;
 mod deserialize;
+#[cfg(any(
+    feature = "ark-ec",
+    feature = "ark-ff",
+    feature = "bls12_381",
+    feature = "curve25519-dalek",
+    feature = "k256",
+    feature = "p256",
+    feature = "p3-baby-bear",
+    feature = "p3-koala-bear",
+    feature = "p3-mersenne-31"
+))]
+mod drivers;
 mod error;
+mod io;
+mod narg;
 mod reduction;
 mod security;
 
-pub use spongefish::{Decoding, Encoding, NargSerialize};
+pub use codecs::{ByteArray, Codec, Decoding, Encoding};
+pub use io::{NargDeserialize, NargSerialize};
 
 /// Zero-pad a byte slice into a 32-byte protocol identifier.
 ///
@@ -43,5 +58,8 @@ pub use channel::{ProverChannel, VerifierChannel};
 pub use compose::{ChainedReduction, ReducedArgument};
 pub use deserialize::Deserialize;
 pub use error::{VerificationError, VerificationResult};
+pub use narg::{
+    NargAsInteractiveArgument, NargProof, NonInteractiveArgument, NonInteractiveReduction,
+};
 pub use reduction::InteractiveReduction;
 pub use security::{CodeSecurityParams, ProtocolSecurity, SecurityErrorBound, SecurityProfile};

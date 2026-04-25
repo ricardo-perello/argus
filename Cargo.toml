@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "crates/ia-core",
-    "crates/dsfs",
     "crates/live-channel",
     "crates/ibcs",
     "crates/argus-examples",

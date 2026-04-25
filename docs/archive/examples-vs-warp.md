@@ -27,7 +27,7 @@ The public API is defined by `crates/warp/src/lib.rs`, which **re-exports** the 
 So users basically choose between:
 
 - **Direct protocol API**: call methods on `WARP` (`prove_with_channel`, `verify_with_channel`, `decide`).
-- **IA/IR API**: wrap state in `WARPInstance/WARPWitness`, then run `dsfs::prove(_reduction)` / `dsfs::verify(_reduction)` on `FullWARP` or `WARPReduction`.
+- **IA/IR API**: wrap state in `WARPInstance/WARPWitness`, then run `spongefish::dsfs::prove(_reduction)` / `spongefish::dsfs::verify(_reduction)` on `FullWARP` or `WARPReduction`.
 
 ---
 
@@ -106,8 +106,8 @@ There are two main “user stories” shown there.
 
 The tests build a channel backed by spongefish (but **through** the channel traits):
 
-- Prover channel: `dsfs::SpongeProver` over a `spongefish::DomainSeparator`
-- Verifier channel: `dsfs::SpongeVerifier` replaying a `narg_string`
+- Prover channel: `spongefish::dsfs::SpongeProver` over a `spongefish::DomainSeparator`
+- Verifier channel: `spongefish::dsfs::SpongeVerifier` replaying a `narg_string`
 
 Then they do:
 
@@ -130,9 +130,9 @@ The tests also show how to use the “compiled” Argus interface:
 
 Then:
 
-- **IR-only** (IOR-style): `dsfs::prove_reduction::<WARPReduction<...>>` and `dsfs::verify_reduction::<WARPReduction<...>>`
+- **IR-only** (IOR-style): `spongefish::dsfs::prove_reduction::<WARPReduction<...>>` and `spongefish::dsfs::verify_reduction::<WARPReduction<...>>`
   - Test: `warp_ir_dsfs_prove_verify`
-- **Full IA** (IR ∘ IA): `dsfs::prove::<FullWARP<...>>` and `dsfs::verify::<FullWARP<...>>`
+- **Full IA** (IR ∘ IA): `spongefish::dsfs::prove::<FullWARP<...>>` and `spongefish::dsfs::verify::<FullWARP<...>>`
   - Test: `warp_full_ia_dsfs_prove_verify`
 
 ---
@@ -165,9 +165,9 @@ You wrap statement/witness into:
 
 and call either:
 
-- `dsfs::prove_reduction::<WARPReduction<...>>()` / `dsfs::verify_reduction::<WARPReduction<...>>()`
+- `spongefish::dsfs::prove_reduction::<WARPReduction<...>>()` / `spongefish::dsfs::verify_reduction::<WARPReduction<...>>()`
   - if you want the **reduced accumulator instance** as output; or
-- `dsfs::prove::<FullWARP<...>>()` / `dsfs::verify::<FullWARP<...>>()`
+- `spongefish::dsfs::prove::<FullWARP<...>>()` / `spongefish::dsfs::verify::<FullWARP<...>>()`
   - if you want a single “accept/reject” **InteractiveArgument** (IR ∘ IA) compiled via DSFS.
 
 This is exactly what the last two tests do.
@@ -192,4 +192,3 @@ When you’re debugging a specific verification failure:
 - `verify_reduction_transcript` tells you whether transcript/algebra checks fail.
 - `verify_merkle_paths` tells you whether oracle-opening checks fail.
 - `WARPDeciderIA::verify` tells you whether the final reduced statement/witness is consistent.
-

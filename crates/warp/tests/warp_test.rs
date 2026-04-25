@@ -14,10 +14,12 @@ use rand::thread_rng;
 use warp::{
     config::WARPConfig,
     crypto::merkle::blake3::Blake3MerkleTreeParams,
-    protocol::warp::{WARP, WARPInstance, WARPWitness},
+    protocol::warp::{WARPInstance, WARPWitness, WARP},
     relations::{
         r1cs::{
-            hashchain::{compute_hash_chain, HashChainInstance, HashChainRelation, HashChainWitness},
+            hashchain::{
+                compute_hash_chain, HashChainInstance, HashChainRelation, HashChainWitness,
+            },
             R1CS,
         },
         BundledPESAT, Relation, ToPolySystem,
@@ -27,7 +29,7 @@ use warp::{
     FullWARP, ReedSolomonParams, WARPDeciderIA, WARPReduction,
 };
 
-use dsfs::{Keccak, SpongeInfo, SpongeProver, SpongeVerifier};
+use spongefish::dsfs::{self, Keccak, SpongeInfo, SpongeProver, SpongeVerifier};
 
 type MT = Blake3MerkleTreeParams<Fp>;
 
@@ -57,12 +59,8 @@ fn make_verifier(narg_string: &[u8]) -> SpongeVerifier<'_> {
     SpongeVerifier::new(domsep.to_verifier(Keccak::default(), narg_string))
 }
 
-fn setup() -> (
-    R1CS<Fp>,
-    ReedSolomon<Fp>,
-    Vec<Vec<Fp>>,
-    Vec<Vec<Fp>>,
-) {
+#[allow(clippy::type_complexity)]
+fn setup() -> (R1CS<Fp>, ReedSolomon<Fp>, Vec<Vec<Fp>>, Vec<Vec<Fp>>) {
     let hash_chain_size = 10;
     let mut rng = thread_rng();
     let poseidon_config = poseidon::initialize_poseidon_config::<Fp>();
@@ -116,13 +114,7 @@ fn warp_bootstrap_prove_verify_decide() {
     let l1 = instances.len();
 
     let warp_config = WARPConfig::new(l1, l1, 8, 7, r1cs.config(), code.code_len());
-    let warp = WARP::<Fp, R1CS<Fp>, _, MT>::new(
-        warp_config,
-        code.clone(),
-        r1cs.clone(),
-        (),
-        (),
-    );
+    let warp = WARP::<Fp, R1CS<Fp>, _, MT>::new(warp_config, code.clone(), r1cs.clone(), (), ());
 
     let pk = (r1cs.clone(), r1cs.m, r1cs.n, r1cs.k);
     let vk = (r1cs.m, r1cs.n, r1cs.k);
@@ -163,13 +155,8 @@ fn warp_full_accumulation_cycle() {
     let l1 = instances.len();
 
     let warp_config = WARPConfig::new(l1, l1, 8, 7, r1cs.config(), code.code_len());
-    let warp = WARP::<Fp, R1CS<Fp>, _, MT>::new(
-        warp_config.clone(),
-        code.clone(),
-        r1cs.clone(),
-        (),
-        (),
-    );
+    let warp =
+        WARP::<Fp, R1CS<Fp>, _, MT>::new(warp_config.clone(), code.clone(), r1cs.clone(), (), ());
 
     let pk = (r1cs.clone(), r1cs.m, r1cs.n, r1cs.k);
     let vk = (r1cs.m, r1cs.n, r1cs.k);
@@ -214,31 +201,15 @@ fn warp_full_accumulation_cycle() {
     }
 
     // Phase 2: full accumulation proof with both fresh + accumulated instances
-    let full_acc_inst: AccumulatorInstances<Fp, MT> = (
-        acc_roots,
-        acc_alphas,
-        acc_mus,
-        (acc_taus, acc_xs),
-        acc_etas,
-    );
+    let full_acc_inst: AccumulatorInstances<Fp, MT> =
+        (acc_roots, acc_alphas, acc_mus, (acc_taus, acc_xs), acc_etas);
     let full_acc_wit: AccumulatorWitnesses<Fp, MT> = (acc_tds, acc_f, acc_ws);
 
     let l_full = 2 * l1;
-    let full_config = WARPConfig::<_, R1CS<Fp>>::new(
-        l_full,
-        l1,
-        8,
-        7,
-        r1cs.config(),
-        code.code_len(),
-    );
-    let warp_full = WARP::<Fp, R1CS<Fp>, _, MT>::new(
-        full_config,
-        code.clone(),
-        r1cs.clone(),
-        (),
-        (),
-    );
+    let full_config =
+        WARPConfig::<_, R1CS<Fp>>::new(l_full, l1, 8, 7, r1cs.config(), code.code_len());
+    let warp_full =
+        WARP::<Fp, R1CS<Fp>, _, MT>::new(full_config, code.clone(), r1cs.clone(), (), ());
 
     let mut prover_ch = make_prover();
     let (acc_x, acc_w, proof) = warp_full
@@ -253,10 +224,7 @@ fn warp_full_accumulation_cycle() {
         .expect("full accumulation prove failed");
 
     let narg_string = prover_ch.narg_string().to_vec();
-    println!(
-        "Full accumulation NARG string: {} bytes",
-        narg_string.len()
-    );
+    println!("Full accumulation NARG string: {} bytes", narg_string.len());
 
     // Verify
     let mut verifier_ch = make_verifier(&narg_string);
@@ -301,23 +269,20 @@ fn warp_ir_dsfs_prove_verify() {
     };
 
     let session = spongefish::session!("warp IR test");
-    let code_params = ReedSolomonParams::new(
-        code.code_len(),
-        code.message_len(),
-        Fp::MODULUS_BIT_SIZE,
-    );
+    let code_params =
+        ReedSolomonParams::new(code.code_len(), code.message_len(), Fp::MODULUS_BIT_SIZE);
     let ir = WARPReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new(
         log2(l1) as usize,
         log2(code.code_len()) as usize,
         log2(r1cs.m) as usize,
         code_params,
-        8,  // ood_samples (matches WARPConfig s=8)
-        7,  // shift_queries (matches WARPConfig t=7)
+        8, // ood_samples (matches WARPConfig s=8)
+        7, // shift_queries (matches WARPConfig t=7)
     );
     let proof = dsfs::prove_reduction(&ir, &session, &instance, &witness);
     println!("IR NARG string: {} bytes", proof.len());
 
-    let target = dsfs::verify_reduction(&ir, &session, &instance, &proof)
+    let target = dsfs::verify_reduction(&ir, &session, &instance, proof.as_bytes())
         .expect("IR verification failed");
 
     println!("IR verification: OK");
@@ -358,33 +323,23 @@ fn warp_full_ia_dsfs_prove_verify() {
     };
 
     let session = spongefish::session!("warp FullWARP test");
-    let code_params = ReedSolomonParams::new(
-        code.code_len(),
-        code.message_len(),
-        Fp::MODULUS_BIT_SIZE,
-    );
+    let code_params =
+        ReedSolomonParams::new(code.code_len(), code.message_len(), Fp::MODULUS_BIT_SIZE);
     let reduction = WARPReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new(
         log2(l1) as usize,
         log2(code.code_len()) as usize,
         log2(r1cs.m) as usize,
         code_params,
-        8,  // ood_samples (matches WARPConfig s=8)
-        7,  // shift_queries (matches WARPConfig t=7)
+        8, // ood_samples (matches WARPConfig s=8)
+        7, // shift_queries (matches WARPConfig t=7)
     );
-    let full = FullWARP::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new(
-        reduction,
-        WARPDeciderIA::default(),
-    );
+    let full =
+        FullWARP::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new(reduction, WARPDeciderIA::default());
     let proof = dsfs::prove(&full, &session, &instance, &witness);
     println!("FullWARP NARG string: {} bytes", proof.len());
 
-    dsfs::verify(
-        &full,
-        &session,
-        &instance,
-        &proof,
-    )
-    .expect("FullWARP verification failed");
+    dsfs::verify(&full, &session, &instance, proof.as_bytes())
+        .expect("FullWARP verification failed");
 
     println!("FullWARP verification: OK");
 }

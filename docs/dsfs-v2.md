@@ -4,6 +4,12 @@
 
 DSFS v2 keeps the IA abstraction unchanged and updates only the DSFS compiler layer so transcript behavior is explicit, deterministic, and centralized.
 
+Current ownership after the NARG refactor:
+
+- `ia-core` owns the abstract vocabulary: `NargProof`, `NonInteractiveArgument`, and `NonInteractiveReduction`.
+- `spongefish::dsfs` owns the concrete DSFS compiler from IA/IR to NARGs.
+- Protocol code still depends only on `ia-core` channel traits and must not touch sponge state.
+
 The three concrete changes are:
 
 1. Use **Keccak** (not `StdHash = Shake128`) for transcript state in DSFS channels.
@@ -29,6 +35,31 @@ Where:
 - `Keccak = DuplexSponge<KeccakF1600, 200, 136>`
 
 This change is applied to both IA (`prove`/`verify`) and IR (`prove_reduction`/`verify_reduction`) DSFS entry points.
+
+## Proof artifact
+
+The DSFS prover entry points return `ia_core::NargProof`:
+
+- `prove(...) -> NargProof`
+- `prove_with_sponge(...) -> NargProof`
+- `prove_reduction(...) -> NargProof`
+- `prove_reduction_with_sponge(...) -> NargProof`
+
+`NargProof` is opaque at the top level. Use `proof.as_bytes()` to pass it to
+the byte-oriented verifier APIs, and `proof.into_bytes()` when interop code
+needs ownership of the raw proof string.
+
+When a `NargProof` is itself sent as a typed prover message, it is encoded as
+`u64_le(length) || proof_bytes`. The raw artifact does not include this length
+prefix; the prefix is only part of channel-message serialization for
+variable-length proofs.
+
+Verification APIs intentionally still accept `&[u8]`:
+
+```rust
+let proof = spongefish::dsfs::prove(&protocol, &session, &instance, &witness);
+spongefish::dsfs::verify(&protocol, &session, &instance, proof.as_bytes())?;
+```
 
 ## Salt handling model
 
@@ -58,7 +89,7 @@ So v2 provides default wrappers that keep call sites simple:
 - `prove_reduction::<IR>(...)` delegates to `prove_reduction_with_salt::<IR, 0>(...)`
 - `verify_reduction::<IR>(...)` delegates to `verify_reduction_with_salt::<IR, 0>(...)`
 
-So users can keep writing `dsfs::prove::<MyIA>(...)` and only use `*_with_salt` when needed.
+So users can keep writing `spongefish::dsfs::prove(...)` and only use `*_with_salt` when needed.
 
 ## Sponge parameters (extension trait)
 
@@ -93,10 +124,10 @@ This replaces the earlier free-function shape that did not compile with correct 
 
 ## Modular sponge (Keccak vs StdHash)
 
-DSFS channels and compile entry points are generic over a byte-oriented duplex sponge `H` (see `ByteDuplexSponge` in `dsfs::compile`).
+DSFS channels and compile entry points are generic over a byte-oriented duplex sponge `H` (see `ByteDuplexSponge` in `spongefish::dsfs`).
 
 - **Default:** existing `prove` / `verify` / `prove_reduction` / `verify_reduction` (and `*_with_salt`) still use **Keccak** (`Keccak::default()`).
-- **Explicit sponge:** use `prove_with_sponge`, `prove_with_sponge_and_salt`, `verify_with_sponge`, `verify_with_sponge_and_salt`, and the reduction variants, passing e.g. `dsfs::StdHash::default()` for spongefish **std_prover** / **std_verifier** (SHAKE128) compatibility.
+- **Explicit sponge:** use `prove_with_sponge`, `prove_with_sponge_and_salt`, `verify_with_sponge`, `verify_with_sponge_and_salt`, and the reduction variants, passing e.g. `spongefish::dsfs::StdHash::default()` for spongefish **std_prover** / **std_verifier** (SHAKE128) compatibility.
 
 Security bookkeeping: `STD_SPONGE_PARAMS` remains tied to Keccak; for StdHash-style transcripts use `STD_HASH_SPONGE_PARAMS` with `NargSecurity::for_ia_with` / `for_reduction_with`.
 
@@ -115,4 +146,5 @@ Core IA protocol traits are unchanged relative to DSFS v1:
 
 **Channel tweak:** `ProverChannel::send_prover_message` now requires `NargSerialize` (in addition to `Encoding`), matching spongefish `prover_message`. Live-channel and sponge adapters were updated accordingly.
 
-In other words: IA defines protocol logic; DSFS still exclusively owns transcript/sponge behavior.
+In other words: IA defines protocol logic; `ia-core` defines the abstract NARG
+interfaces; `spongefish::dsfs` still exclusively owns transcript/sponge behavior.

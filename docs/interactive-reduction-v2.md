@@ -187,13 +187,13 @@ The full protocol is an IA that proves all 8 original claims match their witness
 Each stage adds one prover-message round and one challenge to the transcript. The DSFS compiler handles the entire composed protocol as a single `prove`/`verify` call:
 
 ```rust
-let proof = dsfs::prove::<FullProtocol>(session, &instance, &witness);
-dsfs::verify::<FullProtocol>(session, &instance, &proof)?;
+let proof = spongefish::dsfs::prove::<FullProtocol>(session, &instance, &witness);
+spongefish::dsfs::verify::<FullProtocol>(session, &instance, proof.as_bytes())?;
 ```
 
 ## Files changed
 
 - [ia-core/src/lib.rs](../crates/ia-core/src/lib.rs) -- IR trait refactored, composition structs added
-- [dsfs/src/lib.rs](../crates/dsfs/src/lib.rs) -- `prove_reduction` updated for new signature
+- `spongefish::dsfs` -- `prove_reduction` updated for the new signature
 - [argus-examples/src/bin/warp_accumulate.rs](../crates/argus-examples/src/bin/warp_accumulate.rs) -- updated to SourceWitness/TargetWitness
 - [argus-examples/src/bin/composition.rs](../crates/argus-examples/src/bin/composition.rs) -- new end-to-end composition example

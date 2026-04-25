@@ -27,7 +27,11 @@ pub struct ReedSolomonParams {
 
 impl ReedSolomonParams {
     pub fn new(n: usize, k: usize, field_size_bits: u32) -> Self {
-        Self { n, k, field_size_bits }
+        Self {
+            n,
+            k,
+            field_size_bits,
+        }
     }
 
     fn field_size_inv(&self) -> f64 {

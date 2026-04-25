@@ -9,6 +9,7 @@ use rand_core::SeedableRng;
 use sigma_bridge::SigmaIA;
 use sigma_proofs::composition::{ComposedRelation, ComposedWitness};
 use sigma_proofs::linear_relation::{CanonicalLinearRelation, LinearRelation};
+use spongefish::dsfs;
 
 fn make_schnorr() -> (CanonicalLinearRelation<RistrettoPoint>, Vec<Scalar>) {
     let mut rel = LinearRelation::<RistrettoPoint>::new();
@@ -46,5 +47,6 @@ fn sigmaia_composed_and_dsfs_roundtrip() {
     let session = spongefish::session!("composed-relation-smoke");
 
     let proof = dsfs::prove(&ia, &session, &ia, &sigma_witness);
-    dsfs::verify(&ia, &session, &ia, &proof).expect("composed SigmaIA verification must succeed");
+    dsfs::verify(&ia, &session, &ia, proof.as_bytes())
+        .expect("composed SigmaIA verification must succeed");
 }

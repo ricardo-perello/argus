@@ -21,8 +21,8 @@ pub use synthesizer::HashChainSynthesizer;
 pub use witness::HashChainWitness;
 
 use super::R1CS;
-use crate::relations::ToPolySystem;
 use crate::errors::WARPError;
+use crate::relations::ToPolySystem;
 
 impl<
         F: PrimeField + Absorb,

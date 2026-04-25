@@ -103,11 +103,7 @@ where
 
 /// Build the batched constraint polynomial g from OOD evaluations and
 /// identity-based non-zero evaluations (CBBZ23 optimization).
-fn build_batched_g<F: Field>(
-    ood_evals: &[Vec<F>],
-    id_non_0: &FastMap<F>,
-    n: usize,
-) -> Vec<F> {
+fn build_batched_g<F: Field>(ood_evals: &[Vec<F>], id_non_0: &FastMap<F>, n: usize) -> Vec<F> {
     let mut g = vec![F::zero(); n];
 
     for evals_vec in ood_evals {

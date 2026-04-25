@@ -6,7 +6,6 @@ license = "MIT OR Apache-2.0"
 description = "Sigma-protocol → Interactive-Argument bridge via Argus DSFS pipeline"
 
 [dependencies]
-dsfs = { path = "../dsfs" }
 ia-core = { path = "../ia-core" }
 spongefish.workspace = true
 sha3 = "0.10"
