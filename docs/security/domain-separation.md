@@ -18,11 +18,13 @@ All three are required inputs to transcript initialization; there is no “optio
 
 ## spongefish: `DomainSeparator::derive`
 
-The spongefish layer hashes an injective, length-prefixed encoding of the triple:
+The spongefish layer absorbs an injective, length-prefixed encoding of the triple:
 
 `LE32(|protocol_id|) || protocol_id || LE32(|sponge_info|) || sponge_info || LE32(|session|) || session`
 
-using **SHA-512**, producing a **64-byte** value **`domsep`**. That value is what feeds:
+into spongefish's standard hash transcript, squeezes **32 bytes**, and embeds them as
+**`derived_32 || 0x00 * 32`** in the existing 64-byte protocol tag field. That value
+is what feeds:
 
 - **`StdHash`**: `StdHash::from_protocol_id(domsep)`, then the **instance** is absorbed as the next public input before messages.
 - **Duplex (e.g. Keccak)**: `domsep` as a `public_message`, then the **instance**, then protocol messages (see DSFS).
