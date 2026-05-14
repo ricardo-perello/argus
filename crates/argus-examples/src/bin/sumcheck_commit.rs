@@ -21,11 +21,12 @@ use rand::rngs::OsRng;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
 use ia_core::{
-    ArgumentSecurity, InteractiveArgument, ProverChannel, SecurityErrorBound, SecurityProfile,
-    VerificationError, VerificationResult, VerifierChannel,
+    ArgumentSecurity, InteractiveArgument, NonInteractiveArgument, ProverChannel,
+    SecurityErrorBound, SecurityProfile, VerificationError, VerificationResult, VerifierChannel,
 };
 
-use spongefish::{Encoding, dsfs};
+use spongefish::Encoding;
+use spongefish_dsfs as dsfs;
 
 use ark_crypto_primitives::crh::sha256::Sha256;
 use ark_crypto_primitives::merkle_tree::{
@@ -306,21 +307,16 @@ fn run_dsfs(instance: &Instance, evals: &Vec<Fr>) {
     println!("=== Committed Sumcheck (DSFS / non-interactive) ===\n");
 
     let session = spongefish::session!("argus warmup: committed sumcheck");
+    let nia = dsfs::Dsfs::<_, _>::new(CommittedSumcheck, dsfs::Keccak::default());
 
-    let narg_string = dsfs::prove(&CommittedSumcheck, &session, instance, evals);
+    let narg = nia.prove(&session, instance, evals);
     println!(
         "Proof ({} bytes):\n{}",
-        narg_string.len(),
-        hex::encode(narg_string.as_bytes())
+        narg.len(),
+        hex::encode(narg.as_bytes())
     );
 
-    dsfs::verify(
-        &CommittedSumcheck,
-        &session,
-        instance,
-        narg_string.as_bytes(),
-    )
-    .expect("Invalid proof");
+    nia.verify(&session, instance, &narg).expect("Invalid proof");
     println!("Verification succeeded");
 }
 

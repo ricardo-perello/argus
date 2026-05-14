@@ -18,9 +18,10 @@ use rand::rngs::OsRng;
 use spongefish_dsfs as dsfs;
 
 use ia_core::{
-    ArgumentSecurity, ChainedReduction, InteractiveArgument, InteractiveReduction, ProverChannel,
-    ReducedArgument, ReductionSecurity, SecurityErrorBound, SecurityProfile, VerificationError,
-    VerificationResult, VerifierChannel,
+    ArgumentSecurity, ChainedReduction, InteractiveArgument, InteractiveReduction,
+    NonInteractiveArgument, NonInteractiveReduction, ProverChannel, ReducedArgument,
+    ReductionSecurity, SecurityErrorBound, SecurityProfile, VerificationError, VerificationResult,
+    VerifierChannel,
 };
 
 // ---------------------------------------------------------------------------
@@ -336,16 +337,19 @@ fn main() {
     println!("    8 values -> 4 -> 2\n");
 
     let two_folds = TwoFolds::default();
-    let proof = dsfs::prove_reduction(&two_folds, &session, &instance, &witness);
+    let nir = dsfs::DsfsReduction::<_, _>::new(two_folds, dsfs::Keccak::default());
+    let (proof, target, _) = nir.prove(&session, &instance, &witness);
     println!(
         "  proof ({} bytes): {}",
         proof.len(),
         hex::encode(proof.as_bytes())
     );
 
-    let target = dsfs::verify_reduction(&two_folds, &session, &instance, proof.as_bytes())
+    let verified_target = nir
+        .verify(&session, &instance, &proof)
         .expect("two-fold reduction failed");
-    println!("  target claims (2 elements): {:?}", target.0);
+    debug_assert_eq!(verified_target.0, target.0);
+    println!("  target claims (2 elements): {:?}", verified_target.0);
     println!("  [OK] two-fold reduction verified\n");
 
     // -- 2. Full pipeline: (Fold . Fold . Accumulate) . EqualityCheck --------
@@ -354,14 +358,15 @@ fn main() {
     println!("    8 values -> 4 -> 2 -> AccPair -> accept/reject\n");
 
     let full = FullProtocol::default();
-    let proof = dsfs::prove(&full, &session, &instance, &witness);
+    let nia = dsfs::Dsfs::<_, _>::new(full, dsfs::Keccak::default());
+    let proof = nia.prove(&session, &instance, &witness);
     println!(
         "  proof ({} bytes): {}",
         proof.len(),
         hex::encode(proof.as_bytes())
     );
 
-    dsfs::verify(&full, &session, &instance, proof.as_bytes())
+    nia.verify(&session, &instance, &proof)
         .expect("full protocol verification failed");
     println!("  [OK] full composed protocol verified");
 }
@@ -383,8 +388,9 @@ mod tests {
 
         let session = spongefish::session!("argus example: composition");
         let protocol = FullProtocol::default();
-        let proof = dsfs::prove(&protocol, &session, &instance, &witness);
-        dsfs::verify(&protocol, &session, &instance, proof.as_bytes())
+        let nia = dsfs::Dsfs::<_, _>::new(protocol, dsfs::Keccak::default());
+        let proof = nia.prove(&session, &instance, &witness);
+        nia.verify(&session, &instance, &proof)
             .expect("verification failed");
     }
 }

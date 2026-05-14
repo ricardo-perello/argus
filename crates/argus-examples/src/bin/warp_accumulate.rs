@@ -24,8 +24,8 @@ use rand::rngs::OsRng;
 use spongefish_dsfs as dsfs;
 
 use ia_core::{
-    InteractiveReduction, ProverChannel, ReductionSecurity, SecurityErrorBound, SecurityProfile,
-    VerificationError, VerificationResult, VerifierChannel,
+    InteractiveReduction, NonInteractiveReduction, ProverChannel, ReductionSecurity,
+    SecurityErrorBound, SecurityProfile, VerificationError, VerificationResult, VerifierChannel,
 };
 
 // ---------------------------------------------------------------------------
@@ -177,15 +177,17 @@ fn main() {
     let witness = values;
 
     let session = spongefish::session!("argus example: warp accumulate");
+    let nir = dsfs::DsfsReduction::<_, _>::new(Accumulate, dsfs::Keccak::default());
 
-    let proof = dsfs::prove_reduction(&Accumulate, &session, &instance, &witness);
+    let (proof, _, _) = nir.prove(&session, &instance, &witness);
     println!(
         "Accumulation proof ({n} instances, {} bytes):\n{}",
         proof.len(),
         hex::encode(proof.as_bytes())
     );
 
-    let target = dsfs::verify_reduction(&Accumulate, &session, &instance, proof.as_bytes())
+    let target = nir
+        .verify(&session, &instance, &proof)
         .expect("reduction failed");
     println!(
         "Reduction succeeded -> target instance:\n  acc_claim = {:?}\n  acc_value = {:?}",
@@ -214,8 +216,10 @@ mod tests {
         let witness = values;
 
         let session = spongefish::session!("argus example: warp accumulate");
-        let proof = dsfs::prove_reduction(&Accumulate, &session, &instance, &witness);
-        let target = dsfs::verify_reduction(&Accumulate, &session, &instance, proof.as_bytes())
+        let nir = dsfs::DsfsReduction::<_, _>::new(Accumulate, dsfs::Keccak::default());
+        let (proof, _, _) = nir.prove(&session, &instance, &witness);
+        let target = nir
+            .verify(&session, &instance, &proof)
             .expect("reduction failed");
         decide(&target).expect("decider rejected");
     }

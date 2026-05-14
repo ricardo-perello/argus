@@ -4,9 +4,12 @@ members = [
     "crates/live-channel",
     "crates/ibcs",
     "crates/argus-examples",
-    "crates/warp",
     "crates/sigma-bridge",
 ]
+# `crates/warp` temporarily excluded: depends on `dmpierre/ark-codes` which has no
+# ark-* 0.6 fork. Re-add once ark-codes is bumped (see codec-ownership-correction
+# wiki note, PR 2 blockers).
+exclude = ["crates/warp"]
 resolver = "2"
 
 [workspace.dependencies]

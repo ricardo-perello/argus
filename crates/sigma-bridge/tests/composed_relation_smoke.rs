@@ -6,6 +6,7 @@ use curve25519_dalek::{
 };
 use rand_core::SeedableRng;
 
+use ia_core::NonInteractiveArgument;
 use sigma_bridge::SigmaIA;
 use sigma_proofs::composition::{ComposedRelation, ComposedWitness};
 use sigma_proofs::linear_relation::{CanonicalLinearRelation, LinearRelation};
@@ -45,8 +46,9 @@ fn sigmaia_composed_and_dsfs_roundtrip() {
     let sigma_witness = (witness, commit_seed);
 
     let session = spongefish::session!("composed-relation-smoke");
+    let nia = dsfs::Dsfs::<_, _>::new(ia, dsfs::Keccak::default());
 
-    let proof = dsfs::prove(&ia, &session, &ia, &sigma_witness);
-    dsfs::verify(&ia, &session, &ia, proof.as_bytes())
+    let proof = nia.prove(&session, &nia.ia, &sigma_witness);
+    nia.verify(&session, &nia.ia, &proof)
         .expect("composed SigmaIA verification must succeed");
 }
