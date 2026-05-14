@@ -14,7 +14,7 @@ use sigma_proofs::{
     errors::Error,
     traits::{ScalarRng, SigmaProtocol},
 };
-use spongefish::dsfs::{ByteDuplexSponge, SpongeProver, SpongeVerifier, TranscriptSponge};
+use spongefish_dsfs::{ByteDuplexSponge, SpongeProver, SpongeVerifier, TranscriptSponge};
 
 use crate::session::derive_session_id;
 

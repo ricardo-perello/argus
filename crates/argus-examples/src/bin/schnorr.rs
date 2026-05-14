@@ -18,7 +18,7 @@ use ark_ec::{CurveGroup, PrimeGroup};
 use ark_ff::PrimeField;
 use ark_std::UniformRand;
 use rand::rngs::OsRng;
-use spongefish::dsfs;
+use spongefish_dsfs as dsfs;
 
 use ia_core::{
     ArgumentSecurity, Decoding, Deserialize, Encoding, InteractiveArgument, ProverChannel,
@@ -198,7 +198,7 @@ mod tests {
     use super::*;
     use ark_ff::PrimeField;
     use ia_core::{ArgumentSecurity, NonInteractiveArgument};
-    use spongefish::dsfs::STD_SPONGE_PARAMS;
+    use spongefish_dsfs::STD_SPONGE_PARAMS;
     use std::thread;
 
     type G = ark_curve25519::EdwardsProjective;

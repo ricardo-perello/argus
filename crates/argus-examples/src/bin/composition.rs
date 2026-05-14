@@ -15,7 +15,7 @@ use ark_curve25519::Fr;
 use ark_ff::{AdditiveGroup, Field};
 use ark_std::UniformRand;
 use rand::rngs::OsRng;
-use spongefish::dsfs;
+use spongefish_dsfs as dsfs;
 
 use ia_core::{
     ArgumentSecurity, ChainedReduction, InteractiveArgument, InteractiveReduction, ProverChannel,

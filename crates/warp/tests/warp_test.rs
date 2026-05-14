@@ -29,7 +29,7 @@ use warp::{
 };
 
 use ia_core::ReductionSecurity;
-use spongefish::dsfs::{self, Keccak, SpongeInfo, SpongeProver, SpongeVerifier};
+use spongefish_dsfs::{self as dsfs, Keccak, SpongeInfo, SpongeProver, SpongeVerifier};
 
 type MT = Blake3MerkleTreeParams<Fp>;
 

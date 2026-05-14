@@ -9,7 +9,7 @@ use rand_core::SeedableRng;
 use sigma_bridge::SigmaIA;
 use sigma_proofs::composition::{ComposedRelation, ComposedWitness};
 use sigma_proofs::linear_relation::{CanonicalLinearRelation, LinearRelation};
-use spongefish::dsfs;
+use spongefish_dsfs as dsfs;
 
 fn make_schnorr() -> (CanonicalLinearRelation<RistrettoPoint>, Vec<Scalar>) {
     let mut rel = LinearRelation::<RistrettoPoint>::new();

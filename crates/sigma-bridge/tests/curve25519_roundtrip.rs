@@ -6,7 +6,7 @@ use curve25519_dalek::{
 use rand_core::SeedableRng;
 
 use sigma_proofs::LinearRelation;
-use spongefish::dsfs;
+use spongefish_dsfs as dsfs;
 
 #[test]
 fn curve25519_round_trip_stdhash() {

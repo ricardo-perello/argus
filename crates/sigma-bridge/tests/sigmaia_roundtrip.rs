@@ -13,7 +13,7 @@ use ia_core::InteractiveArgument;
 use sigma_bridge::{SigmaIA, SigmaProtocol};
 use sigma_proofs::LinearRelation;
 use sigma_proofs::linear_relation::CanonicalLinearRelation;
-use spongefish::dsfs;
+use spongefish_dsfs as dsfs;
 
 fn make_schnorr() -> (
     SigmaIA<CanonicalLinearRelation<RistrettoPoint>>,

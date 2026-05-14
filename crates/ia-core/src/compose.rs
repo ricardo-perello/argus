@@ -6,8 +6,8 @@ use alloc::vec::Vec;
 
 use crate::argument::InteractiveArgument;
 use crate::channel::{ProverChannel, VerifierChannel};
-use crate::error::VerificationResult;
 use crate::reduction::InteractiveReduction;
+use crate::VerificationResult;
 use crate::security::{ArgumentSecurity, ReductionSecurity, SecurityProfile};
 
 /// Derives a variable-length protocol identifier from two sub-protocol IDs and a

@@ -1,7 +1,7 @@
 //! Sigma-protocol → Interactive-Argument bridge via DSFS.
 //!
 //! Wraps any [`SigmaProtocol`] and drives it through `ia-core`'s `ProverChannel` / `VerifierChannel`
-//! backed by a `spongefish::dsfs::SpongeProver` / `SpongeVerifier`. The proof is the full spongefish NARG
+//! backed by a `spongefish_dsfs::SpongeProver` / `SpongeVerifier`. The proof is the full spongefish NARG
 //! string (commitments + responses serialized via `prover_message`, not `public_message`).
 
 #![no_std]

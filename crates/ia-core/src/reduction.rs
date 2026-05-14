@@ -1,7 +1,7 @@
 //! Interactive oracle reduction trait (`InteractiveReduction`).
 
 use crate::channel::{ProverChannel, VerifierChannel};
-use crate::error::VerificationResult;
+use crate::VerificationResult;
 
 /// Metadata and logic for a public-coin interactive oracle reduction.
 ///

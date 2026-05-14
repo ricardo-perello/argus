@@ -8,6 +8,7 @@ description = "Sigma-protocol → Interactive-Argument bridge via Argus DSFS pip
 [dependencies]
 ia-core = { path = "../ia-core" }
 spongefish.workspace = true
+spongefish-dsfs.workspace = true
 sha3 = "0.10"
 sigma-proofs = { path = "../../../sigma-proofs", default-features = false }
 rand_chacha = { version = "0.3", default-features = false }
