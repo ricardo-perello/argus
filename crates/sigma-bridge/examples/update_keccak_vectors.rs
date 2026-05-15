@@ -10,8 +10,9 @@ use serde::{Deserialize, Serialize};
 use serde_with::{hex, serde_as};
 use sigma_proofs::{MultiScalarMul, linear_relation::CanonicalLinearRelation, traits::ScalarRng};
 use spongefish::{
-    Decoding, Encoding, NargDeserialize, NargSerialize, dsfs, protocol_id as spongefish_protocol_id,
+    Decoding, Encoding, NargDeserialize, NargSerialize, protocol_id as spongefish_protocol_id,
 };
+use spongefish_dsfs as dsfs;
 
 #[serde_as]
 #[derive(Debug, Deserialize, Serialize)]

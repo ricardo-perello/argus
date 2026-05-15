@@ -1,8 +1,6 @@
 //! Abstract prover/verifier channels (generic over sponge alphabet unit `U`).
 
-use crate::deserialize::Deserialize;
-use crate::error::VerificationResult;
-use crate::{Decoding, Encoding, NargSerialize};
+use crate::{Decoding, Deserialize, Encoding, NargSerialize, VerificationResult};
 
 /// Prover-side channel: send prover messages and read verifier challenges.
 ///

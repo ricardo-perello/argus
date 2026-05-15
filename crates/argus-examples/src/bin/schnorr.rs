@@ -18,11 +18,12 @@ use ark_ec::{CurveGroup, PrimeGroup};
 use ark_ff::PrimeField;
 use ark_std::UniformRand;
 use rand::rngs::OsRng;
-use spongefish::dsfs;
+use spongefish_dsfs as dsfs;
 
 use ia_core::{
-    ArgumentSecurity, Decoding, Deserialize, Encoding, InteractiveArgument, ProverChannel,
-    SecurityErrorBound, SecurityProfile, VerificationError, VerificationResult, VerifierChannel,
+    ArgumentSecurity, Decoding, Deserialize, Encoding, InteractiveArgument, NonInteractiveArgument,
+    ProverChannel, SecurityErrorBound, SecurityProfile, VerificationError, VerificationResult,
+    VerifierChannel,
 };
 
 // ---------------------------------------------------------------------------
@@ -129,10 +130,11 @@ fn run_dsfs(instance: &[ark_curve25519::EdwardsProjective; 2], sk: &ark_curve255
     let session = spongefish::session!("spongefish examples");
 
     let schnorr = Schnorr::<G>::default();
-    let narg_string = dsfs::prove(&schnorr, &session, instance, sk);
-    println!("Proof:\n{}", hex::encode(narg_string.as_bytes()));
+    let nia = dsfs::Dsfs::<_, _>::new(schnorr, dsfs::Keccak::default());
+    let narg = nia.prove(&session, instance, sk);
+    println!("Proof:\n{}", hex::encode(narg.as_bytes()));
 
-    dsfs::verify(&schnorr, &session, instance, narg_string.as_bytes())
+    nia.verify(&session, instance, &narg)
         .expect("verification failed");
     println!("Verification succeeded");
 }
@@ -198,7 +200,7 @@ mod tests {
     use super::*;
     use ark_ff::PrimeField;
     use ia_core::{ArgumentSecurity, NonInteractiveArgument};
-    use spongefish::dsfs::STD_SPONGE_PARAMS;
+    use spongefish_dsfs::STD_SPONGE_PARAMS;
     use std::thread;
 
     type G = ark_curve25519::EdwardsProjective;
@@ -305,8 +307,9 @@ mod tests {
 
         let session = spongefish::session!("spongefish examples");
         let schnorr = Schnorr::<G>::default();
-        let narg = dsfs::prove(&schnorr, &session, &instance, &sk);
-        dsfs::verify(&schnorr, &session, &instance, narg.as_bytes())
+        let nia = dsfs::Dsfs::<_, _>::new(schnorr, dsfs::Keccak::default());
+        let narg = nia.prove(&session, &instance, &sk);
+        nia.verify(&session, &instance, &narg)
             .expect("dsfs verification failed");
     }
 

@@ -1,7 +1,7 @@
 //! Interactive argument trait (`InteractiveArgument`).
 
 use crate::channel::{ProverChannel, VerifierChannel};
-use crate::error::VerificationResult;
+use crate::VerificationResult;
 
 /// Metadata and logic for a public-coin interactive argument.
 pub trait InteractiveArgument {

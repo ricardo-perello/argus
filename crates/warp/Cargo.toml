@@ -24,3 +24,4 @@ nohash-hasher = "0.2"
 
 [dev-dependencies]
 ark-bls12-381.workspace = true
+spongefish-dsfs.workspace = true

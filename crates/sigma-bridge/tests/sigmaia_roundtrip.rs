@@ -9,11 +9,11 @@ use curve25519_dalek::{
 };
 use rand_core::SeedableRng;
 
-use ia_core::InteractiveArgument;
+use ia_core::{InteractiveArgument, NonInteractiveArgument};
 use sigma_bridge::{SigmaIA, SigmaProtocol};
 use sigma_proofs::LinearRelation;
 use sigma_proofs::linear_relation::CanonicalLinearRelation;
-use spongefish::dsfs;
+use spongefish_dsfs as dsfs;
 
 fn make_schnorr() -> (
     SigmaIA<CanonicalLinearRelation<RistrettoPoint>>,
@@ -41,9 +41,10 @@ fn sigmaia_dsfs_roundtrip() {
     let sigma_witness = (witness, commit_seed);
 
     let session = spongefish::session!("sigmaia-roundtrip-test");
+    let nia = dsfs::Dsfs::<_, _>::new(instance, dsfs::Keccak::default());
 
-    let proof = dsfs::prove(&instance, &session, &instance, &sigma_witness);
-    dsfs::verify(&instance, &session, &instance, proof.as_bytes())
+    let proof = nia.prove(&session, &nia.ia, &sigma_witness);
+    nia.verify(&session, &nia.ia, &proof)
         .expect("verification must succeed");
 }
 
