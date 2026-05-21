@@ -1,27 +1,16 @@
+//! Blake3 Merkle tree wiring for WARP.
+//!
+//! ark-crypto-primitives 0.6 replaced the old `Blake3` / `Blake3F` /
+//! `GenericDigest<N>` types with `Blake3CRH<F>`, `Blake3TwoToOneCRH`, and
+//! `ByteDigest<N>`. This module re-exposes them through WARP's
+//! [`MerkleTreeParams`] alias so downstream tests can keep referencing
+//! `Blake3MerkleTreeParams<F>` unchanged.
+
 use super::parameters::MerkleTreeParams;
-use ark_crypto_primitives::crh::blake3::fields::Blake3F;
-use ark_crypto_primitives::crh::blake3::Blake3;
-use ark_crypto_primitives::crh::blake3::GenericDigest;
-use ark_crypto_primitives::{
-    crh::{CRHScheme, TwoToOneCRHScheme},
-    merkle_tree::{Config as MerkleConfig, IdentityDigestConverter},
-    sponge::Absorb,
+use ark_crypto_primitives::crh::{
+    blake3::{Blake3CRH, Blake3TwoToOneCRH},
+    ByteDigest,
 };
-use ark_ff::PrimeField;
-use ark_std::marker::PhantomData;
 
-#[derive(Clone)]
-pub struct Blake3MerkleConfig<F: PrimeField> {
-    _field: PhantomData<F>,
-}
-
-pub type Blake3MerkleTreeParams<F> = MerkleTreeParams<F, Blake3F<F>, Blake3, GenericDigest<32>>;
-
-impl<F: PrimeField + Absorb> MerkleConfig for Blake3MerkleConfig<F> {
-    type Leaf = [F];
-    type LeafDigest = <Self::LeafHash as CRHScheme>::Output;
-    type LeafInnerDigestConverter = IdentityDigestConverter<Self::LeafDigest>;
-    type InnerDigest = <Self::TwoToOneHash as TwoToOneCRHScheme>::Output;
-    type LeafHash = Blake3F<F>;
-    type TwoToOneHash = Blake3;
-}
+pub type Blake3MerkleTreeParams<F> =
+    MerkleTreeParams<F, Blake3CRH<F>, Blake3TwoToOneCRH, ByteDigest<32>>;

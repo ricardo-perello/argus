@@ -28,7 +28,7 @@ use warp::{
     FullWARP, WARPDeciderIA, WARPReduction,
 };
 
-use ia_core::ReductionSecurity;
+use ia_core::{NonInteractiveArgument, NonInteractiveReduction, ReductionSecurity};
 use spongefish_dsfs::{self as dsfs, Keccak, SpongeInfo, SpongeProver, SpongeVerifier};
 
 type MT = Blake3MerkleTreeParams<Fp>;
@@ -319,11 +319,14 @@ fn warp_ir_dsfs_prove_verify() {
 
     let session = spongefish::session!("warp IR test");
     let ir = WARPReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
-    let proof = dsfs::prove_reduction(&ir, &session, &instance, &witness);
+    let narg = dsfs::DsfsReduction::<_, _>::new(ir, Keccak::default());
+    let (proof, target_p, _target_w) = narg.prove(&session, &instance, &witness);
     println!("IR NARG string: {} bytes", proof.len());
 
-    let target = dsfs::verify_reduction(&ir, &session, &instance, proof.as_bytes())
+    let target = narg
+        .verify(&session, &instance, &proof)
         .expect("IR verification failed");
+    let _ = target_p;
 
     println!("IR verification: OK");
     println!("  target root count: {}", target.acc_instance.0.len());
@@ -366,10 +369,11 @@ fn warp_full_ia_dsfs_prove_verify() {
     let reduction = WARPReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
     let full =
         FullWARP::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new(reduction, WARPDeciderIA::default());
-    let proof = dsfs::prove(&full, &session, &instance, &witness);
+    let narg = dsfs::Dsfs::<_, _>::new(full, Keccak::default());
+    let proof = narg.prove(&session, &instance, &witness);
     println!("FullWARP NARG string: {} bytes", proof.len());
 
-    dsfs::verify(&full, &session, &instance, proof.as_bytes())
+    narg.verify(&session, &instance, &proof)
         .expect("FullWARP verification failed");
 
     println!("FullWARP verification: OK");

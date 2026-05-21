@@ -1,5 +1,7 @@
 use ark_ff::Field;
-use ark_relations::r1cs::{ConstraintMatrices, ConstraintSynthesizer, ConstraintSystem};
+use ark_relations::gr1cs::{
+    predicate::polynomial_constraint::R1CS_PREDICATE_LABEL, ConstraintSynthesizer, ConstraintSystem,
+};
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -33,26 +35,37 @@ impl SerializableConstraintMatrices {
     pub fn generate_description<F: Field>(
         constraint_synthesizer: impl ConstraintSynthesizer<F>,
     ) -> Vec<u8> {
+        // ark-relations 0.6 (gr1cs): the standalone `ConstraintMatrices` type
+        // is gone. Metadata accessors live on the `ConstraintSystemRef`, and
+        // `to_matrices()` returns a per-predicate `BTreeMap` of matrices. For
+        // R1CS, the "R1CS" entry holds A, B, C in that order.
         let constraint_system = ConstraintSystem::<F>::new_ref();
         constraint_synthesizer
             .generate_constraints(constraint_system.clone())
             .unwrap();
         constraint_system.finalize();
-        let matrices: ConstraintMatrices<F> = constraint_system.to_matrices().unwrap();
-        let serializable = SerializableConstraintMatrices::from(matrices);
-        serde_json::to_string(&serializable).unwrap().into_bytes()
-    }
-}
 
-impl<F: Field> From<ConstraintMatrices<F>> for SerializableConstraintMatrices {
-    fn from(m: ConstraintMatrices<F>) -> Self {
-        Self {
-            num_instance_variables: m.num_instance_variables,
-            num_witness_variables: m.num_witness_variables,
-            num_constraints: m.num_constraints,
-            a: Self::serialize_nested_field(m.a),
-            b: Self::serialize_nested_field(m.b),
-            c: Self::serialize_nested_field(m.c),
-        }
+        let num_instance_variables = constraint_system.num_instance_variables();
+        let num_witness_variables = constraint_system.num_witness_variables();
+        let num_constraints = constraint_system.num_constraints();
+
+        let mut per_predicate = constraint_system.to_matrices().unwrap();
+        let mut abc = per_predicate
+            .remove(R1CS_PREDICATE_LABEL)
+            .expect("R1CS predicate present")
+            .into_iter();
+        let a = abc.next().unwrap_or_default();
+        let b = abc.next().unwrap_or_default();
+        let c = abc.next().unwrap_or_default();
+
+        let serializable = SerializableConstraintMatrices {
+            num_instance_variables,
+            num_witness_variables,
+            num_constraints,
+            a: Self::serialize_nested_field(a),
+            b: Self::serialize_nested_field(b),
+            c: Self::serialize_nested_field(c),
+        };
+        serde_json::to_string(&serializable).unwrap().into_bytes()
     }
 }

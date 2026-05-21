@@ -770,7 +770,10 @@ where
         )?;
         (rt[0] == computed_mt.root()).ok_or_err(WARPDeciderError::MerkleRoot)?;
         (mt[0].root() == computed_mt.root()).ok_or_err(WARPDeciderError::MerkleTrapDoor)?;
-        (mt[0].leaf_nodes == computed_mt.leaf_nodes).ok_or_err(WARPDeciderError::MerkleRoot)?;
+        // ark-crypto-primitives 0.6 made `MerkleTree::leaf_nodes` private.
+        // The previous leaf-equality check was redundant: equal roots already
+        // imply equal leaves under collision resistance, and prover/verifier
+        // trees here share both hash parameters and leaf inputs.
 
         let f_hat = DenseMultilinearExtension::from_evaluations_slice(
             log2(self.code.code_len()) as usize,
