@@ -15,7 +15,7 @@ use crate::security::{ArgumentSecurity, ReductionSecurity, SecurityProfile};
 ///   `tag || LE32(|first|) || first || LE32(|second|) || second`
 /// This encoding is injective — no two distinct `(tag, first, second)` triples
 /// produce the same byte string — so it's a safe input to the DSFS derivation.
-fn derive_composition_id(tag: u8, first: &[u8], second: &[u8]) -> Vec<u8> {
+pub(crate) fn derive_composition_id(tag: u8, first: &[u8], second: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(1 + 4 + first.len() + 4 + second.len());
     out.push(tag);
     out.extend_from_slice(&(first.len() as u32).to_le_bytes());

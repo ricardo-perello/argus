@@ -13,6 +13,8 @@ extern crate alloc;
 mod argument;
 mod channel;
 mod compose;
+mod indexed;
+mod indexed_security;
 mod narg;
 mod reduction;
 mod security;
@@ -41,6 +43,12 @@ pub const fn pad_protocol_id(label: &[u8]) -> [u8; 32] {
 pub use argument::InteractiveArgument;
 pub use channel::{ProverChannel, VerifierChannel};
 pub use compose::{ChainedReduction, ReducedArgument};
+pub use indexed::{
+    CommittedIndexBytes, IndexedInstance, IndexedInstanceRef, IndexedInteractiveArgument,
+    IndexedInteractiveReduction, PreparedArgument, PreparedReduction, TrivialIndexedArgument,
+    TrivialIndexedReduction, VerifierKeyCommitment,
+};
+pub use indexed_security::{IndexedArgumentSecurity, IndexedReductionSecurity};
 pub use narg::{
     NargAsInteractiveArgument, NargProof, NonInteractiveArgument, NonInteractiveReduction,
 };
