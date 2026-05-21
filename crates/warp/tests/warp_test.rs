@@ -25,10 +25,10 @@ use warp::{
     },
     types::{AccumulatorInstances, AccumulatorWitnesses},
     utils::poseidon,
-    FullWARP, WARPDeciderIA, WARPReduction,
+    FullWARP, WARPDeciderIA, WARPIndex, WARPReduction,
 };
 
-use ia_core::{NonInteractiveArgument, NonInteractiveReduction, ReductionSecurity};
+use ia_core::{IndexedReductionSecurity, NonInteractiveArgument, NonInteractiveReduction};
 use spongefish_dsfs::{self as dsfs, Keccak, SpongeInfo, SpongeProver, SpongeVerifier};
 
 type MT = Blake3MerkleTreeParams<Fp>;
@@ -109,9 +109,8 @@ fn empty_acc() -> (AccumulatorInstances<Fp, MT>, AccumulatorWitnesses<Fp, MT>) {
 }
 
 #[test]
-fn warp_security_profile_is_derived_from_source_instance() {
+fn warp_security_profile_is_derived_from_index() {
     let (r1cs, code, instances, _) = setup();
-    let pk = (r1cs.clone(), r1cs.m, r1cs.n, r1cs.k);
     let (empty_inst_a, _) = empty_acc();
     let (empty_inst_b, _) = empty_acc();
 
@@ -125,27 +124,36 @@ fn warp_security_profile_is_derived_from_source_instance() {
     let warp_large = Arc::new(WARP::<Fp, R1CS<Fp>, _, MT>::new(
         WARPConfig::new(8, 4, 8, 7, r1cs.config(), code.code_len()),
         code,
-        r1cs,
+        r1cs.clone(),
         (),
         (),
     ));
 
-    let small_instance = WARPInstance {
+    let ix_small = WARPIndex {
         warp: warp_small,
-        pk: pk.clone(),
+        m: r1cs.m,
+        n: r1cs.n,
+        k: r1cs.k,
+    };
+    let ix_large = WARPIndex {
+        warp: warp_large,
+        m: r1cs.m,
+        n: r1cs.n,
+        k: r1cs.k,
+    };
+
+    let small_instance = WARPInstance {
         instances: instances.clone(),
         acc_instances: empty_inst_a,
     };
     let large_instance = WARPInstance {
-        warp: warp_large,
-        pk,
         instances,
         acc_instances: empty_inst_b,
     };
 
     let ir = WARPReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
-    let small_profile = ir.profile_for_source_instance(&small_instance);
-    let large_profile = ir.profile_for_source_instance(&large_instance);
+    let small_profile = ir.profile_for_concrete_source(&ix_small, &small_instance);
+    let large_profile = ir.profile_for_concrete_source(&ix_large, &large_instance);
 
     assert_eq!(
         large_profile.rbr_soundness_errors.len(),
@@ -153,7 +161,7 @@ fn warp_security_profile_is_derived_from_source_instance() {
     );
     assert!(
         large_profile.sr_soundness_error(0) > small_profile.sr_soundness_error(0),
-        "larger WARP instance should carry a larger concrete RBR sum",
+        "larger WARP index should carry a larger concrete RBR sum",
     );
 }
 
@@ -297,18 +305,21 @@ fn warp_ir_dsfs_prove_verify() {
     let warp_config = WARPConfig::new(l1, l1, 8, 7, r1cs.config(), code.code_len());
     let warp = Arc::new(WARP::<Fp, R1CS<Fp>, _, MT>::new(
         warp_config,
-        code.clone(),
+        code,
         r1cs.clone(),
         (),
         (),
     ));
 
-    let pk = (r1cs.clone(), r1cs.m, r1cs.n, r1cs.k);
+    let ix = WARPIndex {
+        warp,
+        m: r1cs.m,
+        n: r1cs.n,
+        k: r1cs.k,
+    };
     let (empty_inst, empty_wit) = empty_acc();
 
     let instance = WARPInstance {
-        warp: warp.clone(),
-        pk,
         instances,
         acc_instances: empty_inst,
     };
@@ -319,7 +330,7 @@ fn warp_ir_dsfs_prove_verify() {
 
     let session = spongefish::session!("warp IR test");
     let ir = WARPReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
-    let narg = dsfs::DsfsReduction::<_, _>::new(ir, Keccak::default());
+    let narg = dsfs::DsfsReduction::<_, _>::new(ir, Keccak::default()).prepare(&ix);
     let (proof, target_p, _target_w) = narg.prove(&session, &instance, &witness);
     println!("IR NARG string: {} bytes", proof.len());
 
@@ -345,18 +356,21 @@ fn warp_full_ia_dsfs_prove_verify() {
     let warp_config = WARPConfig::new(l1, l1, 8, 7, r1cs.config(), code.code_len());
     let warp = Arc::new(WARP::<Fp, R1CS<Fp>, _, MT>::new(
         warp_config,
-        code.clone(),
+        code,
         r1cs.clone(),
         (),
         (),
     ));
 
-    let pk = (r1cs.clone(), r1cs.m, r1cs.n, r1cs.k);
+    let ix = WARPIndex {
+        warp,
+        m: r1cs.m,
+        n: r1cs.n,
+        k: r1cs.k,
+    };
     let (empty_inst, empty_wit) = empty_acc();
 
     let instance = WARPInstance {
-        warp: warp.clone(),
-        pk,
         instances,
         acc_instances: empty_inst,
     };
@@ -369,7 +383,10 @@ fn warp_full_ia_dsfs_prove_verify() {
     let reduction = WARPReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
     let full =
         FullWARP::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new(reduction, WARPDeciderIA::default());
-    let narg = dsfs::Dsfs::<_, _>::new(full, Keccak::default());
+    // Composed `FullWARP` is an indexed IA with `Index = (WARPIndex,
+    // WARPIndex)` — both components currently share the same index. Folding
+    // into a single `WARPIndex` for FullWARP is a future cleanup.
+    let narg = dsfs::Dsfs::<_, _>::new(full, Keccak::default()).prepare(&(ix.clone(), ix));
     let proof = narg.prove(&session, &instance, &witness);
     println!("FullWARP NARG string: {} bytes", proof.len());
 
