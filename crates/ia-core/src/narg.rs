@@ -181,6 +181,32 @@ pub trait NonInteractiveReduction {
     ) -> VerificationResult<Self::TargetInstance>;
 }
 
+/// Non-interactive argument produced from a preprocessed (indexed) body.
+///
+/// A supertrait of [`NonInteractiveArgument`] that exposes the committed
+/// verifier index the NARG was bound to. Plain NARGs (e.g. `Dsfs<plain_ia>`)
+/// do NOT implement this trait: the type system uses that asymmetry so a
+/// generic consumer with bound `T: IndexedNonInteractiveArgument` provably
+/// receives a NARG built from a preprocessed body.
+///
+/// The returned bytes are the same canonical commitment that the prepared
+/// transcript absorbed before the first challenge, so consumers can use them
+/// for audit trails, key persistence, or cross-session binding checks without
+/// re-deriving the commitment from the verifier key.
+pub trait IndexedNonInteractiveArgument: NonInteractiveArgument {
+    /// Borrow the committed verifier index this NARG is bound to.
+    fn committed_index(&self) -> &crate::indexed::CommittedIndexBytes;
+}
+
+/// Non-interactive reduction produced from a preprocessed (indexed) body.
+///
+/// Reduction counterpart to [`IndexedNonInteractiveArgument`]; the same
+/// strong-typing argument applies.
+pub trait IndexedNonInteractiveReduction: NonInteractiveReduction {
+    /// Borrow the committed verifier index this NARG is bound to.
+    fn committed_index(&self) -> &crate::indexed::CommittedIndexBytes;
+}
+
 /// Adapter viewing a NARG as a one-message interactive argument.
 ///
 /// The adapter fixes the NARG session because the `InteractiveArgument` API has

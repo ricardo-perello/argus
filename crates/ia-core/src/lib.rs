@@ -50,7 +50,8 @@ pub use indexed::{
 };
 pub use indexed_security::{IndexedArgumentSecurity, IndexedReductionSecurity};
 pub use narg::{
-    NargAsInteractiveArgument, NargProof, NonInteractiveArgument, NonInteractiveReduction,
+    IndexedNonInteractiveArgument, IndexedNonInteractiveReduction, NargAsInteractiveArgument,
+    NargProof, NonInteractiveArgument, NonInteractiveReduction,
 };
 pub use reduction::InteractiveReduction;
 pub use security::{
