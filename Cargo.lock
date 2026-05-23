@@ -1688,9 +1688,9 @@ dependencies = [
 
 [[package]]
 name = "sha3"
-version = "0.11.0-rc.9"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b233a7d59d7bfc027208506a33ffc9532b2acb24ddc61fe7e758dc2250db431"
+checksum = "be176f1a57ce4e3d31c1a166222d9768de5954f811601fb7ca06fc8203905ce1"
 dependencies = [
  "digest 0.11.2",
  "keccak 0.2.0",
@@ -1795,7 +1795,7 @@ dependencies = [
 
 [[package]]
 name = "spongefish"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "ark-ec",
  "ark-ff",
@@ -1809,14 +1809,14 @@ dependencies = [
  "p3-koala-bear",
  "rand 0.8.5",
  "sha2 0.11.0",
- "sha3 0.11.0-rc.9",
+ "sha3 0.11.0",
  "spongefish-derive",
  "zeroize",
 ]
 
 [[package]]
 name = "spongefish-derive"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1825,7 +1825,7 @@ dependencies = [
 
 [[package]]
 name = "spongefish-dsfs"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "ia-core",
  "rand 0.8.5",
