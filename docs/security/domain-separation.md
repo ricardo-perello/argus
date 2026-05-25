@@ -8,7 +8,7 @@ This note describes how Argus binds **protocol identity**, **compilation / trans
 
 | Input | Meaning | Typical source |
 | ----- | ------- | -------------- |
-| **Protocol id** | What interactive argument is being run (may be runtime-dependent, e.g. composed σ-protocols). | `InteractiveArgument::protocol_id(&self)` / `InteractiveReduction::protocol_id(&self)` as `impl AsRef<[u8]>`. |
+| **Protocol id** | What protocol core is being run (may be runtime-dependent, e.g. composed σ-protocols). | `ProtocolCore::protocol_id(&self)` as `impl AsRef<[u8]>`. |
 | **Sponge / compilation info** | Which NARG layout and sponge bootstrap apply (must change if transcript format or sponge changes). | `spongefish::dsfs::SpongeInfo::SPONGE_INFO` per duplex/`StdHash` choice. |
 | **Session** | Per-invocation context (ceremony, request id, etc.). | Any `S: spongefish::Encoding<[u8]>`; DSFS uses `session.encode()`. |
 
@@ -35,7 +35,7 @@ The `domain_separator!` macro builds protocol bytes with **`protocol_label`**, s
 
 ---
 
-## DSFS: `SpongeInfo` and entry points
+## DSFS: `SpongeInfo` and constructors
 
 `spongefish::dsfs` defines:
 
@@ -44,11 +44,21 @@ Keccak::SPONGE_INFO   = b"dsfs/v2/keccak-f1600-r136c64"
 StdHash::SPONGE_INFO    = b"dsfs/v2/shake128-r168c32"
 ```
 
-`prove` / `verify` (and sponge/reduction variants) compute session bytes, then:
+`non_interactive_argument` / `non_interactive_reduction` construct DSFS wrappers
+that compute session bytes during `prove` / `verify`, then:
 
 `DomainSeparator::derive(ia.protocol_id().as_ref(), H::SPONGE_INFO, session_bytes.as_ref()).instance(instance)`
 
 and attach the duplex sponge or `std_prover` / `std_verifier` as documented in [`../history/backends/dsfs-v2.md`](../history/backends/dsfs-v2.md).
+
+Prepared preprocessing DSFS uses the same derivation, but the public input is:
+
+```text
+IndexedInstanceRef { committed_index: vk.committed_index(), instance }
+```
+
+This binds the committed verifier index and the per-claim instance before the
+first challenge while still passing the bare instance to keyed protocol code.
 
 Transcript adapters (`TranscriptSponge` in `spongefish::dsfs`) use the same derivation for both Keccak and `StdHash` so σ-bridge and DSFS agree when both use **`StdHash`** with the same protocol and session fields.
 

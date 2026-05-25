@@ -21,3 +21,4 @@ ark-crypto-primitives = { workspace = true, features = ["crh", "merkle_tree"] }
 curve25519-dalek = { version = "4", features = ["rand_core"] }
 rand = "0.8"
 hex = "0.4"
+blake3.workspace = true

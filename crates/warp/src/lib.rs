@@ -9,4 +9,7 @@ pub mod utils;
 pub use protocol::ir::{
     FullWARP, WARPDeciderIA, WARPReduction, WARPSecurityBound, WARPSecurityParams,
 };
-pub use protocol::warp::{DeciderInstance, DeciderWitness, WARPInstance, WARPWitness, WARP};
+pub use protocol::warp::{
+    DeciderInstance, DeciderWitness, WARPIndex, WARPInstance, WARPProverKey, WARPVerifierKey,
+    WARPWitness, WARP,
+};

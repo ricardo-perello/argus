@@ -7,10 +7,22 @@ Backends execute protocol channel programs.
 The DSFS backend compiles an `InteractiveArgument` into a non-interactive
 argument and an `InteractiveReduction` into a non-interactive reduction.
 
+Constructors name the compiled object:
+
+```rust
+let nia = spongefish_dsfs::non_interactive_argument(argument, sponge);
+let nir = spongefish_dsfs::non_interactive_reduction(reduction, sponge);
+```
+
+For preprocessing cores, the same constructors return an unprepared handle whose
+`.prepare(&ix)` method stores preprocessing keys and returns a prepared
+non-interactive argument or reduction.
+
 It is responsible for:
 
 - deriving the domain separator,
 - absorbing public inputs before the first challenge,
+- absorbing committed verifier-index bytes for prepared protocols,
 - absorbing prover messages before challenges,
 - squeezing verifier challenges,
 - serializing prover messages into proof bytes,

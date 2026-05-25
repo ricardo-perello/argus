@@ -25,7 +25,8 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 use ia_core::{
-    InteractiveArgument, ProverChannel, VerificationError, VerificationResult, VerifierChannel,
+    ArgumentCore, InteractiveArgument, ProtocolCore, ProverChannel, VerificationError,
+    VerificationResult, VerifierChannel,
 };
 use rand_chacha::rand_core::SeedableRng;
 use sigma_proofs::traits::SigmaProtocol;
@@ -38,13 +39,10 @@ use spongefish::Encoding;
 /// provides fresh randomness for `prover_commit` via `ChaCha20Rng`.
 pub struct SigmaIA<S>(pub S);
 
-impl<S> InteractiveArgument for SigmaIA<S>
+impl<S> ProtocolCore for SigmaIA<S>
 where
     S: SigmaProtocol,
 {
-    type Instance = SigmaIA<S>;
-    type Witness = (S::Witness, [u8; 32]);
-
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         // The full 64-byte sigma-proofs identifier. For `ComposedRelation` this
         // is computed at runtime from the composition tree; for canonical
@@ -52,7 +50,20 @@ where
         // DSFS passes this with `SpongeInfo` and encoded session into `DomainSeparator::derive`.
         self.0.protocol_identifier()
     }
+}
 
+impl<S> ArgumentCore for SigmaIA<S>
+where
+    S: SigmaProtocol,
+{
+    type Instance = SigmaIA<S>;
+    type Witness = (S::Witness, [u8; 32]);
+}
+
+impl<S> InteractiveArgument for SigmaIA<S>
+where
+    S: SigmaProtocol,
+{
     fn prove<P: ProverChannel>(
         &self,
         ch: &mut P,

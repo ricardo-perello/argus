@@ -16,9 +16,11 @@ cargo run -p argus-examples --bin schnorr -- --live
 
 ## What It Demonstrates
 
-- Implementing `InteractiveArgument`.
+- Writing one `ia_core::impl_interactive_argument!` block.
+- Expanding that block into `ProtocolCore`, `ArgumentCore`, and
+  `InteractiveArgument`.
 - Using only channel calls inside protocol code.
-- Compiling the IA with `spongefish::dsfs`.
+- Compiling the IA with `spongefish_dsfs::non_interactive_argument`.
 - Running the same IA with `live-channel`.
 - Implementing constant-error `ArgumentSecurity`.
 

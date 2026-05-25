@@ -18,10 +18,9 @@ use rand::rngs::OsRng;
 use spongefish_dsfs as dsfs;
 
 use ia_core::{
-    ArgumentSecurity, ChainedReduction, InteractiveArgument, InteractiveReduction,
-    NonInteractiveArgument, NonInteractiveReduction, ProverChannel, ReducedArgument,
-    ReductionSecurity, SecurityErrorBound, SecurityProfile, VerificationError, VerificationResult,
-    VerifierChannel,
+    ArgumentSecurity, ChainedReduction, NonInteractiveArgument, NonInteractiveReduction,
+    ProverChannel, ReducedArgument, ReductionSecurity, SecurityErrorBound, SecurityProfile,
+    VerificationError, VerificationResult, VerifierChannel,
 };
 
 // ---------------------------------------------------------------------------
@@ -55,15 +54,16 @@ struct AccPair {
 #[derive(Default)]
 struct FoldPairs;
 
+ia_core::impl_interactive_reduction! {
 impl InteractiveReduction for FoldPairs {
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        ia_core::pad_protocol_id(b"fold pairs")
+    }
+
     type SourceInstance = Claims;
     type TargetInstance = Claims;
     type SourceWitness = Values;
     type TargetWitness = Values;
-
-    fn protocol_id(&self) -> impl AsRef<[u8]> {
-        ia_core::pad_protocol_id(b"fold pairs")
-    }
 
     fn prove<P: ProverChannel>(
         &self,
@@ -111,6 +111,7 @@ impl InteractiveReduction for FoldPairs {
         Ok(Claims(folded))
     }
 }
+}
 
 impl ReductionSecurity for FoldPairs {
     type SourceParams = ();
@@ -147,15 +148,16 @@ impl ReductionSecurity for FoldPairs {
 #[derive(Default)]
 struct Accumulate;
 
+ia_core::impl_interactive_reduction! {
 impl InteractiveReduction for Accumulate {
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        ia_core::pad_protocol_id(b"accumulate")
+    }
+
     type SourceInstance = Claims;
     type TargetInstance = AccPair;
     type SourceWitness = Values;
     type TargetWitness = ();
-
-    fn protocol_id(&self) -> impl AsRef<[u8]> {
-        ia_core::pad_protocol_id(b"accumulate")
-    }
 
     fn prove<P: ProverChannel>(
         &self,
@@ -217,6 +219,7 @@ impl InteractiveReduction for Accumulate {
         })
     }
 }
+}
 
 impl ReductionSecurity for Accumulate {
     type SourceParams = ();
@@ -253,13 +256,14 @@ impl ReductionSecurity for Accumulate {
 #[derive(Default)]
 struct EqualityCheck;
 
+ia_core::impl_interactive_argument! {
 impl InteractiveArgument for EqualityCheck {
-    type Instance = AccPair;
-    type Witness = ();
-
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"equality check")
     }
+
+    type Instance = AccPair;
+    type Witness = ();
 
     fn prove<P: ProverChannel>(&self, _ch: &mut P, _instance: &AccPair, _witness: &()) {}
 
@@ -274,6 +278,7 @@ impl InteractiveArgument for EqualityCheck {
             Err(VerificationError)
         }
     }
+}
 }
 
 impl ArgumentSecurity for EqualityCheck {
@@ -337,7 +342,7 @@ fn main() {
     println!("    8 values -> 4 -> 2\n");
 
     let two_folds = TwoFolds::default();
-    let nir = dsfs::DsfsReduction::<_, _>::new(two_folds, dsfs::Keccak::default());
+    let nir = dsfs::non_interactive_reduction(two_folds, dsfs::Keccak::default());
     let (proof, target, _) = nir.prove(&session, &instance, &witness);
     println!(
         "  proof ({} bytes): {}",
@@ -358,7 +363,7 @@ fn main() {
     println!("    8 values -> 4 -> 2 -> AccPair -> accept/reject\n");
 
     let full = FullProtocol::default();
-    let nia = dsfs::Dsfs::<_, _>::new(full, dsfs::Keccak::default());
+    let nia = dsfs::non_interactive_argument(full, dsfs::Keccak::default());
     let proof = nia.prove(&session, &instance, &witness);
     println!(
         "  proof ({} bytes): {}",
@@ -388,7 +393,7 @@ mod tests {
 
         let session = spongefish::session!("argus example: composition");
         let protocol = FullProtocol::default();
-        let nia = dsfs::Dsfs::<_, _>::new(protocol, dsfs::Keccak::default());
+        let nia = dsfs::non_interactive_argument(protocol, dsfs::Keccak::default());
         let proof = nia.prove(&session, &instance, &witness);
         nia.verify(&session, &instance, &proof)
             .expect("verification failed");

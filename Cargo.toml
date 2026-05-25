@@ -5,11 +5,8 @@ members = [
     "crates/ibcs",
     "crates/argus-examples",
     "crates/sigma-bridge",
+    "crates/warp",
 ]
-# `crates/warp` temporarily excluded: depends on `dmpierre/ark-codes` which has no
-# ark-* 0.6 fork. Re-add once ark-codes is bumped (see codec-ownership-correction
-# wiki note, PR 2 blockers).
-exclude = ["crates/warp"]
 resolver = "2"
 
 [workspace.dependencies]
@@ -22,8 +19,10 @@ ark-bls12-381 = "0.6.0"
 ark-curve25519 = "0.6.0"
 ark-relations = "0.6.0"
 ark-r1cs-std = "0.6.0"
-ark-crypto-primitives = { version = "0.6.0", features = ["merkle_tree", "crh", "constraints", "sponge"] }
-ark-codes = { git = "https://github.com/dmpierre/ark-codes.git" }
+ark-crypto-primitives = { version = "0.6.0", features = ["merkle_tree", "crh", "constraints", "sponge", "blake3"] }
+# Pinned to z-tech's open arkworks-0.6.0 fork (dmpierre/ark-codes#1).
+# Repoint to dmpierre/ark-codes once that PR merges.
+ark-codes = { git = "https://github.com/z-tech/ark-codes.git", branch = "z-tech/arkworks-0.6.0" }
 spongefish = { version = "0.7.0", features = ["keccak", "derive"] }
 spongefish-dsfs = { version = "0.7.0" }
 thiserror = "2.0"

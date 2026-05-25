@@ -38,41 +38,44 @@ impl<G: CurveGroup> Default for Schnorr<G> {
     }
 }
 
-impl<G> InteractiveArgument for Schnorr<G>
-where
-    G: CurveGroup + PrimeGroup + Encoding + Deserialize,
-    G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
-{
-    type Instance = [G; 2]; // [generator, public_key]
-    type Witness = G::ScalarField;
+ia_core::impl_interactive_argument! {
+    impl<G> InteractiveArgument for Schnorr<G>
+    where
+        G: CurveGroup + PrimeGroup + Encoding + Deserialize,
+        G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
+    {
+        fn protocol_id(&self) -> impl AsRef<[u8]> {
+            ia_core::pad_protocol_id(b"schnorr")
+        }
 
-    fn protocol_id(&self) -> impl AsRef<[u8]> {
-        ia_core::pad_protocol_id(b"schnorr")
-    }
+        /// [generator, public_key]
+        type Instance = [G; 2];
+        type Witness = G::ScalarField;
 
-    #[allow(non_snake_case)]
-    fn prove<P: ProverChannel>(&self, ch: &mut P, instance: &[G; 2], witness: &G::ScalarField) {
-        let k = G::ScalarField::rand(&mut OsRng);
-        let K = instance[0] * k;
+        #[allow(non_snake_case)]
+        fn prove<P: ProverChannel>(&self, ch: &mut P, instance: &[G; 2], witness: &G::ScalarField) {
+            let k = G::ScalarField::rand(&mut OsRng);
+            let K = instance[0] * k;
 
-        ch.send_prover_message(&K);
-        let c: G::ScalarField = ch.read_verifier_message();
-        let r = k + c * witness;
-        ch.send_prover_message(&r);
-    }
+            ch.send_prover_message(&K);
+            let c: G::ScalarField = ch.read_verifier_message();
+            let r = k + c * witness;
+            ch.send_prover_message(&r);
+        }
 
-    #[allow(non_snake_case)]
-    fn verify<V: VerifierChannel>(&self, ch: &mut V, instance: &[G; 2]) -> VerificationResult<()> {
-        let (G_gen, X) = (instance[0], instance[1]);
+        #[allow(non_snake_case)]
+        fn verify<V: VerifierChannel>(&self, ch: &mut V, instance: &[G; 2]) -> VerificationResult<()> {
+            let (G_gen, X) = (instance[0], instance[1]);
 
-        let K: G = ch.read_prover_message()?;
-        let c: G::ScalarField = ch.send_verifier_message();
-        let r: G::ScalarField = ch.read_prover_message()?;
+            let K: G = ch.read_prover_message()?;
+            let c: G::ScalarField = ch.send_verifier_message();
+            let r: G::ScalarField = ch.read_prover_message()?;
 
-        if G_gen * r == K + X * c {
-            Ok(())
-        } else {
-            Err(VerificationError)
+            if G_gen * r == K + X * c {
+                Ok(())
+            } else {
+                Err(VerificationError)
+            }
         }
     }
 }
@@ -130,7 +133,7 @@ fn run_dsfs(instance: &[ark_curve25519::EdwardsProjective; 2], sk: &ark_curve255
     let session = spongefish::session!("spongefish examples");
 
     let schnorr = Schnorr::<G>::default();
-    let nia = dsfs::Dsfs::<_, _>::new(schnorr, dsfs::Keccak::default());
+    let nia = dsfs::non_interactive_argument(schnorr, dsfs::Keccak::default());
     let narg = nia.prove(&session, instance, sk);
     println!("Proof:\n{}", hex::encode(narg.as_bytes()));
 
@@ -307,7 +310,7 @@ mod tests {
 
         let session = spongefish::session!("spongefish examples");
         let schnorr = Schnorr::<G>::default();
-        let nia = dsfs::Dsfs::<_, _>::new(schnorr, dsfs::Keccak::default());
+        let nia = dsfs::non_interactive_argument(schnorr, dsfs::Keccak::default());
         let narg = nia.prove(&session, &instance, &sk);
         nia.verify(&session, &instance, &narg)
             .expect("dsfs verification failed");
@@ -322,7 +325,7 @@ mod tests {
 
         let session = spongefish::session!("spongefish examples");
         let schnorr = Schnorr::<G>::default();
-        let narg = dsfs::Dsfs::<_, _>::new(schnorr, dsfs::Keccak::default());
+        let narg = dsfs::non_interactive_argument(schnorr, dsfs::Keccak::default());
 
         let proof = narg.prove(&session, &instance, &sk);
 

@@ -77,8 +77,8 @@ impl Iterator for Hypercube {
 impl ExactSizeIterator for Hypercube {}
 
 /// Reduce evaluation tables by folding pairs with a challenge value.
-/// Used in sumcheck: for each pair (table[2i], table[2i+1]),
-/// compute table[i] = table[2i] + c * (table[2i+1] - table[2i]).
+/// Used in sumcheck: for each pair `table[2i]`, `table[2i+1]`,
+/// compute `table[i] = table[2i] + c * (table[2i+1] - table[2i])`.
 ///
 /// This operates on a collection of tables (Vec of Vecs), halving each.
 pub fn tablewise_reduce<F: Field>(tables: &mut Vec<Vec<F>>, challenge: F) {
@@ -98,7 +98,7 @@ pub fn tablewise_reduce<F: Field>(tables: &mut Vec<Vec<F>>, challenge: F) {
 }
 
 /// Reduce a single evaluation vector by folding pairs with a challenge.
-/// pairwise: v[i] = v[2i] + c * (v[2i+1] - v[2i])
+/// Pairwise: `v[i] = v[2i] + c * (v[2i+1] - v[2i])`.
 pub fn pairwise_reduce<F: Field>(evals: &mut Vec<F>, challenge: F) {
     let half = evals.len() / 2;
     let mut reduced = Vec::with_capacity(half);

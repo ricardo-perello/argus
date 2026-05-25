@@ -7,17 +7,52 @@ use ark_poly::{DenseMultilinearExtension, Polynomial};
 use ark_std::log2;
 
 use ia_core::{
-    ArgumentSecurity, InteractiveArgument, InteractiveReduction, ProverChannel, ReducedArgument,
-    ReductionSecurity, SecurityErrorBound, SecurityProfile, VerificationResult, VerifierChannel,
+    CommittedIndexBytes, PreprocessingArgumentSecurity, PreprocessingReductionSecurity,
+    ProverChannel, ReducedArgument, SecurityErrorBound, SecurityProfile, VerificationResult,
+    VerifierChannel, VerifierKeyCommitment,
 };
 
-use crate::protocol::warp::{DeciderInstance, DeciderWitness, WARPInstance, WARPWitness};
+use crate::protocol::warp::{
+    DeciderInstance, DeciderWitness, WARPIndex, WARPInstance, WARPProverKey, WARPVerifierKey,
+    WARPWitness,
+};
 use crate::relations::r1cs::R1CSConstraints;
 use crate::relations::BundledPESAT;
 use crate::utils::poly::{eq_poly, Hypercube};
 
 // -----------------------------------------------------------------------
-// WARPReduction: the full IOR as a single InteractiveReduction
+// VerifierKeyCommitment
+// -----------------------------------------------------------------------
+
+/// Tag prefixed to the canonical bytes returned by
+/// [`WARPVerifierKey::committed_index`]. Distinct from any other Argus tag
+/// so the prepared DSFS transcript cannot confuse a WARP verifier index with
+/// some other preprocessing protocol's commitment.
+const WARP_VK_COMMIT_TAG: &[u8] = b"argus:warp:vk:v1";
+
+impl<F, P, C, MT> VerifierKeyCommitment for WARPVerifierKey<F, P, C, MT>
+where
+    F: Field,
+    P: BundledPESAT<F>,
+    C: LinearCode<F> + Clone,
+    MT: Config,
+{
+    fn committed_index(&self) -> CommittedIndexBytes {
+        // v1: canonical bytes of the verifier-visible dimensions only. CY24
+        // §32.7.1 prescribes binding to a Merkle commitment of the encoded
+        // verifier-index oracles (matrix roots); add that once WARP carries
+        // those oracles in the verifier key.
+        let mut out = Vec::with_capacity(WARP_VK_COMMIT_TAG.len() + 3 * 8);
+        out.extend_from_slice(WARP_VK_COMMIT_TAG);
+        out.extend_from_slice(&(self.m as u64).to_le_bytes());
+        out.extend_from_slice(&(self.n as u64).to_le_bytes());
+        out.extend_from_slice(&(self.k as u64).to_le_bytes());
+        CommittedIndexBytes::new(out)
+    }
+}
+
+// -----------------------------------------------------------------------
+// WARPReduction: the full IOR as a single PreprocessingInteractiveReduction
 // -----------------------------------------------------------------------
 
 pub struct WARPReduction<F, P, C, MT> {
@@ -38,7 +73,12 @@ impl<F, P, C, MT> Default for WARPReduction<F, P, C, MT> {
     }
 }
 
-/// Security-relevant WARP parameters derived from a concrete source instance.
+/// Security-relevant WARP parameters derived from a concrete index.
+///
+/// Every field is fixed once the static problem description (matrices,
+/// dimensions, code, OOD/shift counts) is fixed, so these are index-derived,
+/// not per-claim. The instance-derived security params are empty under the
+/// current analysis.
 #[derive(Clone, Debug)]
 pub struct WARPSecurityParams {
     /// Number of twin-sumcheck folding rounds (= log2 of total instance count l).
@@ -63,7 +103,8 @@ pub struct WARPSecurityParams {
 /// shape, with each field interpreted as a maximum over the instance family.
 pub type WARPSecurityBound = WARPSecurityParams;
 
-impl<F, P, C, MT> InteractiveReduction for WARPReduction<F, P, C, MT>
+ia_core::impl_preprocessing_reduction! {
+impl<F, P, C, MT> PreprocessingInteractiveReduction for WARPReduction<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -76,28 +117,51 @@ where
     C: LinearCode<F> + Clone,
     MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
 {
-    type SourceInstance = WARPInstance<F, P, C, MT>;
-    type SourceWitness = WARPWitness<F, MT>;
-    type TargetInstance = DeciderInstance<F, P, C, MT>;
-    type TargetWitness = DeciderWitness<F, MT>;
-
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"argus::warp::reduction")
+    }
+
+    type SourceInstance = WARPInstance<F, MT>;
+    type TargetInstance = DeciderInstance<F, MT>;
+    type SourceWitness = WARPWitness<F, MT>;
+    type TargetWitness = DeciderWitness<F, MT>;
+
+    type Index = WARPIndex<F, P, C, MT>;
+    type ProverKey = WARPProverKey<F, P, C, MT>;
+    type VerifierKey = WARPVerifierKey<F, P, C, MT>;
+
+    fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+        let pk = WARPProverKey {
+            warp: ix.warp.clone(),
+            m: ix.m,
+            n: ix.n,
+            k: ix.k,
+        };
+        let vk = WARPVerifierKey {
+            warp: ix.warp.clone(),
+            m: ix.m,
+            n: ix.n,
+            k: ix.k,
+        };
+        (pk, vk)
     }
 
     fn prove<Ch: ProverChannel>(
         &self,
         ch: &mut Ch,
-        instance: &WARPInstance<F, P, C, MT>,
-        witness: &WARPWitness<F, MT>,
-    ) -> (DeciderInstance<F, P, C, MT>, DeciderWitness<F, MT>) {
-        let warp = &instance.warp;
-        let pk = &instance.pk;
+        pk: &Self::ProverKey,
+        instance: &Self::SourceInstance,
+        witness: &Self::SourceWitness,
+    ) -> (DeciderInstance<F, MT>, DeciderWitness<F, MT>) {
+        let warp = &pk.warp;
+        // WARP::prove_with_channel still takes the (P, M, N, k) tuple. Build
+        // it from the prover key.
+        let pk_tuple = (warp.p.clone(), pk.m, pk.n, pk.k);
 
         let (acc_instance, acc_witness, _proof_data) = warp
             .prove_with_channel(
                 ch,
-                pk,
+                &pk_tuple,
                 &instance.instances,
                 &witness.witnesses,
                 &instance.acc_instances,
@@ -105,34 +169,31 @@ where
             )
             .expect("honest prover must not fail");
 
-        let target_instance = DeciderInstance {
-            warp: instance.warp.clone(),
-            acc_instance,
-        };
+        let target_instance = DeciderInstance { acc_instance };
         (target_instance, acc_witness)
     }
 
     fn verify<Ch: VerifierChannel>(
         &self,
         ch: &mut Ch,
-        instance: &WARPInstance<F, P, C, MT>,
-    ) -> VerificationResult<DeciderInstance<F, P, C, MT>> {
-        let warp = &instance.warp;
-        let vk = (instance.pk.1, instance.pk.2, instance.pk.3);
+        vk: &Self::VerifierKey,
+        _instance: &Self::SourceInstance,
+    ) -> VerificationResult<DeciderInstance<F, MT>> {
+        let warp = &vk.warp;
+        let dims = (vk.m, vk.n, vk.k);
 
         let result = warp
-            .verify_reduction_transcript(ch, vk)
+            .verify_reduction_transcript(ch, dims)
             .map_err(|_| ia_core::VerificationError)?;
-        let acc_instance = result.target;
 
         Ok(DeciderInstance {
-            warp: instance.warp.clone(),
-            acc_instance,
+            acc_instance: result.target,
         })
     }
 }
+}
 
-impl<F, P, C, MT> ReductionSecurity for WARPReduction<F, P, C, MT>
+impl<F, P, C, MT> PreprocessingReductionSecurity for WARPReduction<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -145,18 +206,22 @@ where
     C: LinearCode<F> + Clone,
     MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
 {
-    type SourceParams = WARPSecurityParams;
-    type SourceBound = WARPSecurityBound;
+    type IndexParams = WARPSecurityParams;
+    type IndexBound = WARPSecurityBound;
+    // Instance-derived security is empty under the current analysis: every
+    // soundness term is a function of dimensions / code params / OOD/shift
+    // counts, all index-derived.
+    type SourceParams = ();
+    type SourceBound = ();
     type TargetBound = ();
 
-    fn source_security_params(&self, instance: &Self::SourceInstance) -> Self::SourceParams {
-        let warp = &instance.warp;
+    fn index_security_params(&self, ix: &Self::Index) -> Self::IndexParams {
+        let warp = &ix.warp;
         let n = warp.code.code_len();
-
         WARPSecurityParams {
             log_l: log2(warp.config.l) as usize,
             log_n: log2(n) as usize,
-            log_m: log2(instance.pk.1) as usize,
+            log_m: log2(ix.m) as usize,
             n,
             k: warp.code.message_len(),
             field_bits: F::MODULUS_BIT_SIZE,
@@ -165,20 +230,52 @@ where
         }
     }
 
-    fn source_bound_for_source_params(&self, params: &Self::SourceParams) -> Self::SourceBound {
+    fn index_bound_for_index_params(&self, params: &Self::IndexParams) -> Self::IndexBound {
         params.clone()
     }
 
-    fn target_bound_for_source_params(&self, _params: &Self::SourceParams) -> Self::TargetBound {}
-
-    fn target_bound_for_source_bound(&self, _bound: &Self::SourceBound) -> Self::TargetBound {}
-
-    fn profile_for_source_params(&self, params: &Self::SourceParams) -> SecurityProfile {
-        warp_security_profile(params)
+    fn source_security_params(
+        &self,
+        _ix_params: &Self::IndexParams,
+        _instance: &Self::SourceInstance,
+    ) -> Self::SourceParams {
     }
 
-    fn profile_for_source_bound(&self, bound: &Self::SourceBound) -> SecurityProfile {
-        warp_security_profile(bound)
+    fn source_bound_for_source_params(
+        &self,
+        _ix_params: &Self::IndexParams,
+        _params: &Self::SourceParams,
+    ) -> Self::SourceBound {
+    }
+
+    fn target_bound_for_source_params(
+        &self,
+        _ix_params: &Self::IndexParams,
+        _params: &Self::SourceParams,
+    ) -> Self::TargetBound {
+    }
+
+    fn target_bound_for_source_bound(
+        &self,
+        _ix_bound: &Self::IndexBound,
+        _bound: &Self::SourceBound,
+    ) -> Self::TargetBound {
+    }
+
+    fn profile_for_source_params(
+        &self,
+        ix_params: &Self::IndexParams,
+        _source_params: &Self::SourceParams,
+    ) -> SecurityProfile {
+        warp_security_profile(ix_params)
+    }
+
+    fn profile_for_source_bound(
+        &self,
+        ix_bound: &Self::IndexBound,
+        _source_bound: &Self::SourceBound,
+    ) -> SecurityProfile {
+        warp_security_profile(ix_bound)
     }
 }
 
@@ -256,7 +353,13 @@ fn warp_security_profile(params: &WARPSecurityParams) -> SecurityProfile {
 }
 
 // -----------------------------------------------------------------------
-// WARPDeciderIA: the decider as an InteractiveArgument
+// WARPDeciderIA: the decider as an PreprocessingInteractiveArgument
+//
+// The decider has no prover-side preprocessing of its own (`ProverKey =
+// ()`), but it reads warp.code / merkle params / p.evaluate_bundled from
+// the verifier key. Index and verifier key are the same shapes as the
+// reduction's, so a composed `ReducedArgument<WARPReduction, WARPDeciderIA>`
+// can take an `(WARPIndex, WARPIndex)` pair.
 // -----------------------------------------------------------------------
 
 pub struct WARPDeciderIA<F, P, C, MT>(pub PhantomData<(F, P, C, MT)>);
@@ -267,7 +370,8 @@ impl<F, P, C, MT> Default for WARPDeciderIA<F, P, C, MT> {
     }
 }
 
-impl<F, P, C, MT> InteractiveArgument for WARPDeciderIA<F, P, C, MT>
+ia_core::impl_preprocessing_argument! {
+impl<F, P, C, MT> PreprocessingInteractiveArgument for WARPDeciderIA<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -280,18 +384,33 @@ where
     C: LinearCode<F> + Clone,
     MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
 {
-    type Instance = DeciderInstance<F, P, C, MT>;
-    type Witness = DeciderWitness<F, MT>;
-
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"argus::warp::decider")
+    }
+
+    type Instance = DeciderInstance<F, MT>;
+    type Witness = DeciderWitness<F, MT>;
+
+    type Index = WARPIndex<F, P, C, MT>;
+    type ProverKey = ();
+    type VerifierKey = WARPVerifierKey<F, P, C, MT>;
+
+    fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+        let vk = WARPVerifierKey {
+            warp: ix.warp.clone(),
+            m: ix.m,
+            n: ix.n,
+            k: ix.k,
+        };
+        ((), vk)
     }
 
     fn prove<Ch: ProverChannel>(
         &self,
         ch: &mut Ch,
-        _instance: &DeciderInstance<F, P, C, MT>,
-        witness: &DeciderWitness<F, MT>,
+        _: &Self::ProverKey,
+        _instance: &Self::Instance,
+        witness: &Self::Witness,
     ) {
         let (_trees, codewords, w_parts) = witness;
         for val in &codewords[0] {
@@ -305,9 +424,10 @@ where
     fn verify<Ch: VerifierChannel>(
         &self,
         ch: &mut Ch,
-        instance: &DeciderInstance<F, P, C, MT>,
+        vk: &Self::VerifierKey,
+        instance: &Self::Instance,
     ) -> VerificationResult<()> {
-        let warp = &instance.warp;
+        let warp = &vk.warp;
         let (rt, alpha, mu, beta, eta) = &instance.acc_instance;
         let n = warp.code.code_len();
         let log_n = log2(n) as usize;
@@ -361,8 +481,9 @@ where
         Ok(())
     }
 }
+}
 
-impl<F, P, C, MT> ArgumentSecurity for WARPDeciderIA<F, P, C, MT>
+impl<F, P, C, MT> PreprocessingArgumentSecurity for WARPDeciderIA<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -375,36 +496,67 @@ where
     C: LinearCode<F> + Clone,
     MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
 {
+    type IndexParams = ();
+    type IndexBound = ();
     type InstanceParams = ();
     type InstanceBound = ();
 
-    fn instance_security_params(&self, _instance: &Self::Instance) -> Self::InstanceParams {}
+    fn index_security_params(&self, _ix: &Self::Index) -> Self::IndexParams {}
+
+    fn index_bound_for_index_params(&self, _params: &Self::IndexParams) -> Self::IndexBound {}
+
+    fn instance_security_params(
+        &self,
+        _ix_params: &Self::IndexParams,
+        _instance: &Self::Instance,
+    ) -> Self::InstanceParams {
+    }
 
     fn instance_bound_for_instance_params(
         &self,
+        _ix_params: &Self::IndexParams,
         _params: &Self::InstanceParams,
     ) -> Self::InstanceBound {
     }
 
-    fn profile_for_instance_params(&self, _params: &Self::InstanceParams) -> SecurityProfile {
-        self.profile_for_instance_bound(&())
+    fn profile_for_instance_params(
+        &self,
+        _ix_params: &Self::IndexParams,
+        _instance_params: &Self::InstanceParams,
+    ) -> SecurityProfile {
+        decider_security_profile()
     }
 
-    fn profile_for_instance_bound(&self, _bound: &Self::InstanceBound) -> SecurityProfile {
-        // The decider is a deterministic local check (no challenges, no rounds).
-        SecurityProfile {
-            plain_soundness_error: SecurityErrorBound::zero(),
-            rbr_soundness_errors: Vec::new(),
-            rbr_knowledge_soundness_errors: Vec::new(),
-            hvzk_error: SecurityErrorBound::zero(),
-            verifier_challenge_lengths: Vec::new(),
-        }
+    fn profile_for_instance_bound(
+        &self,
+        _ix_bound: &Self::IndexBound,
+        _instance_bound: &Self::InstanceBound,
+    ) -> SecurityProfile {
+        decider_security_profile()
+    }
+}
+
+fn decider_security_profile() -> SecurityProfile {
+    // The decider is a deterministic local check (no challenges, no rounds).
+    SecurityProfile {
+        plain_soundness_error: SecurityErrorBound::zero(),
+        rbr_soundness_errors: Vec::new(),
+        rbr_knowledge_soundness_errors: Vec::new(),
+        hvzk_error: SecurityErrorBound::zero(),
+        verifier_challenge_lengths: Vec::new(),
     }
 }
 
 // -----------------------------------------------------------------------
 // FullWARP = ReducedArgument<WARPReduction, WARPDeciderIA>  (IR . IA -> IA)
 // -----------------------------------------------------------------------
+//
+// Both components are indexed, so `FullWARP` implements
+// `PreprocessingInteractiveArgument` via the composition impl in
+// `ia_core`'s interactive preprocessing layer. The composed `Index` is
+// `(WARPIndex, WARPIndex)` — callers pass the same index twice for now.
+// Folding into a single `WARPIndex` for the composed `FullWARP` is a future
+// cleanup.
 
 pub type FullWARP<F, P, C, MT> =
     ReducedArgument<WARPReduction<F, P, C, MT>, WARPDeciderIA<F, P, C, MT>>;

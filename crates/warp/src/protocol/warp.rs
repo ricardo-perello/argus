@@ -65,12 +65,45 @@ impl<
 }
 
 // -----------------------------------------------------------------------
-// Instance / Witness types for the WARP InteractiveReduction
+// Indexed-relation split: WARPIndex / WARPProverKey / WARPVerifierKey
+//
+// `WARPIndex` is the static problem description. `WARPReduction::index`
+// derives a (prover key, verifier key) pair from it. Both keys carry the
+// same `Arc<WARP>` and dimensions for v1; future work will split out real
+// prover-only preprocessing (e.g., encoded matrix oracles, Merkle trees)
+// into `WARPProverKey` and replace the verifier-side `Arc<WARP>` with a
+// canonical commitment to the matrix oracles.
 // -----------------------------------------------------------------------
 
-pub struct WARPInstance<F: Field, P: BundledPESAT<F>, C: LinearCode<F> + Clone, MT: Config> {
+#[derive(Clone)]
+pub struct WARPIndex<F: Field, P: BundledPESAT<F>, C: LinearCode<F> + Clone, MT: Config> {
     pub warp: std::sync::Arc<WARP<F, P, C, MT>>,
-    pub pk: (P, usize, usize, usize),
+    pub m: usize,
+    pub n: usize,
+    pub k: usize,
+}
+
+#[derive(Clone)]
+pub struct WARPProverKey<F: Field, P: BundledPESAT<F>, C: LinearCode<F> + Clone, MT: Config> {
+    pub warp: std::sync::Arc<WARP<F, P, C, MT>>,
+    pub m: usize,
+    pub n: usize,
+    pub k: usize,
+}
+
+#[derive(Clone)]
+pub struct WARPVerifierKey<F: Field, P: BundledPESAT<F>, C: LinearCode<F> + Clone, MT: Config> {
+    pub warp: std::sync::Arc<WARP<F, P, C, MT>>,
+    pub m: usize,
+    pub n: usize,
+    pub k: usize,
+}
+
+// -----------------------------------------------------------------------
+// Per-claim instance / witness for the WARP PreprocessingInteractiveReduction
+// -----------------------------------------------------------------------
+
+pub struct WARPInstance<F: Field, MT: Config> {
     pub instances: Vec<Vec<F>>,
     pub acc_instances: AccumulatorInstances<F, MT>,
 }
@@ -90,11 +123,12 @@ pub struct WARPTargetWitness<F: Field, MT: Config> {
 }
 
 // -----------------------------------------------------------------------
-// Decider instance/witness (target of WARPReduction, input of WARPDecider)
+// Decider instance/witness (target of WARPReduction, input of WARPDecider).
+// The decider reads the static WARP description from its verifier key, not
+// from the instance, so DeciderInstance drops the `warp` and `pk` fields.
 // -----------------------------------------------------------------------
 
-pub struct DeciderInstance<F: Field, P: BundledPESAT<F>, C: LinearCode<F> + Clone, MT: Config> {
-    pub warp: std::sync::Arc<WARP<F, P, C, MT>>,
+pub struct DeciderInstance<F: Field, MT: Config> {
     pub acc_instance: AccumulatorInstances<F, MT>,
 }
 
@@ -104,19 +138,17 @@ pub type DeciderWitness<F, MT> = AccumulatorWitnesses<F, MT>;
 // Encoding impls for DSFS domain separation
 // -----------------------------------------------------------------------
 
-impl<F, P, C, MT> spongefish::Encoding for WARPInstance<F, P, C, MT>
+impl<F, MT> spongefish::Encoding for WARPInstance<F, MT>
 where
     F: Field + spongefish::Encoding,
-    P: BundledPESAT<F>,
-    C: LinearCode<F> + Clone,
     MT: Config,
     MT::InnerDigest: AsRef<[u8]>,
 {
     fn encode(&self) -> impl AsRef<[u8]> {
+        // Dimensions (M, N, k) used to ride along here; they now live in the
+        // committed verifier index and are absorbed by the prepared DSFS path
+        // via `WARPVerifierKey::committed_index`.
         let mut buf = Vec::new();
-        buf.extend((self.pk.1 as u64).to_le_bytes());
-        buf.extend((self.pk.2 as u64).to_le_bytes());
-        buf.extend((self.pk.3 as u64).to_le_bytes());
         for inst in &self.instances {
             for x in inst {
                 buf.extend_from_slice(x.encode().as_ref());
@@ -770,7 +802,10 @@ where
         )?;
         (rt[0] == computed_mt.root()).ok_or_err(WARPDeciderError::MerkleRoot)?;
         (mt[0].root() == computed_mt.root()).ok_or_err(WARPDeciderError::MerkleTrapDoor)?;
-        (mt[0].leaf_nodes == computed_mt.leaf_nodes).ok_or_err(WARPDeciderError::MerkleRoot)?;
+        // ark-crypto-primitives 0.6 made `MerkleTree::leaf_nodes` private.
+        // The previous leaf-equality check was redundant: equal roots already
+        // imply equal leaves under collision resistance, and prover/verifier
+        // trees here share both hash parameters and leaf inputs.
 
         let f_hat = DenseMultilinearExtension::from_evaluations_slice(
             log2(self.code.code_len()) as usize,

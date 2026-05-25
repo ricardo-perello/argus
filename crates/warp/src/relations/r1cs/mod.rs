@@ -1,7 +1,9 @@
 pub mod hashchain;
 
 use ark_ff::Field;
-use ark_relations::r1cs::ConstraintSystemRef;
+use ark_relations::gr1cs::{
+    predicate::polynomial_constraint::R1CS_PREDICATE_LABEL, ConstraintSystemRef,
+};
 
 use crate::errors::WARPError;
 use crate::utils::poly::Hypercube;
@@ -24,18 +26,29 @@ impl<F: Field> TryFrom<ConstraintSystemRef<F>> for R1CS<F> {
     type Error = WARPError;
 
     fn try_from(cs: ConstraintSystemRef<F>) -> Result<Self, Self::Error> {
-        let matrices = cs.to_matrices().unwrap();
+        // ark-relations 0.6 (gr1cs): metadata accessors moved onto the
+        // ConstraintSystemRef itself, and `to_matrices()` returns a
+        // per-predicate map. For R1CS we read the "R1CS" entry, which holds
+        // exactly three matrices (A, B, C).
+        let num_constraints = cs.num_constraints();
+        let num_instance = cs.num_instance_variables();
+        let num_witness = cs.num_witness_variables();
 
-        let m = matrices.num_constraints.next_power_of_two();
-        let n = matrices.num_instance_variables + matrices.num_witness_variables;
-        let k = matrices.num_witness_variables;
+        let m = num_constraints.next_power_of_two();
+        let n = num_instance + num_witness;
+        let k = num_witness;
 
         let log_m = m.ilog2().try_into().unwrap();
         let log_n = n.ilog2().try_into().unwrap();
 
-        let mut a = matrices.a.into_iter();
-        let mut b = matrices.b.into_iter();
-        let mut c = matrices.c.into_iter();
+        let mut per_predicate = cs.to_matrices().map_err(|_| WARPError::R1CSNonExistingLC)?;
+        let mut abc = per_predicate
+            .remove(R1CS_PREDICATE_LABEL)
+            .ok_or(WARPError::R1CSNonExistingLC)?
+            .into_iter();
+        let mut a = abc.next().unwrap_or_default().into_iter();
+        let mut b = abc.next().unwrap_or_default().into_iter();
+        let mut c = abc.next().unwrap_or_default().into_iter();
         let mut p = vec![];
         for _ in 0..m {
             let a_i = a.next().unwrap_or(Vec::with_capacity(0));
