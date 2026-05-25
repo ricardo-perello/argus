@@ -82,6 +82,29 @@ impl VerifierKeyCommitment for () {
     }
 }
 
+/// Capability for any wrapper that carries preprocessing keys generated from
+/// an indexer.
+///
+/// Implemented by `PreparedArgument` / `PreparedReduction` at the IA/IR layer,
+/// and by `PreparedDsfs` / `PreparedDsfsReduction` at the NARG layer. A single
+/// trait so consumers asking "where do the keys live?" have one answer
+/// regardless of which plane the wrapper sits on.
+///
+/// `prover_key` returns secret material — callers must not serialize or
+/// transport it. `verifier_key` and `committed_index` are public.
+///
+/// `Index` is deliberately NOT exposed: wrappers constructed via
+/// `with_keys(pk, vk)` never see the original `ix`, so an `index()` accessor
+/// would be a lie for that construction path.
+pub trait Preprocessed {
+    type ProverKey;
+    type VerifierKey: VerifierKeyCommitment;
+
+    fn prover_key(&self) -> &Self::ProverKey;
+    fn verifier_key(&self) -> &Self::VerifierKey;
+    fn committed_index(&self) -> &CommittedIndexBytes;
+}
+
 /// Fixed tag for the canonical pair commitment of two verifier keys.
 const VK_PAIR_TAG: &[u8] = b"argus:vk-pair:v1";
 
@@ -223,10 +246,10 @@ impl<I: Encoding<[u8]>> Encoding<[u8]> for IndexedInstanceRef<'_, I> {
 /// trait. Plain protocols stay plain. A protocol with real preprocessing
 /// implements this trait directly. To use a plain protocol in the *inner* slot
 /// of an indexed composition, wrap it in [`TrivialIndexedArgument`].
-pub trait IndexedInteractiveArgument {
+pub trait IndexedInteractiveArgument { // TODO: rename to PreprocessingInteractiveArgument
     type Index;
     type ProverKey;
-    type VerifierKey: VerifierKeyCommitment;
+    type VerifierKey: VerifierKeyCommitment; // TODO: add these keys to the indexed narg as well
     type Instance;
     type Witness;
 
@@ -257,7 +280,7 @@ pub trait IndexedInteractiveArgument {
 /// Same split as [`IndexedInteractiveArgument`], with the standard reduction
 /// shape: prove returns a target instance/witness pair; verify returns the
 /// target instance.
-pub trait IndexedInteractiveReduction {
+pub trait IndexedInteractiveReduction { // TODO: rename to PreprocessingInteractiveReduction
     type Index;
     type ProverKey;
     type VerifierKey: VerifierKeyCommitment;
@@ -353,6 +376,23 @@ impl<B: IndexedInteractiveArgument> PreparedArgument<B> {
     }
 }
 
+impl<B: IndexedInteractiveArgument> Preprocessed for PreparedArgument<B> {
+    type ProverKey = B::ProverKey;
+    type VerifierKey = B::VerifierKey;
+
+    fn prover_key(&self) -> &Self::ProverKey {
+        &self.pk
+    }
+
+    fn verifier_key(&self) -> &Self::VerifierKey {
+        &self.vk
+    }
+
+    fn committed_index(&self) -> &CommittedIndexBytes {
+        &self.committed_index
+    }
+}
+
 impl<B: IndexedInteractiveArgument> InteractiveArgument for PreparedArgument<B> {
     type Instance = IndexedInstance<B::Instance>;
     type Witness = B::Witness;
@@ -437,6 +477,23 @@ impl<B: IndexedInteractiveReduction> PreparedReduction<B> {
     }
 
     pub fn committed_index(&self) -> &CommittedIndexBytes {
+        &self.committed_index
+    }
+}
+
+impl<B: IndexedInteractiveReduction> Preprocessed for PreparedReduction<B> {
+    type ProverKey = B::ProverKey;
+    type VerifierKey = B::VerifierKey;
+
+    fn prover_key(&self) -> &Self::ProverKey {
+        &self.pk
+    }
+
+    fn verifier_key(&self) -> &Self::VerifierKey {
+        &self.vk
+    }
+
+    fn committed_index(&self) -> &CommittedIndexBytes {
         &self.committed_index
     }
 }

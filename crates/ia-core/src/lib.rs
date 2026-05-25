@@ -45,8 +45,8 @@ pub use channel::{ProverChannel, VerifierChannel};
 pub use compose::{ChainedReduction, ReducedArgument};
 pub use indexed::{
     CommittedIndexBytes, IndexedInstance, IndexedInstanceRef, IndexedInteractiveArgument,
-    IndexedInteractiveReduction, PreparedArgument, PreparedReduction, TrivialIndexedArgument,
-    TrivialIndexedReduction, VerifierKeyCommitment,
+    IndexedInteractiveReduction, PreparedArgument, PreparedReduction, Preprocessed,
+    TrivialIndexedArgument, TrivialIndexedReduction, VerifierKeyCommitment,
 };
 pub use indexed_security::{IndexedArgumentSecurity, IndexedReductionSecurity};
 pub use narg::{

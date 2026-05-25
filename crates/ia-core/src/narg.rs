@@ -181,28 +181,38 @@ pub trait NonInteractiveReduction {
 
 /// Non-interactive argument produced from a preprocessed (indexed) body.
 ///
-/// A supertrait of [`NonInteractiveArgument`] that exposes the committed
-/// verifier index the NARG was bound to. Plain NARGs (e.g. `Dsfs<plain_ia>`)
-/// do NOT implement this trait: the type system uses that asymmetry so a
+/// A marker trait combining [`NonInteractiveArgument`] with the
+/// [`Preprocessed`](crate::indexed::Preprocessed) capability. The actual
+/// accessors (`prover_key`, `verifier_key`, `committed_index`) live on
+/// `Preprocessed`, which is the single discoverable home for preprocessing
+/// keys regardless of which lattice plane (IA/IR or NARG) the wrapper sits on.
+///
+/// Plain NARGs (e.g. `Dsfs<plain_ia>`) do NOT implement `Preprocessed` and
+/// therefore do NOT satisfy this bound: the type system enforces that a
 /// generic consumer with bound `T: IndexedNonInteractiveArgument` provably
 /// receives a NARG built from a preprocessed body.
-///
-/// The returned bytes are the same canonical commitment that the prepared
-/// transcript absorbed before the first challenge, so consumers can use them
-/// for audit trails, key persistence, or cross-session binding checks without
-/// re-deriving the commitment from the verifier key.
-pub trait IndexedNonInteractiveArgument: NonInteractiveArgument {
-    /// Borrow the committed verifier index this NARG is bound to.
-    fn committed_index(&self) -> &crate::indexed::CommittedIndexBytes;
+pub trait IndexedNonInteractiveArgument:
+    NonInteractiveArgument + crate::indexed::Preprocessed
+{
+}
+
+impl<T> IndexedNonInteractiveArgument for T where
+    T: NonInteractiveArgument + crate::indexed::Preprocessed
+{
 }
 
 /// Non-interactive reduction produced from a preprocessed (indexed) body.
 ///
-/// Reduction counterpart to [`IndexedNonInteractiveArgument`]; the same
-/// strong-typing argument applies.
-pub trait IndexedNonInteractiveReduction: NonInteractiveReduction {
-    /// Borrow the committed verifier index this NARG is bound to.
-    fn committed_index(&self) -> &crate::indexed::CommittedIndexBytes;
+/// Reduction counterpart to [`IndexedNonInteractiveArgument`]; same composition,
+/// same strong-typing argument.
+pub trait IndexedNonInteractiveReduction:
+    NonInteractiveReduction + crate::indexed::Preprocessed
+{
+}
+
+impl<T> IndexedNonInteractiveReduction for T where
+    T: NonInteractiveReduction + crate::indexed::Preprocessed
+{
 }
 
 /// Adapter viewing a NARG as a one-message interactive argument.
