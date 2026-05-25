@@ -52,6 +52,7 @@ dependencies = [
  "ark-poly",
  "ark-serialize",
  "ark-std",
+ "blake3",
  "curve25519-dalek",
  "hex",
  "ia-core",
