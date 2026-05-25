@@ -8,13 +8,19 @@
 //! they say what a non-interactive argument or reduction is, but they do not
 //! specify Fiat-Shamir, duplex sponges, domain separation, or any concrete proof
 //! layout. Concrete compilers live outside this crate and implement these traits.
+//!
+//! The proof artifact is always [`NargProof`] (byte-oriented). The trait used
+//! to leave it generic, but every implementor in the workspace returned
+//! `NargProof` regardless, so the associated type was unused flexibility.
+//! Compilers that want structured (non-byte) proofs should introduce a separate
+//! trait rather than parameterizing this one.
 
 extern crate alloc;
 
 use alloc::vec::Vec;
 
 use crate::{
-    Deserialize, Encoding, InteractiveArgument, NargDeserialize, ProverChannel, VerificationError,
+    Encoding, InteractiveArgument, NargDeserialize, ProverChannel, VerificationError,
     VerificationResult, VerifierChannel,
 };
 
@@ -97,13 +103,9 @@ impl NargDeserialize for NargProof {
 /// Abstract non-interactive argument.
 ///
 /// A `NonInteractiveArgument` verifies membership of an `Instance` using a
-/// `Proof`, with optional session data bound into the compiled transcript.
+/// [`NargProof`], with optional session data bound into the compiled transcript.
 /// Unlike [`InteractiveArgument`], there is no channel: the prover returns a
 /// proof artifact and the verifier checks that artifact.
-///
-/// The trait intentionally does not require the proof to be [`NargProof`].
-/// Compilers that expose structured proofs can use their own proof type, while
-/// byte-oriented compilers such as DSFS use [`NargProof`].
 pub trait NonInteractiveArgument {
     /// Public session or context data bound into the non-interactive proof.
     type Session;
@@ -111,8 +113,6 @@ pub trait NonInteractiveArgument {
     type Instance;
     /// Private witness used by the prover.
     type Witness;
-    /// Proof artifact checked by the verifier.
-    type Proof;
 
     /// Protocol identifier for the non-interactive argument.
     ///
@@ -128,14 +128,14 @@ pub trait NonInteractiveArgument {
         session: &Self::Session,
         instance: &Self::Instance,
         witness: &Self::Witness,
-    ) -> Self::Proof;
+    ) -> NargProof;
 
     /// Verify a non-interactive proof for `instance`.
     fn verify(
         &self,
         session: &Self::Session,
         instance: &Self::Instance,
-        proof: &Self::Proof,
+        proof: &NargProof,
     ) -> VerificationResult<()>;
 }
 
@@ -158,8 +158,6 @@ pub trait NonInteractiveReduction {
     type SourceWitness;
     /// Private witness for the target statement produced by the prover.
     type TargetWitness;
-    /// Proof artifact checked by the verifier.
-    type Proof;
 
     /// Protocol identifier for the non-interactive reduction.
     fn protocol_id(&self) -> impl AsRef<[u8]>;
@@ -170,14 +168,14 @@ pub trait NonInteractiveReduction {
         session: &Self::Session,
         instance: &Self::SourceInstance,
         witness: &Self::SourceWitness,
-    ) -> (Self::Proof, Self::TargetInstance, Self::TargetWitness);
+    ) -> (NargProof, Self::TargetInstance, Self::TargetWitness);
 
     /// Verify a reduction proof and return the reduced target statement.
     fn verify(
         &self,
         session: &Self::Session,
         instance: &Self::SourceInstance,
-        proof: &Self::Proof,
+        proof: &NargProof,
     ) -> VerificationResult<Self::TargetInstance>;
 }
 
@@ -233,7 +231,6 @@ impl<N: NonInteractiveArgument> NargAsInteractiveArgument<N> {
 impl<N> InteractiveArgument for NargAsInteractiveArgument<N>
 where
     N: NonInteractiveArgument,
-    N::Proof: Encoding<[u8]> + crate::NargSerialize + Deserialize,
 {
     type Instance = N::Instance;
     type Witness = N::Witness;
@@ -257,7 +254,7 @@ where
         ch: &mut V,
         instance: &Self::Instance,
     ) -> VerificationResult<()> {
-        let proof: N::Proof = ch.read_prover_message()?;
+        let proof: NargProof = ch.read_prover_message()?;
         self.narg.verify(&self.session, instance, &proof)
     }
 }
@@ -314,7 +311,7 @@ mod tests {
     }
 
     impl VerifierChannel for CountingVerifier<'_> {
-        fn read_prover_message<PM: Encoding<[u8]> + Deserialize>(
+        fn read_prover_message<PM: Encoding<[u8]> + crate::Deserialize>(
             &mut self,
         ) -> VerificationResult<PM> {
             PM::deserialize(&mut self.cursor)
@@ -332,7 +329,6 @@ mod tests {
         type Session = ();
         type Instance = u32;
         type Witness = u32;
-        type Proof = NargProof;
 
         fn protocol_id(&self) -> impl AsRef<[u8]> {
             pad_protocol_id(b"dummy narg")
@@ -343,7 +339,7 @@ mod tests {
             _session: &Self::Session,
             instance: &Self::Instance,
             witness: &Self::Witness,
-        ) -> Self::Proof {
+        ) -> NargProof {
             NargProof::from_bytes(vec![*instance as u8, *witness as u8])
         }
 
@@ -351,7 +347,7 @@ mod tests {
             &self,
             _session: &Self::Session,
             instance: &Self::Instance,
-            proof: &Self::Proof,
+            proof: &NargProof,
         ) -> VerificationResult<()> {
             if proof.as_bytes().first().copied() == Some(*instance as u8) {
                 Ok(())
