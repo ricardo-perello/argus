@@ -7,10 +7,10 @@ use ark_poly::{DenseMultilinearExtension, Polynomial};
 use ark_std::log2;
 
 use ia_core::{
-    CommittedIndexBytes, IndexedArgumentSecurity, IndexedInteractiveArgument,
-    IndexedInteractiveReduction, IndexedReductionSecurity, ProverChannel, ReducedArgument,
-    SecurityErrorBound, SecurityProfile, VerificationResult, VerifierChannel,
-    VerifierKeyCommitment,
+    ArgumentBody, CommittedIndexBytes, IndexedArgumentSecurity, IndexedBody,
+    IndexedInteractiveArgument, IndexedInteractiveReduction, IndexedReductionSecurity,
+    ProtocolBody, ProverChannel, ReducedArgument, ReductionBody, SecurityErrorBound,
+    SecurityProfile, VerificationResult, VerifierChannel, VerifierKeyCommitment,
 };
 
 use crate::protocol::warp::{
@@ -104,7 +104,44 @@ pub struct WARPSecurityParams {
 /// shape, with each field interpreted as a maximum over the instance family.
 pub type WARPSecurityBound = WARPSecurityParams;
 
-impl<F, P, C, MT> IndexedInteractiveReduction for WARPReduction<F, P, C, MT>
+impl<F, P, C, MT> ProtocolBody for WARPReduction<F, P, C, MT>
+where
+    F: Field
+        + PrimeField
+        + Send
+        + Sync
+        + spongefish::Encoding
+        + spongefish::Decoding
+        + ia_core::Deserialize,
+    P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
+    C: LinearCode<F> + Clone,
+    MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
+{
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        ia_core::pad_protocol_id(b"argus::warp::reduction")
+    }
+}
+
+impl<F, P, C, MT> ReductionBody for WARPReduction<F, P, C, MT>
+where
+    F: Field
+        + PrimeField
+        + Send
+        + Sync
+        + spongefish::Encoding
+        + spongefish::Decoding
+        + ia_core::Deserialize,
+    P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
+    C: LinearCode<F> + Clone,
+    MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
+{
+    type SourceInstance = WARPInstance<F, MT>;
+    type SourceWitness = WARPWitness<F, MT>;
+    type TargetInstance = DeciderInstance<F, MT>;
+    type TargetWitness = DeciderWitness<F, MT>;
+}
+
+impl<F, P, C, MT> IndexedBody for WARPReduction<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -120,14 +157,6 @@ where
     type Index = WARPIndex<F, P, C, MT>;
     type ProverKey = WARPProverKey<F, P, C, MT>;
     type VerifierKey = WARPVerifierKey<F, P, C, MT>;
-    type SourceInstance = WARPInstance<F, MT>;
-    type SourceWitness = WARPWitness<F, MT>;
-    type TargetInstance = DeciderInstance<F, MT>;
-    type TargetWitness = DeciderWitness<F, MT>;
-
-    fn protocol_id(&self) -> impl AsRef<[u8]> {
-        ia_core::pad_protocol_id(b"argus::warp::reduction")
-    }
 
     fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
         let pk = WARPProverKey {
@@ -144,7 +173,21 @@ where
         };
         (pk, vk)
     }
+}
 
+impl<F, P, C, MT> IndexedInteractiveReduction for WARPReduction<F, P, C, MT>
+where
+    F: Field
+        + PrimeField
+        + Send
+        + Sync
+        + spongefish::Encoding
+        + spongefish::Decoding
+        + ia_core::Deserialize,
+    P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
+    C: LinearCode<F> + Clone,
+    MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
+{
     fn prove<Ch: ProverChannel>(
         &self,
         ch: &mut Ch,
@@ -368,7 +411,42 @@ impl<F, P, C, MT> Default for WARPDeciderIA<F, P, C, MT> {
     }
 }
 
-impl<F, P, C, MT> IndexedInteractiveArgument for WARPDeciderIA<F, P, C, MT>
+impl<F, P, C, MT> ProtocolBody for WARPDeciderIA<F, P, C, MT>
+where
+    F: Field
+        + PrimeField
+        + Send
+        + Sync
+        + spongefish::Encoding
+        + spongefish::Decoding
+        + ia_core::Deserialize,
+    P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
+    C: LinearCode<F> + Clone,
+    MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
+{
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        ia_core::pad_protocol_id(b"argus::warp::decider")
+    }
+}
+
+impl<F, P, C, MT> ArgumentBody for WARPDeciderIA<F, P, C, MT>
+where
+    F: Field
+        + PrimeField
+        + Send
+        + Sync
+        + spongefish::Encoding
+        + spongefish::Decoding
+        + ia_core::Deserialize,
+    P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
+    C: LinearCode<F> + Clone,
+    MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
+{
+    type Instance = DeciderInstance<F, MT>;
+    type Witness = DeciderWitness<F, MT>;
+}
+
+impl<F, P, C, MT> IndexedBody for WARPDeciderIA<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -384,12 +462,6 @@ where
     type Index = WARPIndex<F, P, C, MT>;
     type ProverKey = ();
     type VerifierKey = WARPVerifierKey<F, P, C, MT>;
-    type Instance = DeciderInstance<F, MT>;
-    type Witness = DeciderWitness<F, MT>;
-
-    fn protocol_id(&self) -> impl AsRef<[u8]> {
-        ia_core::pad_protocol_id(b"argus::warp::decider")
-    }
 
     fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
         let vk = WARPVerifierKey {
@@ -400,7 +472,21 @@ where
         };
         ((), vk)
     }
+}
 
+impl<F, P, C, MT> IndexedInteractiveArgument for WARPDeciderIA<F, P, C, MT>
+where
+    F: Field
+        + PrimeField
+        + Send
+        + Sync
+        + spongefish::Encoding
+        + spongefish::Decoding
+        + ia_core::Deserialize,
+    P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
+    C: LinearCode<F> + Clone,
+    MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
+{
     fn prove<Ch: ProverChannel>(
         &self,
         ch: &mut Ch,

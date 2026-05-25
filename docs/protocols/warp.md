@@ -4,7 +4,11 @@
 
 WARP is a linear-time accumulation scheme for R1CS from [eprint 2025/753](https://eprint.iacr.org/2025/753). Given `l` R1CS instances (some fresh, some previously accumulated), WARP produces a single accumulated instance and witness. The verifier checks consistency of the reduction; the decider checks that the accumulated witness actually satisfies the accumulated instance.
 
-The protocol is an Interactive Oracle Reduction (IOR): the verifier does not output accept/reject, but a new (reduced) instance. This maps directly onto Argus's `InteractiveReduction` interface.
+The protocol is an Interactive Oracle Reduction (IOR): the verifier does not
+output accept/reject, but a new reduced instance. In Argus this is now modeled
+as an indexed reduction: the static WARP problem description is preprocessed
+into prover/verifier keys, while per-claim public inputs stay in the ordinary
+instance.
 
 ## Crate structure
 
@@ -43,11 +47,15 @@ crates/warp/
 
 ## Protocol overview
 
-WARP takes as input:
+WARP preprocessing takes as input:
+
+- An R1CS constraint system `P` and a Reed-Solomon code `C`
+- WARP configuration and dimensions
+
+Each claim then takes:
 
 - `l1` fresh R1CS instances and witnesses
-- `l2 = l - l1` previously accumulated instances and witnesses (from prior WARP runs)
-- An R1CS constraint system `P` and a Reed-Solomon code `C`
+- `l2 = l - l1` previously accumulated instances and witnesses from prior WARP runs
 
 The protocol has five phases, all implemented inside a single `WARP` struct:
 
@@ -90,11 +98,18 @@ All channel operations go through `ia_core::ProverChannel` / `ia_core::VerifierC
 
 ### IR/IA composition
 
-WARP is expressed as two composable components using the `ia-core` traits:
+WARP is expressed as two composable indexed components using the `ia-core`
+traits:
 
-- **`WARPReduction`** (`InteractiveReduction`): The full IOR -- runs all five phases of the protocol (parse/commit, twin sumcheck, commit/sample, batching sumcheck) and produces a target `AccumulatorInstances`. The verifier computes the target from the transcript rather than checking a provided answer.
+- **`WARPReduction`** (`IndexedInteractiveReduction`): The full IOR -- runs
+  all five phases of the protocol (parse/commit, twin sumcheck, commit/sample,
+  batching sumcheck) and produces a target `AccumulatorInstances`. The prover
+  receives `WARPProverKey`; the verifier receives `WARPVerifierKey`.
 
-- **`WARPDeciderIA`** (`InteractiveArgument`): The decider as an IA -- the prover sends the accumulated codeword and witness through the channel; the verifier reads them back, reconstructs the Merkle tree, and checks code consistency, PESAT evaluation, and encoding correctness.
+- **`WARPDeciderIA`** (`IndexedInteractiveArgument`): The decider as an
+  indexed IA -- the prover sends the accumulated codeword and witness through
+  the channel; the verifier reads them back, reconstructs the Merkle tree, and
+  checks code consistency, PESAT evaluation, and encoding correctness.
 
 These are composed via `ReducedArgument` (IR . IA -> IA):
 
@@ -102,18 +117,27 @@ These are composed via `ReducedArgument` (IR . IA -> IA):
 type FullWARP<F, P, C, MT> = ReducedArgument<WARPReduction<F, P, C, MT>, WARPDeciderIA<F, P, C, MT>>;
 ```
 
-This gives a single `InteractiveArgument` that can be compiled through DSFS in one call:
+This gives a single `IndexedInteractiveArgument` that can be prepared and then
+compiled through DSFS:
 
 ```rust
-let proof = spongefish::dsfs::prove::<FullWARP<Fp, R1CS<Fp>, RS, MT>>(session, &instance, &witness);
-spongefish::dsfs::verify::<FullWARP<Fp, R1CS<Fp>, RS, MT>>(session, &instance, proof.as_bytes())?;
+let full = FullWARP::<Fp, R1CS<Fp>, RS, MT>::default();
+let prepared = spongefish_dsfs::non_interactive_argument(full, spongefish_dsfs::Keccak::default())
+    .prepare(&(warp_index.clone(), warp_index));
+
+let proof = prepared.prove(&session, &instance, &witness);
+prepared.verify(&session, &instance, &proof)?;
 ```
 
 The reduction can also be used standalone for IOR-level verification:
 
 ```rust
-let proof = spongefish::dsfs::prove_reduction::<WARPReduction<...>>(session, &instance, &witness);
-let target = spongefish::dsfs::verify_reduction::<WARPReduction<...>>(session, &instance, proof.as_bytes())?;
+let reduction = WARPReduction::<Fp, R1CS<Fp>, RS, MT>::new();
+let prepared = spongefish_dsfs::non_interactive_reduction(reduction, spongefish_dsfs::Keccak::default())
+    .prepare(&warp_index);
+
+let (proof, target, target_witness) = prepared.prove(&session, &instance, &witness);
+let verified_target = prepared.verify(&session, &instance, &proof)?;
 // target.acc_instance is the new AccumulatorInstances
 ```
 
@@ -152,9 +176,9 @@ impl WARP<F, P, C, MT> {
 
 The `ark-crypto-primitives` dependency uses a [patched fork](https://github.com/dmpierre/crypto-primitives/tree/dev/blake3) that adds Blake3 support.
 
-## Security profile (ReductionSecurity)
+## Security profile (IndexedReductionSecurity)
 
-`WARPReduction` implements `ReductionSecurity` with bounds from eprint 2025/753.
+`WARPReduction` implements `IndexedReductionSecurity` with bounds from eprint 2025/753.
 Both the Schwartz-Zippel per-round errors and the code-specific one-time terms
 (errPG, OOD sampling, shift sampling, PESAT→code) are included.
 
@@ -165,7 +189,8 @@ security API derives `WARPSecurityParams` from the source `WARPInstance`:
 
 ```rust
 let ir = WARPReduction::new();
-let profile = ir.profile_for_source_instance(&source_instance);
+let ix_params = ir.index_security_params(&warp_index);
+let profile = ir.profile_for_source_params(&ix_params, &());
 ```
 
 The derived parameters include `log_l`, `log_n`, `log_m`, Reed-Solomon code
@@ -220,7 +245,7 @@ Whether the OOD/shift/PESAT terms should be in `plain_soundness_error` or
 the commitment phase. The current placement (non-SR) matches the intuition that
 these are binding-style terms, not per-round protocol moves. Pending Chiesa Q2.
 
-`WARPDeciderIA` has no public-coin rounds (deterministic local check) — all its
+`WARPDeciderIA` has no public-coin rounds (deterministic local check) -- all its
 error bounds are zero.
 
 ---
@@ -237,8 +262,8 @@ Four integration tests in `tests/warp_test.rs`:
 
 - `warp_bootstrap_prove_verify_decide` -- single proof with empty accumulator (l1=4 fresh instances, l2=0 accumulated). Proves, verifies via NARG string replay, runs decider.
 - `warp_full_accumulation_cycle` -- runs 4 bootstrap proofs to build up accumulated state, then a full proof with l1=4 fresh + l2=4 accumulated instances (l=8). Proves, verifies, decides.
-- `warp_ir_dsfs_prove_verify` -- uses `spongefish::dsfs::prove_reduction` / `spongefish::dsfs::verify_reduction` with `WARPReduction`. Validates that the IR interface works end-to-end through DSFS.
-- `warp_full_ia_dsfs_prove_verify` -- uses `spongefish::dsfs::prove` / `spongefish::dsfs::verify` with `FullWARP` (= `ReducedArgument<WARPReduction, WARPDeciderIA>`). Validates the full composed IA through DSFS.
+- `warp_ir_dsfs_prove_verify` -- uses `non_interactive_reduction(...).prepare(&ix)` with `WARPReduction`. Validates that the indexed IR interface works end-to-end through DSFS.
+- `warp_full_ia_dsfs_prove_verify` -- uses `non_interactive_argument(...).prepare(&ix)` with `FullWARP` (= `ReducedArgument<WARPReduction, WARPDeciderIA>`). Validates the full composed indexed IA through DSFS.
 
 All tests use the BLS12-381 scalar field with a Poseidon hash-chain R1CS relation, Reed-Solomon encoding, and Blake3 Merkle trees.
 

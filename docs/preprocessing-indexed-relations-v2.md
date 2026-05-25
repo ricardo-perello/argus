@@ -1,17 +1,29 @@
 # Preprocessing Indexed Relations v2
 
-**Status:** Standalone implementation plan. This file is the source of truth
-for adding preprocessing/indexed relations to Argus and the patched
-`spongefish-dsfs` backend.
+**Status:** Standalone implementation plan, updated to match the current branch
+shape. This file is the source of truth for preprocessing/indexed relations in
+Argus and the patched `spongefish-dsfs` backend.
 
 ## Goal
 
 Add first-class support for indexed relations without changing the authoring
 surface for ordinary protocols.
 
-Plain protocols keep implementing the existing `InteractiveArgument` and
-`InteractiveReduction` traits. Preprocessed protocols implement new keyed
-indexed traits that expose:
+Plain protocols keep implementing the existing channel execution traits, now
+through the explicit body tree:
+
+```text
+ProtocolBody
+├── ArgumentBody
+│   ├── InteractiveArgument
+│   └── IndexedInteractiveArgument
+└── ReductionBody
+    ├── InteractiveReduction
+    └── IndexedInteractiveReduction
+```
+
+Preprocessed protocols implement keyed indexed traits plus `IndexedBody`, which
+exposes:
 
 - an indexer `index(ix) -> (pk, vk)`;
 - prover execution with `pk`;
@@ -25,7 +37,8 @@ channel API.
 
 ## Non-Negotiable Invariants
 
-1. Plain IA/IR authoring remains unchanged.
+1. Plain IA/IR protocol math remains unchanged; authors now split identity,
+   relation shape, and execution across body traits.
 2. Real preprocessing is keyed execution, not key generation alone.
 3. The committed verifier index and instance are absorbed before the first
    challenge.
@@ -35,6 +48,50 @@ channel API.
    callers never pass a separate commitment.
 7. Prepared interactive adapters reject an `IndexedInstance` whose commitment
    does not match the stored `vk`.
+
+## Protocol Body Tree
+
+The authoring surface is intentionally OOP-like but split into small traits.
+
+```rust
+pub trait ProtocolBody {
+    fn protocol_id(&self) -> impl AsRef<[u8]>;
+}
+
+pub trait ArgumentBody: ProtocolBody {
+    type Instance;
+    type Witness;
+}
+
+pub trait ReductionBody: ProtocolBody {
+    type SourceInstance;
+    type TargetInstance;
+    type SourceWitness;
+    type TargetWitness;
+}
+
+pub trait IndexedBody: ProtocolBody {
+    type Index;
+    type ProverKey;
+    type VerifierKey: VerifierKeyCommitment;
+
+    fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey);
+}
+```
+
+Plain execution leaves contain only channel logic:
+
+```rust
+pub trait InteractiveArgument: ArgumentBody { /* prove/verify */ }
+pub trait InteractiveReduction: ReductionBody { /* prove/verify */ }
+```
+
+Indexed execution leaves are keyed:
+
+```rust
+pub trait IndexedInteractiveArgument: ArgumentBody + IndexedBody { /* keyed prove/verify */ }
+pub trait IndexedInteractiveReduction: ReductionBody + IndexedBody { /* keyed prove/verify */ }
+```
 
 ## Core Indexed Vocabulary
 
@@ -114,16 +171,7 @@ protocol execution, without requiring `Clone` on the instance.
 ### Keyed indexed authoring traits
 
 ```rust
-pub trait IndexedInteractiveArgument {
-    type Index;
-    type ProverKey;
-    type VerifierKey: VerifierKeyCommitment;
-    type Instance;
-    type Witness;
-
-    fn protocol_id(&self) -> impl AsRef<[u8]>;
-    fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey);
-
+pub trait IndexedInteractiveArgument: ArgumentBody + IndexedBody {
     fn prove<P: ProverChannel>(
         &self,
         ch: &mut P,
@@ -140,18 +188,7 @@ pub trait IndexedInteractiveArgument {
     ) -> VerificationResult<()>;
 }
 
-pub trait IndexedInteractiveReduction {
-    type Index;
-    type ProverKey;
-    type VerifierKey: VerifierKeyCommitment;
-    type SourceInstance;
-    type TargetInstance;
-    type SourceWitness;
-    type TargetWitness;
-
-    fn protocol_id(&self) -> impl AsRef<[u8]>;
-    fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey);
-
+pub trait IndexedInteractiveReduction: ReductionBody + IndexedBody {
     fn prove<P: ProverChannel>(
         &self,
         ch: &mut P,
@@ -242,29 +279,41 @@ is `C'`.
 
 ## DSFS API and Backend Changes
 
-The existing plain DSFS API stays unchanged:
+Prefer semantic constructors that name the non-interactive object being built:
 
 ```rust
-let narg = dsfs::Dsfs::<_, _>::new(schnorr, dsfs::Keccak::default());
+let narg = dsfs::non_interactive_argument(schnorr, dsfs::Keccak::default());
 let proof = narg.prove(&session, &x, &w);
 narg.verify(&session, &x, &proof)?;
 ```
 
-Add `.prepare(&ix)` and `.with_keys(pk, vk)` as inherent methods on the same
-wrappers. An indexed body can be stored in `Dsfs<IA, S, H, SALT_LEN>` even
-though the `NonInteractiveArgument` impl is available only after preparation.
+The concrete returned type is DSFS-specific (`DsfsArgument<...>`), but callers
+usually interact with it through `NonInteractiveArgument`.
+
+For reductions:
 
 ```rust
-impl<IA, S, H, const SALT_LEN: usize> Dsfs<IA, S, H, SALT_LEN>
+let narg = dsfs::non_interactive_reduction(reduction, dsfs::Keccak::default());
+let (proof, target, target_witness) = narg.prove(&session, &x, &w);
+let verified_target = narg.verify(&session, &x, &proof)?;
+```
+
+Add `.prepare(&ix)` and `.with_keys(pk, vk)` as inherent methods on the same
+wrappers. An indexed body can be stored in `DsfsArgument<IA, S, H, SALT_LEN>`
+even though the `NonInteractiveArgument` impl is available only after
+preparation.
+
+```rust
+impl<IA, S, H, const SALT_LEN: usize> DsfsArgument<IA, S, H, SALT_LEN>
 where
     IA: IndexedInteractiveArgument,
 {
-    pub fn prepare(self, ix: &IA::Index) -> PreparedDsfs<IA, S, H, SALT_LEN>;
+    pub fn prepare(self, ix: &IA::Index) -> PreparedDsfsArgument<IA, S, H, SALT_LEN>;
     pub fn with_keys(
         self,
         pk: IA::ProverKey,
         vk: IA::VerifierKey,
-    ) -> PreparedDsfs<IA, S, H, SALT_LEN>;
+    ) -> PreparedDsfsArgument<IA, S, H, SALT_LEN>;
 }
 
 impl<IR, S, H, const SALT_LEN: usize> DsfsReduction<IR, S, H, SALT_LEN>
@@ -283,7 +332,7 @@ where
 User-facing prepared DSFS:
 
 ```rust
-let narg = dsfs::Dsfs::<_, _>::new(indexed_argument, dsfs::Keccak::default())
+let narg = dsfs::non_interactive_argument(indexed_argument, dsfs::Keccak::default())
     .prepare(&ix);
 let proof = narg.prove(&session, &x, &w);
 narg.verify(&session, &x, &proof)?;
@@ -292,20 +341,20 @@ narg.verify(&session, &x, &proof)?;
 For reductions:
 
 ```rust
-let narg = dsfs::DsfsReduction::<_, _>::new(indexed_reduction, dsfs::Keccak::default())
+let narg = dsfs::non_interactive_reduction(indexed_reduction, dsfs::Keccak::default())
     .prepare(&ix);
 let (proof, target, target_witness) = narg.prove(&session, &x, &w);
 let verified_target = narg.verify(&session, &x, &proof)?;
 ```
 
-`PreparedDsfs` and `PreparedDsfsReduction` accept bare instances. They must not
-force callers to construct `IndexedInstance` and must not require `Clone` on the
-instance.
+`PreparedDsfsArgument` and `PreparedDsfsReduction` accept bare instances. They
+must not force callers to construct `IndexedInstance` and must not require
+`Clone` on the instance.
 
 Implementation shape in `spongefish-dsfs`:
 
 ```rust
-pub struct PreparedDsfs<IA, S, H = Keccak, const SALT_LEN: usize = 0> {
+pub struct PreparedDsfsArgument<IA, S, H = Keccak, const SALT_LEN: usize = 0> {
     ia: IA,
     pk: IA::ProverKey,
     vk: IA::VerifierKey,
@@ -330,7 +379,7 @@ protocol execution input:
 ```
 
 This is intentionally not implemented by delegating through
-`Dsfs<PreparedArgument<IA>>`, because that public adapter's `Instance` is an
+`DsfsArgument<PreparedArgument<IA>>`, because that public adapter's `Instance` is an
 owned `IndexedInstance<IA::Instance>`. Delegating that way would either expose a
 clunky API or require `Clone` on instances. The backend may refactor the current
 plain helpers in `spongefish-dsfs/src/compile.rs` to share all transcript
@@ -384,7 +433,7 @@ let plain_as_indexed = TrivialIndexedReduction(plain_reduction);
 
 ## Composition
 
-Implement indexed composition when both components are indexed, either
+Indexed composition is implemented when both components are indexed, either
 natively or through explicit trivial-index adapters.
 
 ```rust
@@ -412,7 +461,7 @@ second.prove(ch, &pk.1, &x2, &w2);
 Keep existing `ArgumentSecurity` and `ReductionSecurity` unchanged for plain
 protocols.
 
-Add indexed variants after the core execution path works:
+Indexed variants are part of the current API:
 
 ```rust
 pub trait IndexedArgumentSecurity: IndexedInteractiveArgument {
@@ -433,40 +482,33 @@ pub trait IndexedReductionSecurity: IndexedInteractiveReduction {
 }
 ```
 
-WARP's current security parameters should split into:
+WARP's security parameters are split into:
 
 - index-derived parameters: code parameters, matrix dimensions, constraint
   counts, OOD sample counts, shift-query counts;
 - instance-derived parameters: per-claim public data that varies under a fixed
   preprocessed index.
 
-## Type Lattice
+## Type Lattice Decision
 
-The first implementation does not depend on a public `Protocol<B, P, M, W>`
-carrier. Do not block the preprocessing API on it.
+The public implementation does not use a `Protocol<B, P, M, W>` carrier. The
+body-trait inheritance tree is the actual type lattice:
 
-After the indexed traits, prepared adapters, and DSFS wrappers are working, add
-the sealed lattice as an internal safety layer if it is still useful for generic
-compiler code:
-
-```rust
-Protocol<B, Plain, Arg, Interactive>
-Protocol<PreparedArgument<B>, Preprocessed, Arg, Interactive>
-Protocol<B, Plain, Red, Interactive>
-Protocol<PreparedReduction<B>, Preprocessed, Red, Interactive>
+```text
+ProtocolBody -> ArgumentBody -> InteractiveArgument
+ProtocolBody -> ArgumentBody + IndexedBody -> IndexedInteractiveArgument
+ProtocolBody -> ReductionBody -> InteractiveReduction
+ProtocolBody -> ReductionBody + IndexedBody -> IndexedInteractiveReduction
 ```
 
-The lattice must have a concrete consumer before it becomes part of the public
-API. Candidate consumers are generic compiler dispatch and compile-fail tests
-for illegal argument/reduction or interactive/non-interactive operations.
+Add a sealed `Protocol<B, P, M, W>` wrapper only if a future generic compiler
+consumer needs it. It should not be introduced as decorative typestate.
 
 ## WARP Migration
 
-WARP is intentionally not a prerequisite for the core preprocessing API.
-`crates/warp` is currently excluded from the workspace because of an unrelated
-dependency issue. Land the indexed vocabulary and DSFS support first.
+WARP is implemented as indexed components on this branch.
 
-When WARP is unblocked, split the current source instance into:
+The source instance split is:
 
 ```rust
 pub struct WARPIndex<...> {
@@ -486,10 +528,12 @@ pub struct WARPInstance<...> {
 }
 ```
 
-Then implement `VerifierKeyCommitment` for `WARPVerifierKey` and
-`IndexedInteractiveReduction` for `WARPReduction`. The previous pattern of
-reading `instance.pk` in the prover and reconstructing `vk` from `instance.pk`
-in the verifier must disappear.
+`VerifierKeyCommitment` is implemented for `WARPVerifierKey`.
+`WARPReduction` implements `IndexedInteractiveReduction`; `WARPDeciderIA`
+implements `IndexedInteractiveArgument`; and
+`FullWARP = ReducedArgument<WARPReduction, WARPDeciderIA>` is indexed through
+composition. The previous pattern of reading `instance.pk` in the prover and
+reconstructing `vk` from `instance.pk` in the verifier has been removed.
 
 ## Implementation Phases
 
@@ -504,10 +548,12 @@ in the verifier must disappear.
    commitment mismatch rejection.
 
 3. **Prepared DSFS wrappers in spongefish.**
-   In `../spongefish/spongefish-dsfs`, add `.prepare(&ix)` and
-   `.with_keys(pk, vk)` on `Dsfs` and `DsfsReduction` for indexed bodies. Add
-   internal indexed DSFS runners using `IndexedInstanceRef`. Refactor existing
-   helpers as needed; preserving plain proof bytes is the hard requirement.
+   In `../spongefish/spongefish-dsfs`, add semantic constructors
+   `non_interactive_argument` and `non_interactive_reduction`, plus
+   `.prepare(&ix)` and `.with_keys(pk, vk)` on the returned DSFS wrappers for
+   indexed bodies. Add internal indexed DSFS runners using `IndexedInstanceRef`.
+   Refactor existing helpers as needed; preserving plain proof bytes is the hard
+   requirement.
 
 4. **Indexed composition in Argus.**
    Add composition impls for indexed reductions and reduced arguments when both
@@ -517,12 +563,15 @@ in the verifier must disappear.
    Add `IndexedArgumentSecurity` and `IndexedReductionSecurity`. Keep the plain
    security traits unchanged.
 
-6. **Optional lattice.**
-   Add `ia-core::lattice` only after a concrete consumer exists.
+6. **Body-trait lattice.**
+   Implement `ProtocolBody`, `ArgumentBody`, `ReductionBody`, and
+   `IndexedBody` as the public inheritance tree. Keep `InteractiveArgument`,
+   `InteractiveReduction`, `IndexedInteractiveArgument`, and
+   `IndexedInteractiveReduction` as executable leaves.
 
-7. **WARP migration after dependency unblocking.**
-   Re-enable or separately test `crates/warp`, split WARP's index/key/instance
-   types, and migrate it to `IndexedInteractiveReduction`.
+7. **WARP migration.**
+   Split WARP's index/key/instance types and migrate it to indexed reduction
+   and indexed argument components.
 
 ## Acceptance Tests
 
@@ -544,8 +593,8 @@ Interpretation:
 - `with_keys(body, pk, vk)` must derive its cached commitment from `vk`.
 - `sigma-bridge` golden-vector failures that predate this work must be recorded
   as baseline before editing DSFS.
-- WARP tests are not a core API gate until the dependency issue that excluded
-  `crates/warp` from the workspace is fixed.
+- WARP tests are a direct gate when the crate is available in the local
+  workspace: `cargo test -p warp --test warp_test`.
 
 ## Out of Scope
 

@@ -46,9 +46,9 @@ use rand::rngs::OsRng;
 use spongefish_dsfs as dsfs;
 
 use ia_core::{
-    CommittedIndexBytes, Decoding, Deserialize, Encoding, IndexedInteractiveArgument,
-    NonInteractiveArgument, Preprocessed, ProverChannel, VerificationError, VerificationResult,
-    VerifierChannel, VerifierKeyCommitment,
+    ArgumentBody, CommittedIndexBytes, Decoding, Deserialize, Encoding, IndexedBody,
+    IndexedInteractiveArgument, NonInteractiveArgument, Preprocessed, ProtocolBody, ProverChannel,
+    VerificationError, VerificationResult, VerifierChannel, VerifierKeyCommitment,
 };
 
 // ---------------------------------------------------------------------------
@@ -88,7 +88,26 @@ impl<G: CurveGroup> Default for Dleq<G> {
     }
 }
 
-impl<G> IndexedInteractiveArgument for Dleq<G>
+impl<G> ProtocolBody for Dleq<G>
+where
+    G: CurveGroup + PrimeGroup + Encoding + Deserialize,
+    G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
+{
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        ia_core::pad_protocol_id(b"dleq-chaum-pedersen")
+    }
+}
+
+impl<G> ArgumentBody for Dleq<G>
+where
+    G: CurveGroup + PrimeGroup + Encoding + Deserialize,
+    G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
+{
+    type Instance = (G, G); // (u, v) — the per-claim DLEQ pair
+    type Witness = G::ScalarField; // x
+}
+
+impl<G> IndexedBody for Dleq<G>
 where
     G: CurveGroup + PrimeGroup + Encoding + Deserialize,
     G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
@@ -96,12 +115,6 @@ where
     type Index = (G, G); // (g, h)
     type ProverKey = DleqKey<G>;
     type VerifierKey = DleqKey<G>;
-    type Instance = (G, G); // (u, v) — the per-claim DLEQ pair
-    type Witness = G::ScalarField; // x
-
-    fn protocol_id(&self) -> impl AsRef<[u8]> {
-        ia_core::pad_protocol_id(b"dleq-chaum-pedersen")
-    }
 
     /// Deterministic indexer: both keys are the same (g, h) pair. The
     /// verifier-side key exposes a canonical commitment via
@@ -111,7 +124,13 @@ where
         let key = DleqKey { g: ix.0, h: ix.1 };
         (key.clone(), key)
     }
+}
 
+impl<G> IndexedInteractiveArgument for Dleq<G>
+where
+    G: CurveGroup + PrimeGroup + Encoding + Deserialize,
+    G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
+{
     #[allow(non_snake_case)]
     fn prove<P: ProverChannel>(
         &self,
@@ -175,24 +194,30 @@ fn main() {
     let h = g * x; // public key
 
     // -------- preprocessing step -------------------------------------------
-    // Dsfs::new(body, sponge).prepare(&(g, h)) calls body.index(&(g, h))
+    // non_interactive_argument(body, sponge).prepare(&(g, h)) calls body.index(&(g, h))
     // once and stashes (pk, vk, committed_index) inside the returned
-    // PreparedDsfs. Every subsequent prove/verify call reads from those.
-    let prepared = dsfs::Dsfs::<_, _>::new(Dleq::<G>::default(), dsfs::Keccak::default())
+    // PreparedDsfsArgument. Every subsequent prove/verify call reads from those.
+    let prepared = dsfs::non_interactive_argument(Dleq::<G>::default(), dsfs::Keccak::default())
         .prepare(&(g, h));
 
     // -------- inspect preprocessing via the Preprocessed capability --------
     // Bound by `P: Preprocessed`, so the same helper works on any prepared
-    // wrapper — PreparedArgument (IA layer) or PreparedDsfs (NARG layer).
+    // wrapper — PreparedArgument (IA layer) or PreparedDsfsArgument (NARG layer).
     fn audit<P: Preprocessed>(label: &str, p: &P)
     where
         P::VerifierKey: core::fmt::Debug,
     {
         println!("{label}:");
-        println!("  committed_index: 0x{}", hex::encode(p.committed_index().as_bytes()));
+        println!(
+            "  committed_index: 0x{}",
+            hex::encode(p.committed_index().as_bytes())
+        );
         println!("  verifier_key:    {:?}", p.verifier_key());
     }
-    audit("Preprocessed public key (via `Preprocessed` trait)", &prepared);
+    audit(
+        "Preprocessed public key (via `Preprocessed` trait)",
+        &prepared,
+    );
     println!();
 
     // -------- many proofs under one preprocessed key -----------------------
@@ -204,7 +229,9 @@ fn main() {
         let v = u * x;
         let instance = (u, v);
         let proof = prepared.prove(&session, &instance, &x);
-        prepared.verify(&session, &instance, &proof).expect("verify");
+        prepared
+            .verify(&session, &instance, &proof)
+            .expect("verify");
         println!(
             "Claim {i}: verified DLEQ pair (u, u^x) under preprocessed key ({} proof bytes)",
             proof.as_bytes().len(),
@@ -234,8 +261,9 @@ mod tests {
     fn dleq_roundtrip() {
         let session = spongefish::session!("dleq test");
         let (g, x, h) = keygen();
-        let prepared = dsfs::Dsfs::<_, _>::new(Dleq::<G>::default(), dsfs::Keccak::default())
-            .prepare(&(g, h));
+        let prepared =
+            dsfs::non_interactive_argument(Dleq::<G>::default(), dsfs::Keccak::default())
+                .prepare(&(g, h));
 
         let u = G::generator() * F::rand(&mut OsRng);
         let v = u * x;
@@ -254,9 +282,9 @@ mod tests {
         let (g, x_alice, h_alice) = keygen();
         let (_, _x_bob, h_bob) = keygen();
 
-        let alice = dsfs::Dsfs::<_, _>::new(Dleq::<G>::default(), dsfs::Keccak::default())
+        let alice = dsfs::non_interactive_argument(Dleq::<G>::default(), dsfs::Keccak::default())
             .prepare(&(g, h_alice));
-        let bob = dsfs::Dsfs::<_, _>::new(Dleq::<G>::default(), dsfs::Keccak::default())
+        let bob = dsfs::non_interactive_argument(Dleq::<G>::default(), dsfs::Keccak::default())
             .prepare(&(g, h_bob));
         assert_ne!(alice.committed_index(), bob.committed_index());
 
@@ -276,8 +304,9 @@ mod tests {
     fn dleq_rejects_inconsistent_pair() {
         let session = spongefish::session!("dleq test");
         let (g, x, h) = keygen();
-        let prepared = dsfs::Dsfs::<_, _>::new(Dleq::<G>::default(), dsfs::Keccak::default())
-            .prepare(&(g, h));
+        let prepared =
+            dsfs::non_interactive_argument(Dleq::<G>::default(), dsfs::Keccak::default())
+                .prepare(&(g, h));
 
         let u = G::generator() * F::rand(&mut OsRng);
         let v_wrong = u * F::rand(&mut OsRng); // not u^x
@@ -293,7 +322,7 @@ mod tests {
             p.committed_index().as_bytes().to_vec()
         }
         let (g, _x, h) = keygen();
-        let prepared = dsfs::Dsfs::<_, [u8; 64]>::new(
+        let prepared = dsfs::non_interactive_argument::<_, [u8; 64], _>(
             Dleq::<G>::default(),
             dsfs::Keccak::default(),
         )

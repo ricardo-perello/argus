@@ -3,7 +3,7 @@
 //! Protocol:
 //! - Prover commits to the full evaluation table evals via a Merkle root.
 //! - Run "sumcheck" with bit challenges b_i in {0,1} (derived via the channel).
-//!   This collapses the claim to a single table entry evals[idx].
+//!   This collapses the claim to a single table entry `evals[idx]`.
 //! - Prover opens the Merkle tree at idx and verifier checks opening + value == claim.
 //!
 //! Modes:
@@ -21,8 +21,9 @@ use rand::rngs::OsRng;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
 use ia_core::{
-    ArgumentSecurity, InteractiveArgument, NonInteractiveArgument, ProverChannel,
-    SecurityErrorBound, SecurityProfile, VerificationError, VerificationResult, VerifierChannel,
+    ArgumentBody, ArgumentSecurity, InteractiveArgument, NonInteractiveArgument, ProtocolBody,
+    ProverChannel, SecurityErrorBound, SecurityProfile, VerificationError, VerificationResult,
+    VerifierChannel,
 };
 
 use spongefish::Encoding;
@@ -124,14 +125,18 @@ impl Config for Sha256MerkleConfig {
 
 struct CommittedSumcheck;
 
-impl InteractiveArgument for CommittedSumcheck {
-    type Instance = Instance;
-    type Witness = Vec<Fr>;
-
+impl ProtocolBody for CommittedSumcheck {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"committed sumcheck sha256")
     }
+}
 
+impl ArgumentBody for CommittedSumcheck {
+    type Instance = Instance;
+    type Witness = Vec<Fr>;
+}
+
+impl InteractiveArgument for CommittedSumcheck {
     #[allow(non_snake_case)]
     fn prove<P: ProverChannel>(&self, ch: &mut P, instance: &Instance, evals: &Vec<Fr>) {
         let n = instance.n as usize;
@@ -307,7 +312,7 @@ fn run_dsfs(instance: &Instance, evals: &Vec<Fr>) {
     println!("=== Committed Sumcheck (DSFS / non-interactive) ===\n");
 
     let session = spongefish::session!("argus warmup: committed sumcheck");
-    let nia = dsfs::Dsfs::<_, _>::new(CommittedSumcheck, dsfs::Keccak::default());
+    let nia = dsfs::non_interactive_argument(CommittedSumcheck, dsfs::Keccak::default());
 
     let narg = nia.prove(&session, instance, evals);
     println!(
@@ -316,7 +321,8 @@ fn run_dsfs(instance: &Instance, evals: &Vec<Fr>) {
         hex::encode(narg.as_bytes())
     );
 
-    nia.verify(&session, instance, &narg).expect("Invalid proof");
+    nia.verify(&session, instance, &narg)
+        .expect("Invalid proof");
     println!("Verification succeeded");
 }
 

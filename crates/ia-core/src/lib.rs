@@ -16,6 +16,7 @@ mod compose;
 mod indexed;
 mod indexed_security;
 mod narg;
+mod protocol;
 mod reduction;
 mod security;
 
@@ -53,7 +54,6 @@ pub use narg::{
     IndexedNonInteractiveArgument, IndexedNonInteractiveReduction, NargAsInteractiveArgument,
     NargProof, NonInteractiveArgument, NonInteractiveReduction,
 };
+pub use protocol::{ArgumentBody, IndexedBody, ProtocolBody, ReductionBody};
 pub use reduction::InteractiveReduction;
-pub use security::{
-    ArgumentSecurity, ReductionSecurity, SecurityErrorBound, SecurityProfile,
-};
+pub use security::{ArgumentSecurity, ReductionSecurity, SecurityErrorBound, SecurityProfile};

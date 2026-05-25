@@ -4,10 +4,11 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
+use crate::VerificationResult;
 use crate::argument::InteractiveArgument;
 use crate::channel::{ProverChannel, VerifierChannel};
+use crate::protocol::{ArgumentBody, ProtocolBody, ReductionBody};
 use crate::reduction::InteractiveReduction;
-use crate::VerificationResult;
 use crate::security::{ArgumentSecurity, ReductionSecurity, SecurityProfile};
 
 /// Derives a variable-length protocol identifier from two sub-protocol IDs and a
@@ -41,6 +42,32 @@ impl<First, Second> ChainedReduction<First, Second> {
     }
 }
 
+impl<First, Second> ProtocolBody for ChainedReduction<First, Second>
+where
+    First: ProtocolBody,
+    Second: ProtocolBody,
+{
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        derive_composition_id(
+            0x01,
+            self.first.protocol_id().as_ref(),
+            self.second.protocol_id().as_ref(),
+        )
+    }
+}
+
+impl<First, Second> ReductionBody for ChainedReduction<First, Second>
+where
+    First: ReductionBody,
+    Second:
+        ReductionBody<SourceInstance = First::TargetInstance, SourceWitness = First::TargetWitness>,
+{
+    type SourceInstance = First::SourceInstance;
+    type TargetInstance = Second::TargetInstance;
+    type SourceWitness = First::SourceWitness;
+    type TargetWitness = Second::TargetWitness;
+}
+
 impl<First, Second> InteractiveReduction for ChainedReduction<First, Second>
 where
     First: InteractiveReduction,
@@ -49,19 +76,6 @@ where
             SourceWitness = First::TargetWitness,
         >,
 {
-    type SourceInstance = First::SourceInstance;
-    type TargetInstance = Second::TargetInstance;
-    type SourceWitness = First::SourceWitness;
-    type TargetWitness = Second::TargetWitness;
-
-    fn protocol_id(&self) -> impl AsRef<[u8]> {
-        derive_composition_id(
-            0x01,
-            self.first.protocol_id().as_ref(),
-            self.second.protocol_id().as_ref(),
-        )
-    }
-
     fn prove<P: ProverChannel>(
         &self,
         ch: &mut P,
@@ -158,14 +172,11 @@ impl<R, A> ReducedArgument<R, A> {
     }
 }
 
-impl<R, A> InteractiveArgument for ReducedArgument<R, A>
+impl<R, A> ProtocolBody for ReducedArgument<R, A>
 where
-    R: InteractiveReduction,
-    A: InteractiveArgument<Instance = R::TargetInstance, Witness = R::TargetWitness>,
+    R: ProtocolBody,
+    A: ProtocolBody,
 {
-    type Instance = R::SourceInstance;
-    type Witness = R::SourceWitness;
-
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         derive_composition_id(
             0x02,
@@ -173,7 +184,22 @@ where
             self.argument.protocol_id().as_ref(),
         )
     }
+}
 
+impl<R, A> ArgumentBody for ReducedArgument<R, A>
+where
+    R: ReductionBody,
+    A: ArgumentBody<Instance = R::TargetInstance, Witness = R::TargetWitness>,
+{
+    type Instance = R::SourceInstance;
+    type Witness = R::SourceWitness;
+}
+
+impl<R, A> InteractiveArgument for ReducedArgument<R, A>
+where
+    R: InteractiveReduction,
+    A: InteractiveArgument<Instance = R::TargetInstance, Witness = R::TargetWitness>,
+{
     fn prove<P: ProverChannel>(
         &self,
         ch: &mut P,
@@ -244,16 +270,20 @@ mod tests {
     #[derive(Default)]
     struct SizedReduction;
 
-    impl InteractiveReduction for SizedReduction {
+    impl ProtocolBody for SizedReduction {
+        fn protocol_id(&self) -> impl AsRef<[u8]> {
+            b"sized-reduction"
+        }
+    }
+
+    impl ReductionBody for SizedReduction {
         type SourceInstance = usize;
         type TargetInstance = usize;
         type SourceWitness = ();
         type TargetWitness = ();
+    }
 
-        fn protocol_id(&self) -> impl AsRef<[u8]> {
-            b"sized-reduction"
-        }
-
+    impl InteractiveReduction for SizedReduction {
         fn prove<P: ProverChannel>(
             &self,
             _ch: &mut P,
@@ -312,14 +342,18 @@ mod tests {
     #[derive(Default)]
     struct BoundedArgument;
 
-    impl InteractiveArgument for BoundedArgument {
-        type Instance = usize;
-        type Witness = ();
-
+    impl ProtocolBody for BoundedArgument {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
             b"bounded-argument"
         }
+    }
 
+    impl ArgumentBody for BoundedArgument {
+        type Instance = usize;
+        type Witness = ();
+    }
+
+    impl InteractiveArgument for BoundedArgument {
         fn prove<P: ProverChannel>(
             &self,
             _ch: &mut P,

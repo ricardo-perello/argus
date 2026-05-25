@@ -1,9 +1,11 @@
 # Indexed Relations & Preprocessing — Revised Design Proposal
 
-**Status:** Historical draft after Chiesa feedback. The active implementation
-plan is [Preprocessing Indexed Relations v2](preprocessing-indexed-relations-v2.md),
-which is a standalone end-to-end plan for keyed indexed IA/IR traits, prepared
-DSFS wrappers, WARP migration, and the preprocessing type lattice.
+**Status:** Historical draft after Chiesa feedback. Some API names in this
+document are intentionally obsolete (`Dsfs::new`, `PreparedDsfs`, blanket
+plain-to-indexed conversion). The active implementation plan is
+[Preprocessing Indexed Relations v2](preprocessing-indexed-relations-v2.md), and
+the current presentation snapshot is
+[Protocol Body Tree and DSFS Constructors](protocol-body-dsfs-presentation.md).
 
 ## Context
 

@@ -2,9 +2,9 @@
 //! `IndexedInteractiveReduction`.
 //!
 //! All previous preprocessed examples (preprocessed_schnorr, dleq,
-//! preprocessed_lookup) implement [`IndexedInteractiveArgument`]: the
+//! preprocessed_lookup) implement [`ia_core::IndexedInteractiveArgument`]: the
 //! verifier outputs accept/reject. This one implements
-//! [`IndexedInteractiveReduction`]: the verifier outputs a *new target
+//! [`ia_core::IndexedInteractiveReduction`]: the verifier outputs a *new target
 //! instance* that a downstream decider then checks.
 //!
 //! The protocol is the standard multilinear sumcheck of Lund-Fortnow-
@@ -12,11 +12,15 @@
 //! `p(X, Y) = c_00 + c_10·X + c_01·Y + c_11·X·Y` for readability. It
 //! reduces the claim
 //!
-//!     T  =  Σ_{x ∈ {0,1}^2}  p(x)
+//! ```text
+//! T  =  Σ_{x ∈ {0,1}^2}  p(x)
+//! ```
 //!
 //! to a single-point evaluation claim
 //!
-//!     v  =  p(r_1, r_2)         for verifier-chosen (r_1, r_2)
+//! ```text
+//! v  =  p(r_1, r_2)         for verifier-chosen (r_1, r_2)
+//! ```
 //!
 //! The reduction is the building block of essentially every modern SNARK
 //! (Spartan, HyperPlonk, Lasso, …); the preprocessed polynomial maps onto
@@ -53,8 +57,9 @@ use rand::rngs::OsRng;
 use spongefish_dsfs as dsfs;
 
 use ia_core::{
-    CommittedIndexBytes, IndexedInteractiveReduction, NonInteractiveReduction, Preprocessed,
-    ProverChannel, VerificationError, VerificationResult, VerifierChannel, VerifierKeyCommitment,
+    CommittedIndexBytes, IndexedBody, IndexedInteractiveReduction, NonInteractiveReduction,
+    Preprocessed, ProtocolBody, ProverChannel, ReductionBody, VerificationError,
+    VerificationResult, VerifierChannel, VerifierKeyCommitment,
 };
 
 // ---------------------------------------------------------------------------
@@ -148,18 +153,23 @@ impl VerifierKeyCommitment for SumcheckVerifierKey {
 #[derive(Default)]
 struct PreprocessedSumcheck;
 
-impl IndexedInteractiveReduction for PreprocessedSumcheck {
-    type Index = [Fr; 4];
-    type ProverKey = SumcheckProverKey;
-    type VerifierKey = SumcheckVerifierKey;
+impl ProtocolBody for PreprocessedSumcheck {
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        ia_core::pad_protocol_id(b"preprocessed-sumcheck-n2")
+    }
+}
+
+impl ReductionBody for PreprocessedSumcheck {
     type SourceInstance = Fr; // claimed sum T
     type SourceWitness = ();
     type TargetInstance = ((Fr, Fr), Fr); // ((r_1, r_2), v)
     type TargetWitness = ();
+}
 
-    fn protocol_id(&self) -> impl AsRef<[u8]> {
-        ia_core::pad_protocol_id(b"preprocessed-sumcheck-n2")
-    }
+impl IndexedBody for PreprocessedSumcheck {
+    type Index = [Fr; 4];
+    type ProverKey = SumcheckProverKey;
+    type VerifierKey = SumcheckVerifierKey;
 
     fn index(&self, ix: &[Fr; 4]) -> (SumcheckProverKey, SumcheckVerifierKey) {
         let pk = SumcheckProverKey { coeffs: *ix };
@@ -168,7 +178,9 @@ impl IndexedInteractiveReduction for PreprocessedSumcheck {
         };
         (pk, vk)
     }
+}
 
+impl IndexedInteractiveReduction for PreprocessedSumcheck {
     fn prove<P: ProverChannel>(
         &self,
         ch: &mut P,
@@ -247,12 +259,11 @@ fn main() {
     println!("Picked p(X, Y) with 4 random coefficients.");
     println!("Claimed sum  T = Σ_{{x∈{{0,1}}^2}} p(x) = {t}\n");
 
-    // Preprocessing: DsfsReduction wraps an indexed reduction; .prepare(&ix)
-    // calls body.index(&ix) once and stashes (pk, vk, committed_index)
-    // inside the returned PreparedDsfsReduction.
-    let prepared =
-        dsfs::DsfsReduction::<_, _>::new(PreprocessedSumcheck, dsfs::Keccak::default())
-            .prepare(&coeffs);
+    // Preprocessing: non_interactive_reduction wraps an indexed reduction;
+    // .prepare(&ix) calls body.index(&ix) once and stashes
+    // (pk, vk, committed_index) inside the returned PreparedDsfsReduction.
+    let prepared = dsfs::non_interactive_reduction(PreprocessedSumcheck, dsfs::Keccak::default())
+        .prepare(&coeffs);
 
     // Inspect asymmetry via the `Preprocessed` capability.
     fn report<P: Preprocessed>(label: &str, p: &P)
@@ -261,7 +272,10 @@ fn main() {
     {
         println!("{label}:");
         println!("  Verifier key: {:?}", p.verifier_key());
-        println!("  Committed index: 0x{}\n", hex::encode(p.committed_index().as_bytes()));
+        println!(
+            "  Committed index: 0x{}\n",
+            hex::encode(p.committed_index().as_bytes())
+        );
     }
     report("Preprocessed wrapper (via `Preprocessed`)", &prepared);
 
@@ -282,7 +296,10 @@ fn main() {
     // In real protocols this is a separate IA executed by the prover, but
     // here we just compute it locally to show the reduction was honest.
     let v_true = eval(&coeffs, r1, r2);
-    assert_eq!(v_claim, v_true, "decider must accept the reduction's target");
+    assert_eq!(
+        v_claim, v_true,
+        "decider must accept the reduction's target"
+    );
     println!("Decider: p(r_1, r_2) = {v_true} matches v ✓");
     println!("Proof size: {} bytes\n", proof.as_bytes().len());
 }
@@ -313,7 +330,7 @@ mod tests {
         let coeffs = sample_coeffs();
         let t = sum_over_hypercube(&coeffs);
         let prepared =
-            dsfs::DsfsReduction::<_, _>::new(PreprocessedSumcheck, dsfs::Keccak::default())
+            dsfs::non_interactive_reduction(PreprocessedSumcheck, dsfs::Keccak::default())
                 .prepare(&coeffs);
 
         let (proof, _target_p, ()) = prepared.prove(&session, &t, &());
@@ -333,7 +350,7 @@ mod tests {
         let fake_t = real_t + Fr::from(1u64);
 
         let prepared =
-            dsfs::DsfsReduction::<_, _>::new(PreprocessedSumcheck, dsfs::Keccak::default())
+            dsfs::non_interactive_reduction(PreprocessedSumcheck, dsfs::Keccak::default())
                 .prepare(&coeffs);
 
         // Prover honestly runs on (its true) `coeffs`. But the caller
@@ -355,10 +372,10 @@ mod tests {
         coeffs_b[C11] += Fr::from(1u64); // perturb one coefficient
 
         let prepared_a =
-            dsfs::DsfsReduction::<_, _>::new(PreprocessedSumcheck, dsfs::Keccak::default())
+            dsfs::non_interactive_reduction(PreprocessedSumcheck, dsfs::Keccak::default())
                 .prepare(&coeffs_a);
         let prepared_b =
-            dsfs::DsfsReduction::<_, _>::new(PreprocessedSumcheck, dsfs::Keccak::default())
+            dsfs::non_interactive_reduction(PreprocessedSumcheck, dsfs::Keccak::default())
                 .prepare(&coeffs_b);
         assert_ne!(prepared_a.committed_index(), prepared_b.committed_index());
 
@@ -375,7 +392,7 @@ mod tests {
             p.committed_index().as_bytes().to_vec()
         }
         let coeffs = sample_coeffs();
-        let prepared = dsfs::DsfsReduction::<_, [u8; 64]>::new(
+        let prepared = dsfs::non_interactive_reduction::<_, [u8; 64], _>(
             PreprocessedSumcheck,
             dsfs::Keccak::default(),
         )

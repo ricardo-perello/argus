@@ -18,8 +18,9 @@ layout are backend responsibilities.
 
 ## Workspace Map
 
-- `crates/ia-core`: channel traits, IA/IR traits, NARG vocabulary, composition,
-  and security metadata.
+- `crates/ia-core`: channel traits, protocol body traits, IA/IR traits,
+  indexed preprocessing traits, NARG vocabulary, composition, and security
+  metadata.
 - `crates/live-channel`: interactive backend using threads and `mpsc`.
 - `crates/warp`: WARP as an interactive reduction plus a final argument.
 - `crates/sigma-bridge`: compatibility layer for `sigma-proofs` protocols.
@@ -42,6 +43,10 @@ flowchart LR
 
 This split is what lets a protocol such as Schnorr, sumcheck, or WARP be written
 once and then used non-interactively or interactively.
+
+Preprocessed protocols use the same backend boundary. The protocol body exposes
+an indexer and keyed execution; DSFS stores the keys, absorbs the committed
+verifier index as public input, and then runs the same channel program.
 
 ## Security Layer
 

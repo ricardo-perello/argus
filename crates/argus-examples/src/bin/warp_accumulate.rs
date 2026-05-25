@@ -24,8 +24,9 @@ use rand::rngs::OsRng;
 use spongefish_dsfs as dsfs;
 
 use ia_core::{
-    InteractiveReduction, NonInteractiveReduction, ProverChannel, ReductionSecurity,
-    SecurityErrorBound, SecurityProfile, VerificationError, VerificationResult, VerifierChannel,
+    InteractiveReduction, NonInteractiveReduction, ProtocolBody, ProverChannel, ReductionBody,
+    ReductionSecurity, SecurityErrorBound, SecurityProfile, VerificationError, VerificationResult,
+    VerifierChannel,
 };
 
 // ---------------------------------------------------------------------------
@@ -53,16 +54,20 @@ struct TargetInstance {
 
 struct Accumulate;
 
-impl InteractiveReduction for Accumulate {
+impl ProtocolBody for Accumulate {
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        ia_core::pad_protocol_id(b"warp-style rlc accumulator")
+    }
+}
+
+impl ReductionBody for Accumulate {
     type SourceInstance = SourceInstance;
     type TargetInstance = TargetInstance;
     type SourceWitness = Vec<Fr>;
     type TargetWitness = ();
+}
 
-    fn protocol_id(&self) -> impl AsRef<[u8]> {
-        ia_core::pad_protocol_id(b"warp-style rlc accumulator")
-    }
-
+impl InteractiveReduction for Accumulate {
     fn prove<P: ProverChannel>(
         &self,
         ch: &mut P,
@@ -177,7 +182,7 @@ fn main() {
     let witness = values;
 
     let session = spongefish::session!("argus example: warp accumulate");
-    let nir = dsfs::DsfsReduction::<_, _>::new(Accumulate, dsfs::Keccak::default());
+    let nir = dsfs::non_interactive_reduction(Accumulate, dsfs::Keccak::default());
 
     let (proof, _, _) = nir.prove(&session, &instance, &witness);
     println!(
@@ -216,7 +221,7 @@ mod tests {
         let witness = values;
 
         let session = spongefish::session!("argus example: warp accumulate");
-        let nir = dsfs::DsfsReduction::<_, _>::new(Accumulate, dsfs::Keccak::default());
+        let nir = dsfs::non_interactive_reduction(Accumulate, dsfs::Keccak::default());
         let (proof, _, _) = nir.prove(&session, &instance, &witness);
         let target = nir
             .verify(&session, &instance, &proof)

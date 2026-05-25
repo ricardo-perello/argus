@@ -15,15 +15,15 @@
 //!         verifier state stays compact.
 //!
 //! Per-claim, the prover opens a single entry: instance = (i, y), claim
-//! is V[i] == y. Protocol:
+//! is `V[i] == y`. Protocol:
 //!
-//!   1. Prover sends leaf = V[i] and the auth path (log_2(n) siblings).
+//!   1. Prover sends `leaf = V[i]` and the auth path (log_2(n) siblings).
 //!   2. Verifier reconstructs the root from leaf + path and compares
 //!      against vk.root, then checks leaf == y.
 //!
 //! Mapping onto the indexed surface:
 //!
-//!   Index       = Vec<u32>            (the public table)
+//!   Index       = `Vec<u32>`          (the public table)
 //!   ProverKey   = LookupProverKey     { table, tree }   O(n)
 //!   VerifierKey = LookupVerifierKey   { root, n }       O(1)
 //!   Instance    = (u32, u32)          (index, claimed value)
@@ -40,8 +40,9 @@ use blake3::{Hash, Hasher};
 use spongefish_dsfs as dsfs;
 
 use ia_core::{
-    CommittedIndexBytes, IndexedInteractiveArgument, NonInteractiveArgument, Preprocessed,
-    ProverChannel, VerificationError, VerificationResult, VerifierChannel, VerifierKeyCommitment,
+    ArgumentBody, CommittedIndexBytes, IndexedBody, IndexedInteractiveArgument,
+    NonInteractiveArgument, Preprocessed, ProtocolBody, ProverChannel, VerificationError,
+    VerificationResult, VerifierChannel, VerifierKeyCommitment,
 };
 
 // ---------------------------------------------------------------------------
@@ -57,7 +58,10 @@ struct MerkleTree {
 
 impl MerkleTree {
     fn new(leaves: &[u32]) -> Self {
-        assert!(leaves.len().is_power_of_two(), "leaf count must be a power of two");
+        assert!(
+            leaves.len().is_power_of_two(),
+            "leaf count must be a power of two"
+        );
         let leaf_hashes: Vec<Hash> = leaves
             .iter()
             .map(|x| blake3::hash(&x.to_le_bytes()))
@@ -144,17 +148,22 @@ impl VerifierKeyCommitment for LookupVerifierKey {
 #[derive(Default)]
 struct PreprocessedLookup;
 
-impl IndexedInteractiveArgument for PreprocessedLookup {
-    type Index = Vec<u32>;
-    type ProverKey = LookupProverKey;
-    type VerifierKey = LookupVerifierKey;
-    /// Per-claim instance is (i, claimed_value).
-    type Instance = (u32, u32);
-    type Witness = ();
-
+impl ProtocolBody for PreprocessedLookup {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"preprocessed-merkle-lookup")
     }
+}
+
+impl ArgumentBody for PreprocessedLookup {
+    /// Per-claim instance is (i, claimed_value).
+    type Instance = (u32, u32);
+    type Witness = ();
+}
+
+impl IndexedBody for PreprocessedLookup {
+    type Index = Vec<u32>;
+    type ProverKey = LookupProverKey;
+    type VerifierKey = LookupVerifierKey;
 
     /// The real work: build the tree once, slice the result into a fat
     /// prover key (table + tree) and a thin verifier key (root + length).
@@ -169,7 +178,9 @@ impl IndexedInteractiveArgument for PreprocessedLookup {
         let vk = LookupVerifierKey { root, n };
         (pk, vk)
     }
+}
 
+impl IndexedInteractiveArgument for PreprocessedLookup {
     fn prove<P: ProverChannel>(
         &self,
         ch: &mut P,
@@ -236,10 +247,10 @@ fn main() {
     let table: Vec<u32> = (0..8u32).map(|i| 100 + i * 7).collect();
     println!("Public table: {table:?}\n");
 
-    // Preprocessing: Dsfs::new(body, sponge).prepare(&table) calls
+    // Preprocessing: non_interactive_argument(body, sponge).prepare(&table) calls
     // body.index(&table) once. Asymmetry visible in the returned wrapper.
-    let prepared = dsfs::Dsfs::<_, _>::new(PreprocessedLookup, dsfs::Keccak::default())
-        .prepare(&table);
+    let prepared =
+        dsfs::non_interactive_argument(PreprocessedLookup, dsfs::Keccak::default()).prepare(&table);
 
     // Inspect the asymmetry via the `Preprocessed` capability.
     fn report<P: Preprocessed>(label: &str, p: &P)
@@ -250,7 +261,10 @@ fn main() {
         println!("{label}:");
         println!("  Prover key:   {:?}", p.prover_key());
         println!("  Verifier key: {:?}", p.verifier_key());
-        println!("  Committed index: 0x{}\n", hex::encode(p.committed_index().as_bytes()));
+        println!(
+            "  Committed index: 0x{}\n",
+            hex::encode(p.committed_index().as_bytes())
+        );
     }
     report("Preprocessed wrapper (via `Preprocessed` trait)", &prepared);
 
@@ -284,7 +298,7 @@ mod tests {
     fn lookup_roundtrip() {
         let session = spongefish::session!("preprocessed lookup test");
         let table = sample_table();
-        let prepared = dsfs::Dsfs::<_, _>::new(PreprocessedLookup, dsfs::Keccak::default())
+        let prepared = dsfs::non_interactive_argument(PreprocessedLookup, dsfs::Keccak::default())
             .prepare(&table);
 
         for i in 0u32..table.len() as u32 {
@@ -301,7 +315,7 @@ mod tests {
     fn lookup_rejects_wrong_value() {
         let session = spongefish::session!("preprocessed lookup test");
         let table = sample_table();
-        let prepared = dsfs::Dsfs::<_, _>::new(PreprocessedLookup, dsfs::Keccak::default())
+        let prepared = dsfs::non_interactive_argument(PreprocessedLookup, dsfs::Keccak::default())
             .prepare(&table);
 
         let proof = prepared.prove(&session, &(3, table[3]), &());
@@ -320,15 +334,21 @@ mod tests {
         let mut table_b = sample_table();
         table_b[0] = table_b[0].wrapping_add(1); // perturb one entry
 
-        let prepared_a = dsfs::Dsfs::<_, _>::new(PreprocessedLookup, dsfs::Keccak::default())
-            .prepare(&table_a);
-        let prepared_b = dsfs::Dsfs::<_, _>::new(PreprocessedLookup, dsfs::Keccak::default())
-            .prepare(&table_b);
+        let prepared_a =
+            dsfs::non_interactive_argument(PreprocessedLookup, dsfs::Keccak::default())
+                .prepare(&table_a);
+        let prepared_b =
+            dsfs::non_interactive_argument(PreprocessedLookup, dsfs::Keccak::default())
+                .prepare(&table_b);
         assert_ne!(prepared_a.committed_index(), prepared_b.committed_index());
 
         // Open table_a at index 5 (unperturbed in both).
         let proof = prepared_a.prove(&session, &(5, table_a[5]), &());
-        assert!(prepared_b.verify(&session, &(5, table_a[5]), &proof).is_err());
+        assert!(
+            prepared_b
+                .verify(&session, &(5, table_a[5]), &proof)
+                .is_err()
+        );
     }
 
     /// Confirms the asymmetry: prover key holds the full table; verifier
@@ -353,12 +373,16 @@ mod tests {
 
         let small = (0..2u32).collect::<Vec<_>>();
         let large = (0..1024u32).collect::<Vec<_>>();
-        let p_small =
-            dsfs::Dsfs::<_, [u8; 64]>::new(PreprocessedLookup, dsfs::Keccak::default())
-                .prepare(&small);
-        let p_large =
-            dsfs::Dsfs::<_, [u8; 64]>::new(PreprocessedLookup, dsfs::Keccak::default())
-                .prepare(&large);
+        let p_small = dsfs::non_interactive_argument::<_, [u8; 64], _>(
+            PreprocessedLookup,
+            dsfs::Keccak::default(),
+        )
+        .prepare(&small);
+        let p_large = dsfs::non_interactive_argument::<_, [u8; 64], _>(
+            PreprocessedLookup,
+            dsfs::Keccak::default(),
+        )
+        .prepare(&large);
 
         // PK scales with the table; VK does not.
         assert_eq!(p_small.prover_key().table.len(), 2);

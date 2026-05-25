@@ -21,9 +21,9 @@ use rand::rngs::OsRng;
 use spongefish_dsfs as dsfs;
 
 use ia_core::{
-    ArgumentSecurity, Decoding, Deserialize, Encoding, InteractiveArgument, NonInteractiveArgument,
-    ProverChannel, SecurityErrorBound, SecurityProfile, VerificationError, VerificationResult,
-    VerifierChannel,
+    ArgumentBody, ArgumentSecurity, Decoding, Deserialize, Encoding, InteractiveArgument,
+    NonInteractiveArgument, ProtocolBody, ProverChannel, SecurityErrorBound, SecurityProfile,
+    VerificationError, VerificationResult, VerifierChannel,
 };
 
 // ---------------------------------------------------------------------------
@@ -38,18 +38,30 @@ impl<G: CurveGroup> Default for Schnorr<G> {
     }
 }
 
-impl<G> InteractiveArgument for Schnorr<G>
+impl<G> ProtocolBody for Schnorr<G>
+where
+    G: CurveGroup + PrimeGroup + Encoding + Deserialize,
+    G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
+{
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        ia_core::pad_protocol_id(b"schnorr")
+    }
+}
+
+impl<G> ArgumentBody for Schnorr<G>
 where
     G: CurveGroup + PrimeGroup + Encoding + Deserialize,
     G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
 {
     type Instance = [G; 2]; // [generator, public_key]
     type Witness = G::ScalarField;
+}
 
-    fn protocol_id(&self) -> impl AsRef<[u8]> {
-        ia_core::pad_protocol_id(b"schnorr")
-    }
-
+impl<G> InteractiveArgument for Schnorr<G>
+where
+    G: CurveGroup + PrimeGroup + Encoding + Deserialize,
+    G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
+{
     #[allow(non_snake_case)]
     fn prove<P: ProverChannel>(&self, ch: &mut P, instance: &[G; 2], witness: &G::ScalarField) {
         let k = G::ScalarField::rand(&mut OsRng);
@@ -130,7 +142,7 @@ fn run_dsfs(instance: &[ark_curve25519::EdwardsProjective; 2], sk: &ark_curve255
     let session = spongefish::session!("spongefish examples");
 
     let schnorr = Schnorr::<G>::default();
-    let nia = dsfs::Dsfs::<_, _>::new(schnorr, dsfs::Keccak::default());
+    let nia = dsfs::non_interactive_argument(schnorr, dsfs::Keccak::default());
     let narg = nia.prove(&session, instance, sk);
     println!("Proof:\n{}", hex::encode(narg.as_bytes()));
 
@@ -307,7 +319,7 @@ mod tests {
 
         let session = spongefish::session!("spongefish examples");
         let schnorr = Schnorr::<G>::default();
-        let nia = dsfs::Dsfs::<_, _>::new(schnorr, dsfs::Keccak::default());
+        let nia = dsfs::non_interactive_argument(schnorr, dsfs::Keccak::default());
         let narg = nia.prove(&session, &instance, &sk);
         nia.verify(&session, &instance, &narg)
             .expect("dsfs verification failed");
@@ -322,7 +334,7 @@ mod tests {
 
         let session = spongefish::session!("spongefish examples");
         let schnorr = Schnorr::<G>::default();
-        let narg = dsfs::Dsfs::<_, _>::new(schnorr, dsfs::Keccak::default());
+        let narg = dsfs::non_interactive_argument(schnorr, dsfs::Keccak::default());
 
         let proof = narg.prove(&session, &instance, &sk);
 

@@ -14,7 +14,7 @@
 //! │  IndexedInteractiveArgument *declares*:                            │
 //! │    type Index       = G        (static problem description)        │
 //! │    type ProverKey   = G        (what the prover holds after index) │
-//! │    type VerifierKey = SchnorrVerifierKey<G>   (verifier-side key)  │
+//! │    type VerifierKey = `SchnorrVerifierKey<G>` (verifier-side key)  │
 //! │    type Instance    = G        (per-claim public key pk = x*G)     │
 //! │    type Witness     = scalar x                                     │
 //! │    fn index(&Index) -> (ProverKey, VerifierKey)                    │
@@ -22,18 +22,18 @@
 //! │  hold any values.                                                  │
 //! └────────────────────────────────────────────────────────────────────┘
 //! ┌──────────────────── 2. Wrapper struct ─────────────────────────────┐
-//! │  Dsfs::new(body, sponge).prepare(&g)                               │
-//! │  -> PreparedDsfs { ia: body, pk, vk, committed_index, sponge, _s } │
+//! │  non_interactive_argument(body, sponge).prepare(&g)                │
+//! │  -> PreparedDsfsArgument { ia, pk, vk, committed_index, sponge }   │
 //! │  This is the wrapper that *holds* generated keys as private fields.│
 //! └────────────────────────────────────────────────────────────────────┘
 //! ┌──────────────────── 3. Capability trait (`Preprocessed`) ──────────┐
-//! │  PreparedDsfs implements `Preprocessed`, which is the single       │
+//! │  PreparedDsfsArgument implements `Preprocessed`, which is the      │
 //! │  discoverable home for the three accessors:                        │
 //! │    fn prover_key()      -> &Self::ProverKey                        │
 //! │    fn verifier_key()    -> &Self::VerifierKey                      │
 //! │    fn committed_index() -> &CommittedIndexBytes                    │
 //! │  Same trait, same accessor names whether you're holding a          │
-//! │  PreparedArgument (IA layer) or a PreparedDsfs (NARG layer).       │
+//! │  PreparedArgument (IA layer) or a PreparedDsfsArgument (NARG).     │
 //! └────────────────────────────────────────────────────────────────────┘
 //!
 //! Run:  cargo run -p argus-examples --bin preprocessed_schnorr
@@ -45,9 +45,9 @@ use rand::rngs::OsRng;
 use spongefish_dsfs as dsfs;
 
 use ia_core::{
-    CommittedIndexBytes, Decoding, Deserialize, Encoding, IndexedInteractiveArgument,
-    NonInteractiveArgument, Preprocessed, ProverChannel, VerificationError, VerificationResult,
-    VerifierChannel, VerifierKeyCommitment,
+    ArgumentBody, CommittedIndexBytes, Decoding, Deserialize, Encoding, IndexedBody,
+    IndexedInteractiveArgument, NonInteractiveArgument, Preprocessed, ProtocolBody, ProverChannel,
+    VerificationError, VerificationResult, VerifierChannel, VerifierKeyCommitment,
 };
 
 // ---------------------------------------------------------------------------
@@ -84,7 +84,26 @@ impl<G: CurveGroup> Default for PreprocessedSchnorr<G> {
     }
 }
 
-impl<G> IndexedInteractiveArgument for PreprocessedSchnorr<G>
+impl<G> ProtocolBody for PreprocessedSchnorr<G>
+where
+    G: CurveGroup + PrimeGroup + Encoding + Deserialize,
+    G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
+{
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        ia_core::pad_protocol_id(b"preprocessed-schnorr")
+    }
+}
+
+impl<G> ArgumentBody for PreprocessedSchnorr<G>
+where
+    G: CurveGroup + PrimeGroup + Encoding + Deserialize,
+    G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
+{
+    type Instance = G;
+    type Witness = G::ScalarField;
+}
+
+impl<G> IndexedBody for PreprocessedSchnorr<G>
 where
     G: CurveGroup + PrimeGroup + Encoding + Deserialize,
     G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
@@ -92,12 +111,6 @@ where
     type Index = G;
     type ProverKey = G;
     type VerifierKey = SchnorrVerifierKey<G>;
-    type Instance = G;
-    type Witness = G::ScalarField;
-
-    fn protocol_id(&self) -> impl AsRef<[u8]> {
-        ia_core::pad_protocol_id(b"preprocessed-schnorr")
-    }
 
     /// Deterministic indexer. Both prover and verifier end up holding G,
     /// but the verifier wraps it in `SchnorrVerifierKey` so a canonical
@@ -105,15 +118,15 @@ where
     fn index(&self, ix: &G) -> (G, SchnorrVerifierKey<G>) {
         (*ix, SchnorrVerifierKey(*ix))
     }
+}
 
+impl<G> IndexedInteractiveArgument for PreprocessedSchnorr<G>
+where
+    G: CurveGroup + PrimeGroup + Encoding + Deserialize,
+    G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
+{
     #[allow(non_snake_case)]
-    fn prove<P: ProverChannel>(
-        &self,
-        ch: &mut P,
-        pk: &G,
-        _instance: &G,
-        witness: &G::ScalarField,
-    ) {
+    fn prove<P: ProverChannel>(&self, ch: &mut P, pk: &G, _instance: &G, witness: &G::ScalarField) {
         let G_gen = *pk;
         let k = G::ScalarField::rand(&mut OsRng);
         let K = G_gen * k;
@@ -154,11 +167,11 @@ fn main() {
     println!("=== Preprocessed Schnorr ===\n");
     let session = spongefish::session!("preprocessed schnorr example");
 
-    // 1. Preprocessing step. `Dsfs::new(body, sponge)` wraps the body;
+    // 1. Preprocessing step. `non_interactive_argument(body, sponge)` wraps the body;
     //    `.prepare(&generator)` calls `body.index(&generator)` and stashes
-    //    `(pk, vk, committed_index)` inside the returned `PreparedDsfs`.
+    //    `(pk, vk, committed_index)` inside the returned `PreparedDsfsArgument`.
     let generator = G::generator();
-    let prepared = dsfs::Dsfs::<_, _>::new(
+    let prepared = dsfs::non_interactive_argument(
         PreprocessedSchnorr::<G>::default(),
         dsfs::Keccak::default(),
     )
@@ -166,7 +179,7 @@ fn main() {
 
     // 2. Inspect preprocessing keys through the `Preprocessed` capability.
     //    The trait is the single discoverable home for these accessors;
-    //    PreparedArgument (IA layer) and PreparedDsfs (NARG layer) both
+    //    PreparedArgument (IA layer) and PreparedDsfsArgument (NARG layer) both
     //    implement it identically, so a generic function bounded by
     //    `P: Preprocessed` works on either.
     //
@@ -180,13 +193,19 @@ fn main() {
         P::ProverKey: core::fmt::Debug,
     {
         println!("{label}:");
-        println!("  committed_index: 0x{}", hex::encode(p.committed_index().as_bytes()));
+        println!(
+            "  committed_index: 0x{}",
+            hex::encode(p.committed_index().as_bytes())
+        );
         println!("  verifier_key:    {:?}", p.verifier_key());
         // prover_key() returns secret material in production protocols;
         // here pk == vk == generator, so it's harmless to print.
         println!("  prover_key:      {:?}\n", p.prover_key());
     }
-    audit("Preprocessed inspection (via the `Preprocessed` trait)", &prepared);
+    audit(
+        "Preprocessed inspection (via the `Preprocessed` trait)",
+        &prepared,
+    );
 
     // 3. Many claims, one preprocessed setup. Per-claim instance is just
     //    the public key — the generator no longer rides along.
@@ -194,7 +213,9 @@ fn main() {
         let sk = F::rand(&mut OsRng);
         let pk = generator * sk;
         let proof = prepared.prove(&session, &pk, &sk);
-        prepared.verify(&session, &pk, &proof).expect("verify failed");
+        prepared
+            .verify(&session, &pk, &proof)
+            .expect("verify failed");
         println!(
             "Claim {i}: pk = {pk:?} -> verified ({} proof bytes)",
             proof.as_bytes().len(),
@@ -217,7 +238,7 @@ mod tests {
     fn preprocessed_schnorr_roundtrip() {
         let session = spongefish::session!("preprocessed schnorr test");
         let g = G::generator();
-        let prepared = dsfs::Dsfs::<_, _>::new(
+        let prepared = dsfs::non_interactive_argument(
             PreprocessedSchnorr::<G>::default(),
             dsfs::Keccak::default(),
         )
@@ -241,22 +262,19 @@ mod tests {
         let g1 = G::generator();
         let g2 = g1 + G::generator(); // 2 * generator — distinct from g1
 
-        let prepared_g1 = dsfs::Dsfs::<_, _>::new(
+        let prepared_g1 = dsfs::non_interactive_argument(
             PreprocessedSchnorr::<G>::default(),
             dsfs::Keccak::default(),
         )
         .prepare(&g1);
-        let prepared_g2 = dsfs::Dsfs::<_, _>::new(
+        let prepared_g2 = dsfs::non_interactive_argument(
             PreprocessedSchnorr::<G>::default(),
             dsfs::Keccak::default(),
         )
         .prepare(&g2);
 
         // Sanity: different generators produce different committed indices.
-        assert_ne!(
-            prepared_g1.committed_index(),
-            prepared_g2.committed_index(),
-        );
+        assert_ne!(prepared_g1.committed_index(), prepared_g2.committed_index(),);
 
         let sk = F::rand(&mut OsRng);
         let pk_under_g1 = g1 * sk;
@@ -278,7 +296,7 @@ mod tests {
         let g = G::generator();
         // Session type pinned to [u8; 64] (`spongefish::session!` returns that).
         // Other tests in this file pin it implicitly by calling `prepare(...).prove(&session, ...)`.
-        let prepared = dsfs::Dsfs::<_, [u8; 64]>::new(
+        let prepared = dsfs::non_interactive_argument::<_, [u8; 64], _>(
             PreprocessedSchnorr::<G>::default(),
             dsfs::Keccak::default(),
         )

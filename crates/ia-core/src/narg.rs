@@ -20,8 +20,8 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 use crate::{
-    Encoding, InteractiveArgument, NargDeserialize, ProverChannel, VerificationError,
-    VerificationResult, VerifierChannel,
+    ArgumentBody, Encoding, InteractiveArgument, NargDeserialize, ProtocolBody, ProverChannel,
+    VerificationError, VerificationResult, VerifierChannel,
 };
 
 /// Opaque byte artifact produced by a non-interactive argument compiler.
@@ -143,7 +143,7 @@ pub trait NonInteractiveArgument {
 ///
 /// A non-interactive reduction proves that a source instance reduces to a target
 /// instance. Verification returns the target instance instead of a boolean
-/// accept/reject result, mirroring [`InteractiveReduction`].
+/// accept/reject result, mirroring [`crate::InteractiveReduction`].
 ///
 /// Proving returns the proof plus the target instance/witness pair so callers can
 /// continue a reduction pipeline without replaying the verifier.
@@ -187,7 +187,7 @@ pub trait NonInteractiveReduction {
 /// `Preprocessed`, which is the single discoverable home for preprocessing
 /// keys regardless of which lattice plane (IA/IR or NARG) the wrapper sits on.
 ///
-/// Plain NARGs (e.g. `Dsfs<plain_ia>`) do NOT implement `Preprocessed` and
+/// Plain NARGs (e.g. `DsfsArgument<plain_ia>`) do NOT implement `Preprocessed` and
 /// therefore do NOT satisfy this bound: the type system enforces that a
 /// generic consumer with bound `T: IndexedNonInteractiveArgument` provably
 /// receives a NARG built from a preprocessed body.
@@ -238,17 +238,27 @@ impl<N: NonInteractiveArgument> NargAsInteractiveArgument<N> {
     }
 }
 
-impl<N> InteractiveArgument for NargAsInteractiveArgument<N>
+impl<N> ProtocolBody for NargAsInteractiveArgument<N>
+where
+    N: NonInteractiveArgument,
+{
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        self.narg.protocol_id()
+    }
+}
+
+impl<N> ArgumentBody for NargAsInteractiveArgument<N>
 where
     N: NonInteractiveArgument,
 {
     type Instance = N::Instance;
     type Witness = N::Witness;
+}
 
-    fn protocol_id(&self) -> impl AsRef<[u8]> {
-        self.narg.protocol_id()
-    }
-
+impl<N> InteractiveArgument for NargAsInteractiveArgument<N>
+where
+    N: NonInteractiveArgument,
+{
     fn prove<P: ProverChannel>(
         &self,
         ch: &mut P,
