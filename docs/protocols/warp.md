@@ -5,8 +5,8 @@
 WARP is a linear-time accumulation scheme for R1CS from [eprint 2025/753](https://eprint.iacr.org/2025/753). Given `l` R1CS instances (some fresh, some previously accumulated), WARP produces a single accumulated instance and witness. The verifier checks consistency of the reduction; the decider checks that the accumulated witness actually satisfies the accumulated instance.
 
 The protocol is an Interactive Oracle Reduction (IOR): the verifier does not
-output accept/reject, but a new reduced instance. In Argus this is now modeled
-as an indexed reduction: the static WARP problem description is preprocessed
+output accept/reject, but a new reduced instance. In Argus this is modeled as a
+preprocessing reduction: the static WARP problem description is preprocessed
 into prover/verifier keys, while per-claim public inputs stay in the ordinary
 instance.
 
@@ -98,7 +98,7 @@ All channel operations go through `ia_core::ProverChannel` / `ia_core::VerifierC
 
 ### IR/IA composition
 
-WARP is expressed as two composable indexed components using the `ia-core`
+WARP is expressed as two composable preprocessing components using the `ia-core`
 traits:
 
 - **`WARPReduction`** (`PreprocessingInteractiveReduction`): The full IOR -- runs
@@ -106,8 +106,8 @@ traits:
   batching sumcheck) and produces a target `AccumulatorInstances`. The prover
   receives `WARPProverKey`; the verifier receives `WARPVerifierKey`.
 
-- **`WARPDeciderIA`** (`PreprocessingInteractiveArgument`): The decider as an
-  indexed IA -- the prover sends the accumulated codeword and witness through
+- **`WARPDeciderIA`** (`PreprocessingInteractiveArgument`): The decider as a
+  preprocessing IA -- the prover sends the accumulated codeword and witness through
   the channel; the verifier reads them back, reconstructs the Merkle tree, and
   checks code consistency, PESAT evaluation, and encoding correctness.
 
@@ -262,8 +262,8 @@ Four integration tests in `tests/warp_test.rs`:
 
 - `warp_bootstrap_prove_verify_decide` -- single proof with empty accumulator (l1=4 fresh instances, l2=0 accumulated). Proves, verifies via NARG string replay, runs decider.
 - `warp_full_accumulation_cycle` -- runs 4 bootstrap proofs to build up accumulated state, then a full proof with l1=4 fresh + l2=4 accumulated instances (l=8). Proves, verifies, decides.
-- `warp_ir_dsfs_prove_verify` -- uses `non_interactive_reduction(...).prepare(&ix)` with `WARPReduction`. Validates that the indexed IR interface works end-to-end through DSFS.
-- `warp_full_ia_dsfs_prove_verify` -- uses `non_interactive_argument(...).prepare(&ix)` with `FullWARP` (= `ReducedArgument<WARPReduction, WARPDeciderIA>`). Validates the full composed indexed IA through DSFS.
+- `warp_ir_dsfs_prove_verify` -- uses `non_interactive_reduction(...).prepare(&ix)` with `WARPReduction`. Validates that the preprocessing IR interface works end-to-end through DSFS.
+- `warp_full_ia_dsfs_prove_verify` -- uses `non_interactive_argument(...).prepare(&ix)` with `FullWARP` (= `ReducedArgument<WARPReduction, WARPDeciderIA>`). Validates the full composed preprocessing IA through DSFS.
 
 All tests use the BLS12-381 scalar field with a Poseidon hash-chain R1CS relation, Reed-Solomon encoding, and Blake3 Merkle trees.
 

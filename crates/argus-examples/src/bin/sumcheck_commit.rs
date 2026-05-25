@@ -21,9 +21,8 @@ use rand::rngs::OsRng;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
 use ia_core::{
-    ArgumentCore, ArgumentSecurity, InteractiveArgument, NonInteractiveArgument, ProtocolCore,
-    ProverChannel, SecurityErrorBound, SecurityProfile, VerificationError, VerificationResult,
-    VerifierChannel,
+    ArgumentSecurity, InteractiveArgument, NonInteractiveArgument, ProverChannel,
+    SecurityErrorBound, SecurityProfile, VerificationError, VerificationResult, VerifierChannel,
 };
 
 use spongefish::Encoding;
@@ -125,127 +124,125 @@ impl Config for Sha256MerkleConfig {
 
 struct CommittedSumcheck;
 
-impl ProtocolCore for CommittedSumcheck {
-    fn protocol_id(&self) -> impl AsRef<[u8]> {
-        ia_core::pad_protocol_id(b"committed sumcheck sha256")
-    }
-}
-
-impl ArgumentCore for CommittedSumcheck {
-    type Instance = Instance;
-    type Witness = Vec<Fr>;
-}
-
-impl InteractiveArgument for CommittedSumcheck {
-    #[allow(non_snake_case)]
-    fn prove<P: ProverChannel>(&self, ch: &mut P, instance: &Instance, evals: &Vec<Fr>) {
-        let n = instance.n as usize;
-        let (tree, root) = Self::build_merkle_tree(evals);
-        assert_eq!(root.as_slice(), instance.root.0.as_slice());
-
-        // Commit phase: send Merkle root
-        ch.send_prover_message(&instance.root);
-
-        // Sumcheck with bit challenges
-        let mut table = evals.to_vec();
-        let mut idx: u32 = 0;
-
-        for round in 0..n {
-            let mut s0 = Fr::zero();
-            let mut s1 = Fr::zero();
-            for pair in table.chunks_exact(2) {
-                s0 += pair[0];
-                s1 += pair[1];
-            }
-
-            ch.send_prover_message(&s0);
-            ch.send_prover_message(&s1);
-
-            let x: u8 = ch.read_verifier_message();
-            let b = x & 1;
-            if b == 1 {
-                idx |= 1u32 << round;
-            }
-
-            let mut next = Vec::with_capacity(table.len() / 2);
-            for pair in table.chunks_exact(2) {
-                next.push(if b == 0 { pair[0] } else { pair[1] });
-            }
-            table = next;
+ia_core::impl_interactive_argument! {
+    impl InteractiveArgument for CommittedSumcheck {
+        fn protocol_id(&self) -> impl AsRef<[u8]> {
+            ia_core::pad_protocol_id(b"committed sumcheck sha256")
         }
 
-        // Opening phase: open committed table at selected index
-        let value = evals[idx as usize];
-        let path: Path<Sha256MerkleConfig> = tree.generate_proof(idx as usize).unwrap();
-        let mut path_bytes = Vec::new();
-        path.serialize_compressed(&mut path_bytes).unwrap();
+        type Instance = Instance;
+        type Witness = Vec<Fr>;
 
-        ch.send_prover_message(&OpeningProof {
-            idx,
-            value,
-            path_bytes: Bytes(path_bytes),
-        });
-    }
+        #[allow(non_snake_case)]
+        fn prove<P: ProverChannel>(&self, ch: &mut P, instance: &Instance, evals: &Vec<Fr>) {
+            let n = instance.n as usize;
+            let (tree, root) = Self::build_merkle_tree(evals);
+            assert_eq!(root.as_slice(), instance.root.0.as_slice());
 
-    fn verify<V: VerifierChannel>(
-        &self,
-        ch: &mut V,
-        instance: &Instance,
-    ) -> VerificationResult<()> {
-        let n = instance.n as usize;
+            // Commit phase: send Merkle root
+            ch.send_prover_message(&instance.root);
 
-        let root: Bytes = ch.read_prover_message()?;
-        if root != instance.root {
-            return Err(VerificationError);
+            // Sumcheck with bit challenges
+            let mut table = evals.to_vec();
+            let mut idx: u32 = 0;
+
+            for round in 0..n {
+                let mut s0 = Fr::zero();
+                let mut s1 = Fr::zero();
+                for pair in table.chunks_exact(2) {
+                    s0 += pair[0];
+                    s1 += pair[1];
+                }
+
+                ch.send_prover_message(&s0);
+                ch.send_prover_message(&s1);
+
+                let x: u8 = ch.read_verifier_message();
+                let b = x & 1;
+                if b == 1 {
+                    idx |= 1u32 << round;
+                }
+
+                let mut next = Vec::with_capacity(table.len() / 2);
+                for pair in table.chunks_exact(2) {
+                    next.push(if b == 0 { pair[0] } else { pair[1] });
+                }
+                table = next;
+            }
+
+            // Opening phase: open committed table at selected index
+            let value = evals[idx as usize];
+            let path: Path<Sha256MerkleConfig> = tree.generate_proof(idx as usize).unwrap();
+            let mut path_bytes = Vec::new();
+            path.serialize_compressed(&mut path_bytes).unwrap();
+
+            ch.send_prover_message(&OpeningProof {
+                idx,
+                value,
+                path_bytes: Bytes(path_bytes),
+            });
         }
 
-        // Bit-challenge sumcheck verification
-        let mut claim = instance.claimed_sum;
-        let mut idx: u32 = 0;
+        fn verify<V: VerifierChannel>(
+            &self,
+            ch: &mut V,
+            instance: &Instance,
+        ) -> VerificationResult<()> {
+            let n = instance.n as usize;
 
-        for round in 0..n {
-            let s0: Fr = ch.read_prover_message()?;
-            let s1: Fr = ch.read_prover_message()?;
-            if s0 + s1 != claim {
+            let root: Bytes = ch.read_prover_message()?;
+            if root != instance.root {
                 return Err(VerificationError);
             }
 
-            let x: u8 = ch.send_verifier_message();
-            let b = x & 1;
-            if b == 1 {
-                idx |= 1u32 << round;
+            // Bit-challenge sumcheck verification
+            let mut claim = instance.claimed_sum;
+            let mut idx: u32 = 0;
+
+            for round in 0..n {
+                let s0: Fr = ch.read_prover_message()?;
+                let s1: Fr = ch.read_prover_message()?;
+                if s0 + s1 != claim {
+                    return Err(VerificationError);
+                }
+
+                let x: u8 = ch.send_verifier_message();
+                let b = x & 1;
+                if b == 1 {
+                    idx |= 1u32 << round;
+                }
+
+                claim = if b == 0 { s0 } else { s1 };
             }
 
-            claim = if b == 0 { s0 } else { s1 };
+            // Read and verify opening proof
+            let opening: OpeningProof = ch.read_prover_message()?;
+            if opening.idx != idx || opening.value != claim {
+                return Err(VerificationError);
+            }
+
+            let mut path_reader = opening.path_bytes.0.as_slice();
+            let path = Path::<Sha256MerkleConfig>::deserialize_compressed(&mut path_reader)
+                .map_err(|_| VerificationError)?;
+
+            let (leaf_params, two_to_one_params) = Self::merkle_params();
+            let leaf_bytes = Self::fr_to_leaf_bytes(&opening.value);
+
+            let ok = path
+                .verify(
+                    &leaf_params,
+                    &two_to_one_params,
+                    &root.0,
+                    leaf_bytes.as_slice(),
+                )
+                .unwrap();
+
+            if !ok {
+                return Err(VerificationError);
+            }
+
+            Ok(())
         }
-
-        // Read and verify opening proof
-        let opening: OpeningProof = ch.read_prover_message()?;
-        if opening.idx != idx || opening.value != claim {
-            return Err(VerificationError);
-        }
-
-        let mut path_reader = opening.path_bytes.0.as_slice();
-        let path = Path::<Sha256MerkleConfig>::deserialize_compressed(&mut path_reader)
-            .map_err(|_| VerificationError)?;
-
-        let (leaf_params, two_to_one_params) = Self::merkle_params();
-        let leaf_bytes = Self::fr_to_leaf_bytes(&opening.value);
-
-        let ok = path
-            .verify(
-                &leaf_params,
-                &two_to_one_params,
-                &root.0,
-                leaf_bytes.as_slice(),
-            )
-            .unwrap();
-
-        if !ok {
-            return Err(VerificationError);
-        }
-
-        Ok(())
     }
 }
 

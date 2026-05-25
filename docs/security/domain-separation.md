@@ -51,7 +51,7 @@ that compute session bytes during `prove` / `verify`, then:
 
 and attach the duplex sponge or `std_prover` / `std_verifier` as documented in [`../history/backends/dsfs-v2.md`](../history/backends/dsfs-v2.md).
 
-Prepared indexed DSFS uses the same derivation, but the public input is:
+Prepared preprocessing DSFS uses the same derivation, but the public input is:
 
 ```text
 IndexedInstanceRef { committed_index: vk.committed_index(), instance }

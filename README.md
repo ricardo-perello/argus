@@ -144,13 +144,20 @@ cargo test -p warp
 At a high level:
 
 1. Define your statement/witness types in some crate.
-2. Implement `ProtocolCore` plus `ArgumentCore` or `ReductionCore`.
-3. Implement `InteractiveArgument` or `InteractiveReduction` **against the channel traits** from `ia-core`.
+2. Use `ia_core::impl_interactive_argument!` or
+   `ia_core::impl_interactive_reduction!` to write one authoring block.
+3. Put only channel operations inside `prove`/`verify`.
 4. Compile it non-interactively with `spongefish_dsfs::non_interactive_argument(body, sponge)` or `spongefish_dsfs::non_interactive_reduction(body, sponge)`.
 
-For a preprocessed protocol, implement `PreprocessingCore` plus
-`PreprocessingInteractiveArgument` or `PreprocessingInteractiveReduction`, then call
-`.prepare(&ix)` on the DSFS wrapper before proving/verifying.
+The macros expand to the explicit inheritance tree underneath:
+`ProtocolCore` plus `ArgumentCore`/`ReductionCore`, then the executable
+`Interactive*` trait. Manual impls still work when tests or low-level adapters
+are clearer that way.
+
+For a preprocessed protocol, use `ia_core::impl_preprocessing_argument!` or
+`ia_core::impl_preprocessing_reduction!`. Those blocks include `Index`,
+`ProverKey`, `VerifierKey`, and `index(ix) -> (pk, vk)`, then DSFS calls
+`.prepare(&ix)` before proving/verifying.
 
 Protocol code should only ever call:
 

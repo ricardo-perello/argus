@@ -1,4 +1,4 @@
-# IA, IR, Indexed Bodies, and Composition
+# IA, IR, Preprocessing, and Composition
 
 Argus now uses a small inheritance-style core tree. The root traits carry
 protocol identity and relation shape; the leaf traits add executable protocol
@@ -16,6 +16,49 @@ ProtocolCore
 
 `PreprocessingCore` is a sibling capability used by preprocessing leaves. It carries
 `Index`, `ProverKey`, `VerifierKey`, and the deterministic `index(ix)` method.
+
+## Authoring Surface
+
+Protocol authors normally write one macro block. For a plain argument:
+
+```rust
+ia_core::impl_interactive_argument! {
+    impl InteractiveArgument for Schnorr {
+        fn protocol_id(&self) -> impl AsRef<[u8]> {
+            ia_core::pad_protocol_id(b"schnorr")
+        }
+
+        type Instance = SchnorrInstance;
+        type Witness = SchnorrWitness;
+
+        fn prove<P: ProverChannel>(
+            &self,
+            ch: &mut P,
+            instance: &Self::Instance,
+            witness: &Self::Witness,
+        ) {
+            /* channel-only prover logic */
+        }
+
+        fn verify<V: VerifierChannel>(
+            &self,
+            ch: &mut V,
+            instance: &Self::Instance,
+        ) -> VerificationResult<()> {
+            /* channel-only verifier logic */
+            Ok(())
+        }
+    }
+}
+```
+
+For preprocessing arguments and reductions, use
+`impl_preprocessing_argument!` or `impl_preprocessing_reduction!`; those blocks
+also include `Index`, `ProverKey`, `VerifierKey`, and `index(ix)`.
+
+The macros expand to the core tree below. The split traits are real API, not a
+macro illusion, so backend and composition code can reason about capabilities
+precisely while authors avoid three or four repetitive impl blocks.
 
 ## Core Traits
 
@@ -163,7 +206,7 @@ For plain bodies, the returned wrapper immediately implements
 For preprocessing cores, call `.prepare(&ix)` first:
 
 ```rust
-let nia = dsfs::non_interactive_argument(indexed_body, dsfs::Keccak::default())
+let nia = dsfs::non_interactive_argument(preprocessing_protocol, dsfs::Keccak::default())
     .prepare(&ix);
 ```
 
@@ -193,7 +236,7 @@ IR followed by IA: proves R0
 Composition derives protocol IDs using injective length-prefixed encoding, so
 nested protocols remain domain-separated.
 
-Preprocessing composition is implemented when both components are indexed. The
+Preprocessing composition is implemented when both components use preprocessing. The
 composed index/key shape is a pair:
 
 ```rust

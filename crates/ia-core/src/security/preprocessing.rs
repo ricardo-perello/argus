@@ -1,13 +1,12 @@
 //! Index-aware security metadata for preprocessed protocols.
 //!
-//! Mirrors [`crate::security::ArgumentSecurity`] and
-//! [`crate::security::ReductionSecurity`], but threads through index-derived
+//! Mirrors [`crate::ArgumentSecurity`] and
+//! [`crate::ReductionSecurity`], but threads through index-derived
 //! parameters and bounds so a single preprocessed index can be reused across
 //! many per-claim instances without recomputing the index portion of the
 //! security profile.
 
-use crate::SecurityProfile;
-use crate::indexed::{PreprocessingInteractiveArgument, PreprocessingInteractiveReduction};
+use crate::{PreprocessingInteractiveArgument, PreprocessingInteractiveReduction, SecurityProfile};
 
 /// Index-aware security metadata for an [`PreprocessingInteractiveArgument`].
 ///

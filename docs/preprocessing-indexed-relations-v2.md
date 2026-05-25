@@ -9,8 +9,11 @@ Argus and the patched `spongefish-dsfs` backend.
 Add first-class support for indexed relations without changing the authoring
 surface for ordinary protocols.
 
-Plain protocols keep implementing the existing channel execution traits, now
-through the explicit core tree:
+Plain protocols keep the existing channel execution model. Authors normally use
+the exported macros (`impl_interactive_argument!`,
+`impl_interactive_reduction!`, `impl_preprocessing_argument!`, and
+`impl_preprocessing_reduction!`) to write one coherent impl-like block, and the
+macros expand to the explicit core tree:
 
 ```text
 ProtocolCore
@@ -22,8 +25,8 @@ ProtocolCore
     └── PreprocessingInteractiveReduction
 ```
 
-Preprocessed protocols implement keyed indexed traits plus `PreprocessingCore`, which
-exposes:
+Preprocessed protocols use keyed preprocessing traits plus
+`PreprocessingCore`, which exposes:
 
 - an indexer `index(ix) -> (pk, vk)`;
 - prover execution with `pk`;
@@ -37,8 +40,8 @@ channel API.
 
 ## Non-Negotiable Invariants
 
-1. Plain IA/IR protocol math remains unchanged; authors now split identity,
-   relation shape, and execution across core traits.
+1. Plain IA/IR protocol math remains unchanged; macro authoring expands to the
+   same identity, relation-shape, and execution traits as manual impls.
 2. Real preprocessing is keyed execution, not key generation alone.
 3. The committed verifier index and instance are absorbed before the first
    challenge.
@@ -51,7 +54,8 @@ channel API.
 
 ## Protocol Core Tree
 
-The authoring surface is intentionally OOP-like but split into small traits.
+The implemented trait hierarchy is intentionally OOP-like but split into small
+traits.
 
 ```rust
 pub trait ProtocolCore {
@@ -93,9 +97,52 @@ pub trait PreprocessingInteractiveArgument: ArgumentCore + PreprocessingCore { /
 pub trait PreprocessingInteractiveReduction: ReductionCore + PreprocessingCore { /* keyed prove/verify */ }
 ```
 
+## Macro Authoring Surface
+
+The default authoring path is one block:
+
+```rust
+ia_core::impl_interactive_argument! {
+    impl InteractiveArgument for Schnorr {
+        fn protocol_id(&self) -> impl AsRef<[u8]> {
+            ia_core::pad_protocol_id(b"schnorr")
+        }
+
+        type Instance = SchnorrInstance;
+        type Witness = SchnorrWitness;
+
+        fn prove<P: ProverChannel>(
+            &self,
+            ch: &mut P,
+            instance: &Self::Instance,
+            witness: &Self::Witness,
+        ) {
+            /* channel-only protocol logic */
+        }
+
+        fn verify<V: VerifierChannel>(
+            &self,
+            ch: &mut V,
+            instance: &Self::Instance,
+        ) -> VerificationResult<()> {
+            /* channel-only protocol logic */
+            Ok(())
+        }
+    }
+}
+```
+
+The preprocessing macros add `Index`, `ProverKey`, `VerifierKey`, and
+`index(ix) -> (pk, vk)` to the same block. They emit only ordinary impls:
+`ProtocolCore`, `ArgumentCore` or `ReductionCore`, `PreprocessingCore` when
+needed, and the executable leaf trait. They are an ergonomic layer, not a
+separate trait model.
+
 ## Core Indexed Vocabulary
 
-Add a new `ia-core::indexed` module and re-export it from `lib.rs`.
+The public vocabulary is re-exported from `ia_core`. Internally, public-input
+encoding lives under `preprocessing/`, executable prepared/trivial adapters live
+under `interactive/`, and `lib.rs` keeps consumer imports flat.
 
 ### Verifier key commitment
 
@@ -168,7 +215,7 @@ is already length-delimited.
 backend absorb `(committed_index, &x)` while passing the bare `&x` to keyed
 protocol execution, without requiring `Clone` on the instance.
 
-### Keyed indexed authoring traits
+### Keyed preprocessing authoring traits
 
 ```rust
 pub trait PreprocessingInteractiveArgument: ArgumentCore + PreprocessingCore {
@@ -206,14 +253,17 @@ pub trait PreprocessingInteractiveReduction: ReductionCore + PreprocessingCore {
 }
 ```
 
-There is no blanket implementation from plain IA/IR into these indexed traits.
+There is no blanket implementation from plain IA/IR into these preprocessing
+traits.
 Plain protocols remain plain. A protocol with real preprocessing implements the
-keyed indexed trait directly.
+keyed preprocessing trait directly, usually via `impl_preprocessing_argument!`
+or `impl_preprocessing_reduction!`.
 
 ## Prepared Interactive Adapters
 
-Prepared adapters live in `ia-core::indexed`. They make preprocessing protocols look
-like ordinary IA/IR after keys have been generated.
+Prepared adapters live in the `ia-core` interactive preprocessing layer. They
+make preprocessing protocols look like ordinary IA/IR after keys have been
+generated.
 
 ```rust
 pub struct PreparedArgument<B: PreprocessingInteractiveArgument> {
@@ -332,7 +382,7 @@ where
 User-facing prepared DSFS:
 
 ```rust
-let narg = dsfs::non_interactive_argument(indexed_argument, dsfs::Keccak::default())
+let narg = dsfs::non_interactive_argument(preprocessing_argument, dsfs::Keccak::default())
     .prepare(&ix);
 let proof = narg.prove(&session, &x, &w);
 narg.verify(&session, &x, &proof)?;
@@ -341,7 +391,7 @@ narg.verify(&session, &x, &proof)?;
 For reductions:
 
 ```rust
-let narg = dsfs::non_interactive_reduction(indexed_reduction, dsfs::Keccak::default())
+let narg = dsfs::non_interactive_reduction(preprocessing_reduction, dsfs::Keccak::default())
     .prepare(&ix);
 let (proof, target, target_witness) = narg.prove(&session, &x, &w);
 let verified_target = narg.verify(&session, &x, &proof)?;
@@ -364,7 +414,7 @@ pub struct PreparedDsfsArgument<IA, S, H = Keccak, const SALT_LEN: usize = 0> {
 }
 ```
 
-`PreparedDsfsReduction` mirrors this for indexed reductions.
+`PreparedDsfsReduction` mirrors this for preprocessing reductions.
 
 Add internal DSFS runners that separate transcript public input from keyed
 protocol execution input:
@@ -506,7 +556,7 @@ consumer needs it. It should not be introduced as decorative typestate.
 
 ## WARP Migration
 
-WARP is implemented as indexed components on this branch.
+WARP is implemented as preprocessing components on this branch.
 
 The source instance split is:
 
@@ -535,56 +585,61 @@ implements `PreprocessingInteractiveArgument`; and
 composition. The previous pattern of reading `instance.pk` in the prover and
 reconstructing `vk` from `instance.pk` in the verifier has been removed.
 
-## Implementation Phases
+## Implemented Work Items
 
-1. **Core indexed vocabulary in Argus.**
-   Add `ia-core::indexed`, `CommittedIndexBytes`, `VerifierKeyCommitment`,
-   `IndexedInstance`, `IndexedInstanceRef`, `PreprocessingInteractiveArgument`, and
-   `PreprocessingInteractiveReduction`. Add unit tests for injective encodings.
+1. **Core preprocessing vocabulary in Argus.**
+   `CommittedIndexBytes`, `VerifierKeyCommitment`, `IndexedInstance`,
+   `IndexedInstanceRef`, `PreprocessingInteractiveArgument`, and
+   `PreprocessingInteractiveReduction` are re-exported from `ia_core`, with
+   unit tests for injective encodings.
 
 2. **Prepared interactive adapters in Argus.**
-   Add `PreparedArgument`, `PreparedReduction`, and explicit trivial-index
-   adapters. Test keyed forwarding, `with_keys` commitment derivation, and
-   commitment mismatch rejection.
+   `PreparedArgument`, `PreparedReduction`, and explicit trivial-index adapters
+   cover keyed forwarding, `with_keys` commitment derivation, and commitment
+   mismatch rejection.
 
 3. **Prepared DSFS wrappers in spongefish.**
-   In `../spongefish/spongefish-dsfs`, add semantic constructors
+   `spongefish-dsfs` exposes semantic constructors
    `non_interactive_argument` and `non_interactive_reduction`, plus
-   `.prepare(&ix)` and `.with_keys(pk, vk)` on the returned DSFS wrappers for
-   preprocessing cores. Add internal indexed DSFS runners using `IndexedInstanceRef`.
-   Refactor existing helpers as needed; preserving plain proof bytes is the hard
-   requirement.
+   `.prepare(&ix)` and `.with_keys(pk, vk)` on wrappers whose bodies support
+   preprocessing. Prepared runners absorb `IndexedInstanceRef`.
 
 4. **Preprocessing composition in Argus.**
-   Add composition impls for indexed reductions and reduced arguments when both
-   components are indexed. Add canonical pair commitment tests.
+   Composition impls exist for preprocessing reductions and reduced arguments
+   when both components use preprocessing. Canonical pair commitments make the
+   composed verifier index public and injective.
 
 5. **Security metadata in Argus.**
-   Add `PreprocessingArgumentSecurity` and `PreprocessingReductionSecurity`. Keep the plain
-   security traits unchanged.
+   `PreprocessingArgumentSecurity` and `PreprocessingReductionSecurity` keep
+   index-derived security information separate from per-instance information.
 
-6. **Body-trait lattice.**
-   Implement `ProtocolCore`, `ArgumentCore`, `ReductionCore`, and
-   `PreprocessingCore` as the public inheritance tree. Keep `InteractiveArgument`,
-   `InteractiveReduction`, `PreprocessingInteractiveArgument`, and
-   `PreprocessingInteractiveReduction` as executable leaves.
+6. **Core trait tree and macro authoring.**
+   `ProtocolCore`, `ArgumentCore`, `ReductionCore`, and `PreprocessingCore`
+   form the public inheritance tree. The four authoring macros expand to that
+   tree without requiring authors to write repeated impl blocks.
 
 7. **WARP migration.**
-   Split WARP's index/key/instance types and migrate it to indexed reduction
-   and indexed argument components.
+   WARP's index/key/instance types are split, and WARP is expressed as a
+   preprocessing reduction plus preprocessing decider argument.
 
 ## Acceptance Tests
 
 Required during implementation:
 
 - `cargo test -p ia-core`
-- `cargo test -p sigma-bridge --test golden_vectors`
+- `cargo test -p argus-examples`
+- `cargo test -p warp --test warp_test`
+- `cargo test -p spongefish-dsfs --lib`
+- `cargo test -p sigma-bridge --test golden_vectors` when checking external
+  golden-vector compatibility
 
 Interpretation:
 
 - Existing plain protocol tests must keep passing.
 - Plain DSFS proof bytes must remain byte-for-byte unchanged.
-- Prepared indexed dummy protocols must prove and verify through DSFS.
+- Macro tests must cover plain/preprocessing arguments and reductions,
+  generics/`where` clauses, and preserved attributes.
+- Prepared preprocessing dummy protocols must prove and verify through DSFS.
 - Verification must reject proof bytes with trailing data.
 - Direct prepared IA/IR execution must reject an `IndexedInstance` with the
   wrong committed index.

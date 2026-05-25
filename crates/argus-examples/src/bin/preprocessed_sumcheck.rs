@@ -57,9 +57,8 @@ use rand::rngs::OsRng;
 use spongefish_dsfs as dsfs;
 
 use ia_core::{
-    CommittedIndexBytes, NonInteractiveReduction, Preprocessed, PreprocessingCore,
-    PreprocessingInteractiveReduction, ProtocolCore, ProverChannel, ReductionCore,
-    VerificationError, VerificationResult, VerifierChannel, VerifierKeyCommitment,
+    CommittedIndexBytes, NonInteractiveReduction, Preprocessed, ProverChannel, VerificationError,
+    VerificationResult, VerifierChannel, VerifierKeyCommitment,
 };
 
 // ---------------------------------------------------------------------------
@@ -153,89 +152,86 @@ impl VerifierKeyCommitment for SumcheckVerifierKey {
 #[derive(Default)]
 struct PreprocessedSumcheck;
 
-impl ProtocolCore for PreprocessedSumcheck {
-    fn protocol_id(&self) -> impl AsRef<[u8]> {
-        ia_core::pad_protocol_id(b"preprocessed-sumcheck-n2")
-    }
-}
-
-impl ReductionCore for PreprocessedSumcheck {
-    type SourceInstance = Fr; // claimed sum T
-    type SourceWitness = ();
-    type TargetInstance = ((Fr, Fr), Fr); // ((r_1, r_2), v)
-    type TargetWitness = ();
-}
-
-impl PreprocessingCore for PreprocessedSumcheck {
-    type Index = [Fr; 4];
-    type ProverKey = SumcheckProverKey;
-    type VerifierKey = SumcheckVerifierKey;
-
-    fn index(&self, ix: &[Fr; 4]) -> (SumcheckProverKey, SumcheckVerifierKey) {
-        let pk = SumcheckProverKey { coeffs: *ix };
-        let vk = SumcheckVerifierKey {
-            commit: hash_coeffs(ix),
-        };
-        (pk, vk)
-    }
-}
-
-impl PreprocessingInteractiveReduction for PreprocessedSumcheck {
-    fn prove<P: ProverChannel>(
-        &self,
-        ch: &mut P,
-        pk: &SumcheckProverKey,
-        _source: &Fr,
-        _w: &(),
-    ) -> (((Fr, Fr), Fr), ()) {
-        // Round 1: send q_1(X) = p(X, 0) + p(X, 1) as (const, lin).
-        let q1 = round1(&pk.coeffs);
-        ch.send_prover_message(&q1.0);
-        ch.send_prover_message(&q1.1);
-        let r1: Fr = ch.read_verifier_message();
-
-        // Round 2: send q_2(Y) = p(r_1, Y) as (const, lin).
-        let q2 = round2(&pk.coeffs, r1);
-        ch.send_prover_message(&q2.0);
-        ch.send_prover_message(&q2.1);
-        let r2: Fr = ch.read_verifier_message();
-
-        // Target: v = p(r_1, r_2) = q_2(r_2).
-        let v = line(q2, r2);
-        (((r1, r2), v), ())
-    }
-
-    fn verify<V: VerifierChannel>(
-        &self,
-        ch: &mut V,
-        _vk: &SumcheckVerifierKey,
-        source: &Fr,
-    ) -> VerificationResult<((Fr, Fr), Fr)> {
-        let t = *source;
-
-        // Round 1 check: q_1(0) + q_1(1) = T.
-        let q1c: Fr = ch.read_prover_message()?;
-        let q1l: Fr = ch.read_prover_message()?;
-        if two_point_sum((q1c, q1l)) != t {
-            return Err(VerificationError);
+ia_core::impl_preprocessing_reduction! {
+    impl PreprocessingInteractiveReduction for PreprocessedSumcheck {
+        fn protocol_id(&self) -> impl AsRef<[u8]> {
+            ia_core::pad_protocol_id(b"preprocessed-sumcheck-n2")
         }
-        let r1: Fr = ch.send_verifier_message();
-        let next_claim = line((q1c, q1l), r1);
 
-        // Round 2 check: q_2(0) + q_2(1) = q_1(r_1).
-        let q2c: Fr = ch.read_prover_message()?;
-        let q2l: Fr = ch.read_prover_message()?;
-        if two_point_sum((q2c, q2l)) != next_claim {
-            return Err(VerificationError);
+        /// Claimed sum T.
+        type SourceInstance = Fr;
+        /// ((r_1, r_2), v)
+        type TargetInstance = ((Fr, Fr), Fr);
+        type SourceWitness = ();
+        type TargetWitness = ();
+        type Index = [Fr; 4];
+        type ProverKey = SumcheckProverKey;
+        type VerifierKey = SumcheckVerifierKey;
+
+        fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+            let pk = SumcheckProverKey { coeffs: *ix };
+            let vk = SumcheckVerifierKey {
+                commit: hash_coeffs(ix),
+            };
+            (pk, vk)
         }
-        let r2: Fr = ch.send_verifier_message();
 
-        // Target instance: the still-unverified claim "v = p(r_1, r_2)".
-        // A downstream decider closes the loop by checking it against the
-        // actual polynomial (which it can do given pk, or via some opening
-        // protocol on vk.commit).
-        let v = line((q2c, q2l), r2);
-        Ok(((r1, r2), v))
+        fn prove<P: ProverChannel>(
+            &self,
+            ch: &mut P,
+            pk: &SumcheckProverKey,
+            _source: &Fr,
+            _w: &(),
+        ) -> (((Fr, Fr), Fr), ()) {
+            // Round 1: send q_1(X) = p(X, 0) + p(X, 1) as (const, lin).
+            let q1 = round1(&pk.coeffs);
+            ch.send_prover_message(&q1.0);
+            ch.send_prover_message(&q1.1);
+            let r1: Fr = ch.read_verifier_message();
+
+            // Round 2: send q_2(Y) = p(r_1, Y) as (const, lin).
+            let q2 = round2(&pk.coeffs, r1);
+            ch.send_prover_message(&q2.0);
+            ch.send_prover_message(&q2.1);
+            let r2: Fr = ch.read_verifier_message();
+
+            // Target: v = p(r_1, r_2) = q_2(r_2).
+            let v = line(q2, r2);
+            (((r1, r2), v), ())
+        }
+
+        fn verify<V: VerifierChannel>(
+            &self,
+            ch: &mut V,
+            _vk: &SumcheckVerifierKey,
+            source: &Fr,
+        ) -> VerificationResult<((Fr, Fr), Fr)> {
+            let t = *source;
+
+            // Round 1 check: q_1(0) + q_1(1) = T.
+            let q1c: Fr = ch.read_prover_message()?;
+            let q1l: Fr = ch.read_prover_message()?;
+            if two_point_sum((q1c, q1l)) != t {
+                return Err(VerificationError);
+            }
+            let r1: Fr = ch.send_verifier_message();
+            let next_claim = line((q1c, q1l), r1);
+
+            // Round 2 check: q_2(0) + q_2(1) = q_1(r_1).
+            let q2c: Fr = ch.read_prover_message()?;
+            let q2l: Fr = ch.read_prover_message()?;
+            if two_point_sum((q2c, q2l)) != next_claim {
+                return Err(VerificationError);
+            }
+            let r2: Fr = ch.send_verifier_message();
+
+            // Target instance: the still-unverified claim "v = p(r_1, r_2)".
+            // A downstream decider closes the loop by checking it against the
+            // actual polynomial (which it can do given pk, or via some opening
+            // protocol on vk.commit).
+            let v = line((q2c, q2l), r2);
+            Ok(((r1, r2), v))
+        }
     }
 }
 

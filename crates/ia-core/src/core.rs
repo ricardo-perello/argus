@@ -4,7 +4,7 @@
 //! protocol identity at the root, argument/reduction shape metadata in the
 //! middle, and executable interactive traits as leaf capabilities.
 
-use crate::indexed::VerifierKeyCommitment;
+use crate::VerifierKeyCommitment;
 
 /// Common identity for any protocol core.
 pub trait ProtocolCore {

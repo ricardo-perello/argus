@@ -4,12 +4,11 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-use crate::VerificationResult;
-use crate::argument::InteractiveArgument;
 use crate::channel::{ProverChannel, VerifierChannel};
-use crate::protocol::{ArgumentCore, ProtocolCore, ReductionCore};
-use crate::reduction::InteractiveReduction;
-use crate::security::{ArgumentSecurity, ReductionSecurity, SecurityProfile};
+use crate::{
+    ArgumentCore, ArgumentSecurity, InteractiveArgument, InteractiveReduction, ProtocolCore,
+    ReductionCore, ReductionSecurity, SecurityProfile, VerificationResult,
+};
 
 /// Derives a variable-length protocol identifier from two sub-protocol IDs and a
 /// domain-separation tag, using length-prefixed concatenation:

@@ -41,12 +41,12 @@ let verified_target =
 
 The concrete wrapper is `DsfsReduction<IR, S, H, SALT_LEN>`.
 
-## Indexed Arguments and Reductions
+## Preprocessing Arguments and Reductions
 
 For preprocessing cores, construct the DSFS wrapper and then prepare it:
 
 ```rust
-let nia = spongefish_dsfs::non_interactive_argument(indexed_argument, sponge)
+let nia = spongefish_dsfs::non_interactive_argument(preprocessing_argument, sponge)
     .prepare(&index);
 
 let proof = nia.prove(&session, &instance, &witness);

@@ -32,23 +32,41 @@ at the leaves.
 
 ## 2. What Plain Authors Write
 
-Plain Schnorr-style protocols implement three small traits:
+Plain Schnorr-style protocols write one coherent authoring block:
 
 ```rust
-impl ProtocolCore for Schnorr {
-    fn protocol_id(&self) -> impl AsRef<[u8]> { ... }
-}
+ia_core::impl_interactive_argument! {
+    impl InteractiveArgument for Schnorr {
+        fn protocol_id(&self) -> impl AsRef<[u8]> {
+            ia_core::pad_protocol_id(b"schnorr")
+        }
 
-impl ArgumentCore for Schnorr {
-    type Instance = ...;
-    type Witness = ...;
-}
+        type Instance = SchnorrInstance;
+        type Witness = SchnorrWitness;
 
-impl InteractiveArgument for Schnorr {
-    fn prove<P: ProverChannel>(&self, ch: &mut P, x: &Self::Instance, w: &Self::Witness) { ... }
-    fn verify<V: VerifierChannel>(&self, ch: &mut V, x: &Self::Instance) -> VerificationResult<()> { ... }
+        fn prove<P: ProverChannel>(
+            &self,
+            ch: &mut P,
+            x: &Self::Instance,
+            w: &Self::Witness,
+        ) {
+            ...
+        }
+
+        fn verify<V: VerifierChannel>(
+            &self,
+            ch: &mut V,
+            x: &Self::Instance,
+        ) -> VerificationResult<()> {
+            ...
+        }
+    }
 }
 ```
+
+The macro expands to `ProtocolCore`, `ArgumentCore`, and
+`InteractiveArgument`. Manual split impls remain available, but the default
+authoring path is no longer three blocks of ceremony.
 
 The execution methods contain only channel operations. Protocol code still does
 not absorb public input, instantiate a sponge, derive Fiat-Shamir challenges, or
@@ -56,26 +74,53 @@ know whether it is running live or non-interactively.
 
 ## 3. What Preprocessing Authors Write
 
-WARP-style or preprocessing-style protocols add `PreprocessingCore` and use keyed
-execution:
+WARP-style or preprocessing-style protocols use the preprocessing macro. The
+same block includes key generation and keyed execution:
 
 ```rust
-impl PreprocessingCore for WARPReduction {
-    type Index = WARPIndex;
-    type ProverKey = WARPProverKey;
-    type VerifierKey = WARPVerifierKey;
+ia_core::impl_preprocessing_reduction! {
+    impl PreprocessingInteractiveReduction for WARPReduction {
+        fn protocol_id(&self) -> impl AsRef<[u8]> {
+            ia_core::pad_protocol_id(b"warp-reduction")
+        }
 
-    fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) { ... }
-}
+        type SourceInstance = WARPInstance;
+        type TargetInstance = DeciderInstance;
+        type SourceWitness = WARPWitness;
+        type TargetWitness = DeciderWitness;
 
-impl PreprocessingInteractiveReduction for WARPReduction {
-    fn prove<P: ProverChannel>(&self, ch: &mut P, pk: &Self::ProverKey, x: &Self::SourceInstance, w: &Self::SourceWitness)
-        -> (Self::TargetInstance, Self::TargetWitness) { ... }
+        type Index = WARPIndex;
+        type ProverKey = WARPProverKey;
+        type VerifierKey = WARPVerifierKey;
 
-    fn verify<V: VerifierChannel>(&self, ch: &mut V, vk: &Self::VerifierKey, x: &Self::SourceInstance)
-        -> VerificationResult<Self::TargetInstance> { ... }
+        fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+            ...
+        }
+
+        fn prove<P: ProverChannel>(
+            &self,
+            ch: &mut P,
+            pk: &Self::ProverKey,
+            x: &Self::SourceInstance,
+            w: &Self::SourceWitness,
+        ) -> (Self::TargetInstance, Self::TargetWitness) {
+            ...
+        }
+
+        fn verify<V: VerifierChannel>(
+            &self,
+            ch: &mut V,
+            vk: &Self::VerifierKey,
+            x: &Self::SourceInstance,
+        ) -> VerificationResult<Self::TargetInstance> {
+            ...
+        }
+    }
 }
 ```
+
+This expands to `ProtocolCore`, `ReductionCore`, `PreprocessingCore`, and
+`PreprocessingInteractiveReduction`.
 
 This fixes the original indexer-only flaw: key generation alone is not enough.
 The protocol surface must also give `prove` the prover key and `verify` the
@@ -102,14 +147,14 @@ let verified_target = nir.verify(&session, &source, &proof)?;
 Preprocessing argument:
 
 ```rust
-let nia = dsfs::non_interactive_argument(indexed_argument, dsfs::Keccak::default())
+let nia = dsfs::non_interactive_argument(preprocessing_argument, dsfs::Keccak::default())
     .prepare(&index);
 ```
 
 Preprocessing reduction:
 
 ```rust
-let nir = dsfs::non_interactive_reduction(indexed_reduction, dsfs::Keccak::default())
+let nir = dsfs::non_interactive_reduction(preprocessing_reduction, dsfs::Keccak::default())
     .prepare(&index);
 ```
 
@@ -184,7 +229,7 @@ ChainedReduction<IR1, IR2>: IR
 ReducedArgument<IR, IA>: IA
 ```
 
-Preprocessing composition exists when both components are indexed:
+Preprocessing composition exists when both components use preprocessing:
 
 ```rust
 type Index = (First::Index, Second::Index);
@@ -213,7 +258,7 @@ PreprocessingArgumentSecurity
 PreprocessingReductionSecurity
 ```
 
-The indexed traits separate:
+The preprocessing security traits separate:
 
 ```text
 index-derived params/bounds
@@ -237,7 +282,8 @@ WARPWitness      per-claim witnesses
 
 `WARPReduction` implements `PreprocessingInteractiveReduction`.
 `WARPDeciderIA` implements `PreprocessingInteractiveArgument`.
-`FullWARP = ReducedArgument<WARPReduction, WARPDeciderIA>` is itself indexed.
+`FullWARP = ReducedArgument<WARPReduction, WARPDeciderIA>` is itself a
+preprocessing argument.
 
 This removes the old reach-through where prover code read `instance.pk` and the
 verifier reconstructed `vk` from `instance.pk`.

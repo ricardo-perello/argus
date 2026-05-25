@@ -46,9 +46,8 @@ use rand::rngs::OsRng;
 use spongefish_dsfs as dsfs;
 
 use ia_core::{
-    ArgumentCore, CommittedIndexBytes, Decoding, Deserialize, Encoding, NonInteractiveArgument,
-    Preprocessed, PreprocessingCore, PreprocessingInteractiveArgument, ProtocolCore, ProverChannel,
-    VerificationError, VerificationResult, VerifierChannel, VerifierKeyCommitment,
+    CommittedIndexBytes, Decoding, Deserialize, Encoding, NonInteractiveArgument, Preprocessed,
+    ProverChannel, VerificationError, VerificationResult, VerifierChannel, VerifierKeyCommitment,
 };
 
 // ---------------------------------------------------------------------------
@@ -88,91 +87,77 @@ impl<G: CurveGroup> Default for Dleq<G> {
     }
 }
 
-impl<G> ProtocolCore for Dleq<G>
-where
-    G: CurveGroup + PrimeGroup + Encoding + Deserialize,
-    G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
-{
-    fn protocol_id(&self) -> impl AsRef<[u8]> {
-        ia_core::pad_protocol_id(b"dleq-chaum-pedersen")
-    }
-}
+ia_core::impl_preprocessing_argument! {
+    impl<G> PreprocessingInteractiveArgument for Dleq<G>
+    where
+        G: CurveGroup + PrimeGroup + Encoding + Deserialize,
+        G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
+    {
+        fn protocol_id(&self) -> impl AsRef<[u8]> {
+            ia_core::pad_protocol_id(b"dleq-chaum-pedersen")
+        }
 
-impl<G> ArgumentCore for Dleq<G>
-where
-    G: CurveGroup + PrimeGroup + Encoding + Deserialize,
-    G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
-{
-    type Instance = (G, G); // (u, v) — the per-claim DLEQ pair
-    type Witness = G::ScalarField; // x
-}
+        /// (u, v) — the per-claim DLEQ pair
+        type Instance = (G, G);
+        /// x
+        type Witness = G::ScalarField;
+        /// (g, h)
+        type Index = (G, G);
+        type ProverKey = DleqKey<G>;
+        type VerifierKey = DleqKey<G>;
 
-impl<G> PreprocessingCore for Dleq<G>
-where
-    G: CurveGroup + PrimeGroup + Encoding + Deserialize,
-    G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
-{
-    type Index = (G, G); // (g, h)
-    type ProverKey = DleqKey<G>;
-    type VerifierKey = DleqKey<G>;
+        /// Deterministic indexer: both keys are the same (g, h) pair. The
+        /// verifier-side key exposes a canonical commitment via
+        /// `VerifierKeyCommitment`; the prover-side key is the same data but
+        /// without the trait obligation.
+        fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+            let key = DleqKey { g: ix.0, h: ix.1 };
+            (key.clone(), key)
+        }
 
-    /// Deterministic indexer: both keys are the same (g, h) pair. The
-    /// verifier-side key exposes a canonical commitment via
-    /// `VerifierKeyCommitment`; the prover-side key is the same data but
-    /// without the trait obligation.
-    fn index(&self, ix: &(G, G)) -> (DleqKey<G>, DleqKey<G>) {
-        let key = DleqKey { g: ix.0, h: ix.1 };
-        (key.clone(), key)
-    }
-}
+        #[allow(non_snake_case)]
+        fn prove<P: ProverChannel>(
+            &self,
+            ch: &mut P,
+            pk: &DleqKey<G>,
+            instance: &(G, G),
+            witness: &G::ScalarField,
+        ) {
+            let DleqKey { g, h: _ } = *pk;
+            let (u, _v) = *instance;
+            let x = *witness;
 
-impl<G> PreprocessingInteractiveArgument for Dleq<G>
-where
-    G: CurveGroup + PrimeGroup + Encoding + Deserialize,
-    G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
-{
-    #[allow(non_snake_case)]
-    fn prove<P: ProverChannel>(
-        &self,
-        ch: &mut P,
-        pk: &DleqKey<G>,
-        instance: &(G, G),
-        witness: &G::ScalarField,
-    ) {
-        let DleqKey { g, h: _ } = *pk;
-        let (u, _v) = *instance;
-        let x = *witness;
+            let k = G::ScalarField::rand(&mut OsRng);
+            let K1 = g * k;
+            let K2 = u * k;
+            ch.send_prover_message(&K1);
+            ch.send_prover_message(&K2);
 
-        let k = G::ScalarField::rand(&mut OsRng);
-        let K1 = g * k;
-        let K2 = u * k;
-        ch.send_prover_message(&K1);
-        ch.send_prover_message(&K2);
+            let c: G::ScalarField = ch.read_verifier_message();
+            let r = k + c * x;
+            ch.send_prover_message(&r);
+        }
 
-        let c: G::ScalarField = ch.read_verifier_message();
-        let r = k + c * x;
-        ch.send_prover_message(&r);
-    }
+        #[allow(non_snake_case)]
+        fn verify<V: VerifierChannel>(
+            &self,
+            ch: &mut V,
+            vk: &DleqKey<G>,
+            instance: &(G, G),
+        ) -> VerificationResult<()> {
+            let DleqKey { g, h } = *vk;
+            let (u, v) = *instance;
 
-    #[allow(non_snake_case)]
-    fn verify<V: VerifierChannel>(
-        &self,
-        ch: &mut V,
-        vk: &DleqKey<G>,
-        instance: &(G, G),
-    ) -> VerificationResult<()> {
-        let DleqKey { g, h } = *vk;
-        let (u, v) = *instance;
+            let K1: G = ch.read_prover_message()?;
+            let K2: G = ch.read_prover_message()?;
+            let c: G::ScalarField = ch.send_verifier_message();
+            let r: G::ScalarField = ch.read_prover_message()?;
 
-        let K1: G = ch.read_prover_message()?;
-        let K2: G = ch.read_prover_message()?;
-        let c: G::ScalarField = ch.send_verifier_message();
-        let r: G::ScalarField = ch.read_prover_message()?;
-
-        if g * r == K1 + h * c && u * r == K2 + v * c {
-            Ok(())
-        } else {
-            Err(VerificationError)
+            if g * r == K1 + h * c && u * r == K2 + v * c {
+                Ok(())
+            } else {
+                Err(VerificationError)
+            }
         }
     }
 }

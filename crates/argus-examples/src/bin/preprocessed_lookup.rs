@@ -40,8 +40,7 @@ use blake3::{Hash, Hasher};
 use spongefish_dsfs as dsfs;
 
 use ia_core::{
-    ArgumentCore, CommittedIndexBytes, NonInteractiveArgument, Preprocessed, PreprocessingCore,
-    PreprocessingInteractiveArgument, ProtocolCore, ProverChannel, VerificationError,
+    CommittedIndexBytes, NonInteractiveArgument, Preprocessed, ProverChannel, VerificationError,
     VerificationResult, VerifierChannel, VerifierKeyCommitment,
 };
 
@@ -148,89 +147,84 @@ impl VerifierKeyCommitment for LookupVerifierKey {
 #[derive(Default)]
 struct PreprocessedLookup;
 
-impl ProtocolCore for PreprocessedLookup {
-    fn protocol_id(&self) -> impl AsRef<[u8]> {
-        ia_core::pad_protocol_id(b"preprocessed-merkle-lookup")
-    }
-}
-
-impl ArgumentCore for PreprocessedLookup {
-    /// Per-claim instance is (i, claimed_value).
-    type Instance = (u32, u32);
-    type Witness = ();
-}
-
-impl PreprocessingCore for PreprocessedLookup {
-    type Index = Vec<u32>;
-    type ProverKey = LookupProverKey;
-    type VerifierKey = LookupVerifierKey;
-
-    /// The real work: build the tree once, slice the result into a fat
-    /// prover key (table + tree) and a thin verifier key (root + length).
-    fn index(&self, ix: &Vec<u32>) -> (LookupProverKey, LookupVerifierKey) {
-        let tree = MerkleTree::new(ix);
-        let root = *tree.root().as_bytes();
-        let n = u32::try_from(ix.len()).expect("table size fits in u32");
-        let pk = LookupProverKey {
-            table: ix.clone(),
-            tree,
-        };
-        let vk = LookupVerifierKey { root, n };
-        (pk, vk)
-    }
-}
-
-impl PreprocessingInteractiveArgument for PreprocessedLookup {
-    fn prove<P: ProverChannel>(
-        &self,
-        ch: &mut P,
-        pk: &LookupProverKey,
-        instance: &(u32, u32),
-        _witness: &(),
-    ) {
-        let (i, _claimed) = *instance;
-        let i = i as usize;
-        let leaf = pk.table[i];
-        let path = pk.tree.path(i);
-
-        // Send the leaf, then each sibling hash. The verifier knows
-        // log_2(n) from vk.n and reads exactly that many siblings.
-        ch.send_prover_message(&leaf);
-        for sibling in &path {
-            ch.send_prover_message(sibling.as_bytes());
-        }
-    }
-
-    fn verify<V: VerifierChannel>(
-        &self,
-        ch: &mut V,
-        vk: &LookupVerifierKey,
-        instance: &(u32, u32),
-    ) -> VerificationResult<()> {
-        let (i, claimed) = *instance;
-
-        // Sanity check: i in [0, n), and n is a power of two so log_2 is
-        // an integer. The path length comes from vk, not the proof bytes.
-        if i >= vk.n || !vk.n.is_power_of_two() {
-            return Err(VerificationError);
-        }
-        let log_n = vk.n.trailing_zeros() as usize;
-
-        let leaf: u32 = ch.read_prover_message()?;
-        let mut siblings = Vec::with_capacity(log_n);
-        for _ in 0..log_n {
-            let s: [u8; 32] = ch.read_prover_message()?;
-            siblings.push(Hash::from(s));
+ia_core::impl_preprocessing_argument! {
+    impl PreprocessingInteractiveArgument for PreprocessedLookup {
+        fn protocol_id(&self) -> impl AsRef<[u8]> {
+            ia_core::pad_protocol_id(b"preprocessed-merkle-lookup")
         }
 
-        if leaf != claimed {
-            return Err(VerificationError);
+        /// Per-claim instance is (i, claimed_value).
+        type Instance = (u32, u32);
+        type Witness = ();
+        type Index = Vec<u32>;
+        type ProverKey = LookupProverKey;
+        type VerifierKey = LookupVerifierKey;
+
+        /// The real work: build the tree once, slice the result into a fat
+        /// prover key (table + tree) and a thin verifier key (root + length).
+        fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+            let tree = MerkleTree::new(ix);
+            let root = *tree.root().as_bytes();
+            let n = u32::try_from(ix.len()).expect("table size fits in u32");
+            let pk = LookupProverKey {
+                table: ix.clone(),
+                tree,
+            };
+            let vk = LookupVerifierKey { root, n };
+            (pk, vk)
         }
-        let root = Hash::from(vk.root);
-        if !verify_merkle_path(&root, i as usize, leaf, &siblings) {
-            return Err(VerificationError);
+
+        fn prove<P: ProverChannel>(
+            &self,
+            ch: &mut P,
+            pk: &LookupProverKey,
+            instance: &(u32, u32),
+            _witness: &(),
+        ) {
+            let (i, _claimed) = *instance;
+            let i = i as usize;
+            let leaf = pk.table[i];
+            let path = pk.tree.path(i);
+
+            // Send the leaf, then each sibling hash. The verifier knows
+            // log_2(n) from vk.n and reads exactly that many siblings.
+            ch.send_prover_message(&leaf);
+            for sibling in &path {
+                ch.send_prover_message(sibling.as_bytes());
+            }
         }
-        Ok(())
+
+        fn verify<V: VerifierChannel>(
+            &self,
+            ch: &mut V,
+            vk: &LookupVerifierKey,
+            instance: &(u32, u32),
+        ) -> VerificationResult<()> {
+            let (i, claimed) = *instance;
+
+            // Sanity check: i in [0, n), and n is a power of two so log_2 is
+            // an integer. The path length comes from vk, not the proof bytes.
+            if i >= vk.n || !vk.n.is_power_of_two() {
+                return Err(VerificationError);
+            }
+            let log_n = vk.n.trailing_zeros() as usize;
+
+            let leaf: u32 = ch.read_prover_message()?;
+            let mut siblings = Vec::with_capacity(log_n);
+            for _ in 0..log_n {
+                let s: [u8; 32] = ch.read_prover_message()?;
+                siblings.push(Hash::from(s));
+            }
+
+            if leaf != claimed {
+                return Err(VerificationError);
+            }
+            let root = Hash::from(vk.root);
+            if !verify_merkle_path(&root, i as usize, leaf, &siblings) {
+                return Err(VerificationError);
+            }
+            Ok(())
+        }
     }
 }
 

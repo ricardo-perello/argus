@@ -7,11 +7,9 @@ use ark_poly::{DenseMultilinearExtension, Polynomial};
 use ark_std::log2;
 
 use ia_core::{
-    ArgumentCore, CommittedIndexBytes, PreprocessingArgumentSecurity, PreprocessingCore,
-    PreprocessingInteractiveArgument, PreprocessingInteractiveReduction,
-    PreprocessingReductionSecurity, ProtocolCore, ProverChannel, ReducedArgument, ReductionCore,
-    SecurityErrorBound, SecurityProfile, VerificationResult, VerifierChannel,
-    VerifierKeyCommitment,
+    CommittedIndexBytes, PreprocessingArgumentSecurity, PreprocessingReductionSecurity,
+    ProverChannel, ReducedArgument, SecurityErrorBound, SecurityProfile, VerificationResult,
+    VerifierChannel, VerifierKeyCommitment,
 };
 
 use crate::protocol::warp::{
@@ -105,7 +103,8 @@ pub struct WARPSecurityParams {
 /// shape, with each field interpreted as a maximum over the instance family.
 pub type WARPSecurityBound = WARPSecurityParams;
 
-impl<F, P, C, MT> ProtocolCore for WARPReduction<F, P, C, MT>
+ia_core::impl_preprocessing_reduction! {
+impl<F, P, C, MT> PreprocessingInteractiveReduction for WARPReduction<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -121,40 +120,12 @@ where
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"argus::warp::reduction")
     }
-}
 
-impl<F, P, C, MT> ReductionCore for WARPReduction<F, P, C, MT>
-where
-    F: Field
-        + PrimeField
-        + Send
-        + Sync
-        + spongefish::Encoding
-        + spongefish::Decoding
-        + ia_core::Deserialize,
-    P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
-    C: LinearCode<F> + Clone,
-    MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
-{
     type SourceInstance = WARPInstance<F, MT>;
-    type SourceWitness = WARPWitness<F, MT>;
     type TargetInstance = DeciderInstance<F, MT>;
+    type SourceWitness = WARPWitness<F, MT>;
     type TargetWitness = DeciderWitness<F, MT>;
-}
 
-impl<F, P, C, MT> PreprocessingCore for WARPReduction<F, P, C, MT>
-where
-    F: Field
-        + PrimeField
-        + Send
-        + Sync
-        + spongefish::Encoding
-        + spongefish::Decoding
-        + ia_core::Deserialize,
-    P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
-    C: LinearCode<F> + Clone,
-    MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
-{
     type Index = WARPIndex<F, P, C, MT>;
     type ProverKey = WARPProverKey<F, P, C, MT>;
     type VerifierKey = WARPVerifierKey<F, P, C, MT>;
@@ -174,21 +145,7 @@ where
         };
         (pk, vk)
     }
-}
 
-impl<F, P, C, MT> PreprocessingInteractiveReduction for WARPReduction<F, P, C, MT>
-where
-    F: Field
-        + PrimeField
-        + Send
-        + Sync
-        + spongefish::Encoding
-        + spongefish::Decoding
-        + ia_core::Deserialize,
-    P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
-    C: LinearCode<F> + Clone,
-    MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
-{
     fn prove<Ch: ProverChannel>(
         &self,
         ch: &mut Ch,
@@ -233,6 +190,7 @@ where
             acc_instance: result.target,
         })
     }
+}
 }
 
 impl<F, P, C, MT> PreprocessingReductionSecurity for WARPReduction<F, P, C, MT>
@@ -412,7 +370,8 @@ impl<F, P, C, MT> Default for WARPDeciderIA<F, P, C, MT> {
     }
 }
 
-impl<F, P, C, MT> ProtocolCore for WARPDeciderIA<F, P, C, MT>
+ia_core::impl_preprocessing_argument! {
+impl<F, P, C, MT> PreprocessingInteractiveArgument for WARPDeciderIA<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -428,38 +387,10 @@ where
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"argus::warp::decider")
     }
-}
 
-impl<F, P, C, MT> ArgumentCore for WARPDeciderIA<F, P, C, MT>
-where
-    F: Field
-        + PrimeField
-        + Send
-        + Sync
-        + spongefish::Encoding
-        + spongefish::Decoding
-        + ia_core::Deserialize,
-    P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
-    C: LinearCode<F> + Clone,
-    MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
-{
     type Instance = DeciderInstance<F, MT>;
     type Witness = DeciderWitness<F, MT>;
-}
 
-impl<F, P, C, MT> PreprocessingCore for WARPDeciderIA<F, P, C, MT>
-where
-    F: Field
-        + PrimeField
-        + Send
-        + Sync
-        + spongefish::Encoding
-        + spongefish::Decoding
-        + ia_core::Deserialize,
-    P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
-    C: LinearCode<F> + Clone,
-    MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
-{
     type Index = WARPIndex<F, P, C, MT>;
     type ProverKey = ();
     type VerifierKey = WARPVerifierKey<F, P, C, MT>;
@@ -473,21 +404,7 @@ where
         };
         ((), vk)
     }
-}
 
-impl<F, P, C, MT> PreprocessingInteractiveArgument for WARPDeciderIA<F, P, C, MT>
-where
-    F: Field
-        + PrimeField
-        + Send
-        + Sync
-        + spongefish::Encoding
-        + spongefish::Decoding
-        + ia_core::Deserialize,
-    P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
-    C: LinearCode<F> + Clone,
-    MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
-{
     fn prove<Ch: ProverChannel>(
         &self,
         ch: &mut Ch,
@@ -564,6 +481,7 @@ where
         Ok(())
     }
 }
+}
 
 impl<F, P, C, MT> PreprocessingArgumentSecurity for WARPDeciderIA<F, P, C, MT>
 where
@@ -635,9 +553,10 @@ fn decider_security_profile() -> SecurityProfile {
 //
 // Both components are indexed, so `FullWARP` implements
 // `PreprocessingInteractiveArgument` via the composition impl in
-// `ia_core::indexed`. The composed `Index` is `(WARPIndex, WARPIndex)` —
-// callers pass the same index twice for now. Folding into a single
-// `WARPIndex` for the composed `FullWARP` is a future cleanup.
+// `ia_core`'s interactive preprocessing layer. The composed `Index` is
+// `(WARPIndex, WARPIndex)` — callers pass the same index twice for now.
+// Folding into a single `WARPIndex` for the composed `FullWARP` is a future
+// cleanup.
 
 pub type FullWARP<F, P, C, MT> =
     ReducedArgument<WARPReduction<F, P, C, MT>, WARPDeciderIA<F, P, C, MT>>;

@@ -1,23 +1,23 @@
 //! Core abstractions for public-coin interactive arguments and reductions.
 //!
-//! Defines channel traits, the `InteractiveArgument` interface, and the
-//! `InteractiveReduction` interface. Codec traits (`Encoding`, `Decoding`,
-//! `NargSerialize`, `NargDeserialize`, `Deserialize`) and the verification error
-//! type live in `spongefish` and are re-exported here for protocol implementors.
+//! Defines channel traits, the core protocol hierarchy, preprocessing support,
+//! composition, non-interactive vocabulary, and security metadata. Codec traits
+//! (`Encoding`, `Decoding`, `NargSerialize`, `NargDeserialize`, `Deserialize`)
+//! and the verification error type live in `spongefish` and are re-exported here
+//! for protocol implementors.
 //!
-//! Submodules: [`security`], [`channel`], [`argument`], [`reduction`], [`narg`],
-//! [`compose`].
+//! The public re-exports are intentionally flat: protocol authors can import
+//! `InteractiveArgument`, `PreprocessingInteractiveArgument`, `ProtocolCore`,
+//! `ArgumentCore`, and the channel traits directly from `ia_core`.
 #![no_std]
 extern crate alloc;
 
-mod argument;
 mod channel;
-mod compose;
-mod indexed;
-mod indexed_security;
-mod narg;
-mod protocol;
-mod reduction;
+mod core;
+mod interactive;
+mod macros;
+mod noninteractive;
+mod preprocessing;
 mod security;
 
 pub use spongefish::{
@@ -41,19 +41,21 @@ pub const fn pad_protocol_id(label: &[u8]) -> [u8; 32] {
     id
 }
 
-pub use argument::InteractiveArgument;
 pub use channel::{ProverChannel, VerifierChannel};
-pub use compose::{ChainedReduction, ReducedArgument};
-pub use indexed::{
-    CommittedIndexBytes, IndexedInstance, IndexedInstanceRef, PreparedArgument, PreparedReduction,
-    Preprocessed, PreprocessingInteractiveArgument, PreprocessingInteractiveReduction,
-    TrivialIndexedArgument, TrivialIndexedReduction, VerifierKeyCommitment,
+pub use core::{ArgumentCore, PreprocessingCore, ProtocolCore, ReductionCore};
+pub use interactive::{
+    ChainedReduction, InteractiveArgument, InteractiveReduction, PreparedArgument,
+    PreparedReduction, PreprocessingInteractiveArgument, PreprocessingInteractiveReduction,
+    ReducedArgument, TrivialIndexedArgument, TrivialIndexedReduction,
 };
-pub use indexed_security::{PreprocessingArgumentSecurity, PreprocessingReductionSecurity};
-pub use narg::{
+pub use noninteractive::{
     NargAsInteractiveArgument, NargProof, NonInteractiveArgument, NonInteractiveReduction,
     PreprocessingNonInteractiveArgument, PreprocessingNonInteractiveReduction,
 };
-pub use protocol::{ArgumentCore, PreprocessingCore, ProtocolCore, ReductionCore};
-pub use reduction::InteractiveReduction;
-pub use security::{ArgumentSecurity, ReductionSecurity, SecurityErrorBound, SecurityProfile};
+pub use preprocessing::{
+    CommittedIndexBytes, IndexedInstance, IndexedInstanceRef, Preprocessed, VerifierKeyCommitment,
+};
+pub use security::{
+    ArgumentSecurity, PreprocessingArgumentSecurity, PreprocessingReductionSecurity,
+    ReductionSecurity, SecurityErrorBound, SecurityProfile,
+};

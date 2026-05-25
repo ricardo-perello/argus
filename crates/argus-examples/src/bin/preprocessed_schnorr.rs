@@ -45,9 +45,8 @@ use rand::rngs::OsRng;
 use spongefish_dsfs as dsfs;
 
 use ia_core::{
-    ArgumentCore, CommittedIndexBytes, Decoding, Deserialize, Encoding, NonInteractiveArgument,
-    Preprocessed, PreprocessingCore, PreprocessingInteractiveArgument, ProtocolCore, ProverChannel,
-    VerificationError, VerificationResult, VerifierChannel, VerifierKeyCommitment,
+    CommittedIndexBytes, Decoding, Deserialize, Encoding, NonInteractiveArgument, Preprocessed,
+    ProverChannel, VerificationError, VerificationResult, VerifierChannel, VerifierKeyCommitment,
 };
 
 // ---------------------------------------------------------------------------
@@ -84,74 +83,57 @@ impl<G: CurveGroup> Default for PreprocessedSchnorr<G> {
     }
 }
 
-impl<G> ProtocolCore for PreprocessedSchnorr<G>
-where
-    G: CurveGroup + PrimeGroup + Encoding + Deserialize,
-    G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
-{
-    fn protocol_id(&self) -> impl AsRef<[u8]> {
-        ia_core::pad_protocol_id(b"preprocessed-schnorr")
-    }
-}
+ia_core::impl_preprocessing_argument! {
+    impl<G> PreprocessingInteractiveArgument for PreprocessedSchnorr<G>
+    where
+        G: CurveGroup + PrimeGroup + Encoding + Deserialize,
+        G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
+    {
+        fn protocol_id(&self) -> impl AsRef<[u8]> {
+            ia_core::pad_protocol_id(b"preprocessed-schnorr")
+        }
 
-impl<G> ArgumentCore for PreprocessedSchnorr<G>
-where
-    G: CurveGroup + PrimeGroup + Encoding + Deserialize,
-    G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
-{
-    type Instance = G;
-    type Witness = G::ScalarField;
-}
+        type Instance = G;
+        type Witness = G::ScalarField;
+        type Index = G;
+        type ProverKey = G;
+        type VerifierKey = SchnorrVerifierKey<G>;
 
-impl<G> PreprocessingCore for PreprocessedSchnorr<G>
-where
-    G: CurveGroup + PrimeGroup + Encoding + Deserialize,
-    G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
-{
-    type Index = G;
-    type ProverKey = G;
-    type VerifierKey = SchnorrVerifierKey<G>;
+        /// Deterministic indexer. Both prover and verifier end up holding G,
+        /// but the verifier wraps it in `SchnorrVerifierKey` so a canonical
+        /// commitment can be derived for the transcript.
+        fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+            (*ix, SchnorrVerifierKey(*ix))
+        }
 
-    /// Deterministic indexer. Both prover and verifier end up holding G,
-    /// but the verifier wraps it in `SchnorrVerifierKey` so a canonical
-    /// commitment can be derived for the transcript.
-    fn index(&self, ix: &G) -> (G, SchnorrVerifierKey<G>) {
-        (*ix, SchnorrVerifierKey(*ix))
-    }
-}
+        #[allow(non_snake_case)]
+        fn prove<P: ProverChannel>(&self, ch: &mut P, pk: &G, _instance: &G, witness: &G::ScalarField) {
+            let G_gen = *pk;
+            let k = G::ScalarField::rand(&mut OsRng);
+            let K = G_gen * k;
+            ch.send_prover_message(&K);
+            let c: G::ScalarField = ch.read_verifier_message();
+            let r = k + c * witness;
+            ch.send_prover_message(&r);
+        }
 
-impl<G> PreprocessingInteractiveArgument for PreprocessedSchnorr<G>
-where
-    G: CurveGroup + PrimeGroup + Encoding + Deserialize,
-    G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
-{
-    #[allow(non_snake_case)]
-    fn prove<P: ProverChannel>(&self, ch: &mut P, pk: &G, _instance: &G, witness: &G::ScalarField) {
-        let G_gen = *pk;
-        let k = G::ScalarField::rand(&mut OsRng);
-        let K = G_gen * k;
-        ch.send_prover_message(&K);
-        let c: G::ScalarField = ch.read_verifier_message();
-        let r = k + c * witness;
-        ch.send_prover_message(&r);
-    }
-
-    #[allow(non_snake_case)]
-    fn verify<V: VerifierChannel>(
-        &self,
-        ch: &mut V,
-        vk: &SchnorrVerifierKey<G>,
-        instance: &G,
-    ) -> VerificationResult<()> {
-        let G_gen = vk.0;
-        let X = *instance;
-        let K: G = ch.read_prover_message()?;
-        let c: G::ScalarField = ch.send_verifier_message();
-        let r: G::ScalarField = ch.read_prover_message()?;
-        if G_gen * r == K + X * c {
-            Ok(())
-        } else {
-            Err(VerificationError)
+        #[allow(non_snake_case)]
+        fn verify<V: VerifierChannel>(
+            &self,
+            ch: &mut V,
+            vk: &SchnorrVerifierKey<G>,
+            instance: &G,
+        ) -> VerificationResult<()> {
+            let G_gen = vk.0;
+            let X = *instance;
+            let K: G = ch.read_prover_message()?;
+            let c: G::ScalarField = ch.send_verifier_message();
+            let r: G::ScalarField = ch.read_prover_message()?;
+            if G_gen * r == K + X * c {
+                Ok(())
+            } else {
+                Err(VerificationError)
+            }
         }
     }
 }

@@ -31,6 +31,54 @@ ProtocolCore
 Plain execution traits only contain channel logic. Preprocessing execution traits
 receive `pk` or `vk` explicitly.
 
+## Authoring Macros
+
+Most protocol authors should write one macro block:
+
+```rust
+ia_core::impl_interactive_argument! {
+    impl InteractiveArgument for Schnorr {
+        fn protocol_id(&self) -> impl AsRef<[u8]> {
+            ia_core::pad_protocol_id(b"schnorr")
+        }
+
+        type Instance = SchnorrInstance;
+        type Witness = SchnorrWitness;
+
+        fn prove<P: ProverChannel>(
+            &self,
+            ch: &mut P,
+            instance: &Self::Instance,
+            witness: &Self::Witness,
+        ) {
+            /* channel-only protocol logic */
+        }
+
+        fn verify<V: VerifierChannel>(
+            &self,
+            ch: &mut V,
+            instance: &Self::Instance,
+        ) -> VerificationResult<()> {
+            /* channel-only protocol logic */
+            Ok(())
+        }
+    }
+}
+```
+
+Available macros:
+
+- `impl_interactive_argument!`
+- `impl_interactive_reduction!`
+- `impl_preprocessing_argument!`
+- `impl_preprocessing_reduction!`
+
+The macros expand to normal impl blocks for `ProtocolCore`,
+`ArgumentCore`/`ReductionCore`, `PreprocessingCore` when needed, and the
+executable leaf trait. They support generic impl headers, optional `where`
+clauses, and attributes on methods or associated types. Manual impls remain
+part of the API.
+
 ## Core Traits
 
 - `ProtocolCore`: protocol identity for domain separation.
@@ -85,6 +133,24 @@ can accept bare instances without cloning them.
 - `PreprocessingNonInteractiveReduction`
 
 Concrete compilation to proof bytes is backend-owned.
+
+## Source Layout
+
+The crate is organized by layer:
+
+```text
+src/
+  channel.rs
+  core.rs
+  interactive/
+  noninteractive/
+  preprocessing/
+  security/
+  macros.rs
+```
+
+`lib.rs` keeps the public imports flat, so consumers can continue importing
+traits and helpers directly from `ia_core`.
 
 ## Composition
 
