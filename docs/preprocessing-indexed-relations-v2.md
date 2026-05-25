@@ -10,19 +10,19 @@ Add first-class support for indexed relations without changing the authoring
 surface for ordinary protocols.
 
 Plain protocols keep implementing the existing channel execution traits, now
-through the explicit body tree:
+through the explicit core tree:
 
 ```text
-ProtocolBody
-├── ArgumentBody
+ProtocolCore
+├── ArgumentCore
 │   ├── InteractiveArgument
-│   └── IndexedInteractiveArgument
-└── ReductionBody
+│   └── PreprocessingInteractiveArgument
+└── ReductionCore
     ├── InteractiveReduction
-    └── IndexedInteractiveReduction
+    └── PreprocessingInteractiveReduction
 ```
 
-Preprocessed protocols implement keyed indexed traits plus `IndexedBody`, which
+Preprocessed protocols implement keyed indexed traits plus `PreprocessingCore`, which
 exposes:
 
 - an indexer `index(ix) -> (pk, vk)`;
@@ -32,13 +32,13 @@ exposes:
   the first challenge.
 
 The DSFS backend remains the only layer that touches sponge/transcript
-mechanics. Protocol code, including indexed protocol code, still only uses the
+mechanics. Protocol code, including preprocessing protocol code, still only uses the
 channel API.
 
 ## Non-Negotiable Invariants
 
 1. Plain IA/IR protocol math remains unchanged; authors now split identity,
-   relation shape, and execution across body traits.
+   relation shape, and execution across core traits.
 2. Real preprocessing is keyed execution, not key generation alone.
 3. The committed verifier index and instance are absorbed before the first
    challenge.
@@ -49,28 +49,28 @@ channel API.
 7. Prepared interactive adapters reject an `IndexedInstance` whose commitment
    does not match the stored `vk`.
 
-## Protocol Body Tree
+## Protocol Core Tree
 
 The authoring surface is intentionally OOP-like but split into small traits.
 
 ```rust
-pub trait ProtocolBody {
+pub trait ProtocolCore {
     fn protocol_id(&self) -> impl AsRef<[u8]>;
 }
 
-pub trait ArgumentBody: ProtocolBody {
+pub trait ArgumentCore: ProtocolCore {
     type Instance;
     type Witness;
 }
 
-pub trait ReductionBody: ProtocolBody {
+pub trait ReductionCore: ProtocolCore {
     type SourceInstance;
     type TargetInstance;
     type SourceWitness;
     type TargetWitness;
 }
 
-pub trait IndexedBody: ProtocolBody {
+pub trait PreprocessingCore: ProtocolCore {
     type Index;
     type ProverKey;
     type VerifierKey: VerifierKeyCommitment;
@@ -82,15 +82,15 @@ pub trait IndexedBody: ProtocolBody {
 Plain execution leaves contain only channel logic:
 
 ```rust
-pub trait InteractiveArgument: ArgumentBody { /* prove/verify */ }
-pub trait InteractiveReduction: ReductionBody { /* prove/verify */ }
+pub trait InteractiveArgument: ArgumentCore { /* prove/verify */ }
+pub trait InteractiveReduction: ReductionCore { /* prove/verify */ }
 ```
 
-Indexed execution leaves are keyed:
+Preprocessing execution leaves are keyed:
 
 ```rust
-pub trait IndexedInteractiveArgument: ArgumentBody + IndexedBody { /* keyed prove/verify */ }
-pub trait IndexedInteractiveReduction: ReductionBody + IndexedBody { /* keyed prove/verify */ }
+pub trait PreprocessingInteractiveArgument: ArgumentCore + PreprocessingCore { /* keyed prove/verify */ }
+pub trait PreprocessingInteractiveReduction: ReductionCore + PreprocessingCore { /* keyed prove/verify */ }
 ```
 
 ## Core Indexed Vocabulary
@@ -171,7 +171,7 @@ protocol execution, without requiring `Clone` on the instance.
 ### Keyed indexed authoring traits
 
 ```rust
-pub trait IndexedInteractiveArgument: ArgumentBody + IndexedBody {
+pub trait PreprocessingInteractiveArgument: ArgumentCore + PreprocessingCore {
     fn prove<P: ProverChannel>(
         &self,
         ch: &mut P,
@@ -188,7 +188,7 @@ pub trait IndexedInteractiveArgument: ArgumentBody + IndexedBody {
     ) -> VerificationResult<()>;
 }
 
-pub trait IndexedInteractiveReduction: ReductionBody + IndexedBody {
+pub trait PreprocessingInteractiveReduction: ReductionCore + PreprocessingCore {
     fn prove<P: ProverChannel>(
         &self,
         ch: &mut P,
@@ -212,18 +212,18 @@ keyed indexed trait directly.
 
 ## Prepared Interactive Adapters
 
-Prepared adapters live in `ia-core::indexed`. They make indexed protocols look
+Prepared adapters live in `ia-core::indexed`. They make preprocessing protocols look
 like ordinary IA/IR after keys have been generated.
 
 ```rust
-pub struct PreparedArgument<B: IndexedInteractiveArgument> {
+pub struct PreparedArgument<B: PreprocessingInteractiveArgument> {
     body: B,
     pk: B::ProverKey,
     vk: B::VerifierKey,
     committed_index: CommittedIndexBytes,
 }
 
-pub struct PreparedReduction<B: IndexedInteractiveReduction> {
+pub struct PreparedReduction<B: PreprocessingInteractiveReduction> {
     body: B,
     pk: B::ProverKey,
     vk: B::VerifierKey,
@@ -234,13 +234,13 @@ pub struct PreparedReduction<B: IndexedInteractiveReduction> {
 All fields are private. The only public constructors are:
 
 ```rust
-impl<B: IndexedInteractiveArgument> PreparedArgument<B> {
+impl<B: PreprocessingInteractiveArgument> PreparedArgument<B> {
     pub fn prepare(body: B, ix: &B::Index) -> Self;
     pub fn with_keys(body: B, pk: B::ProverKey, vk: B::VerifierKey) -> Self;
     pub fn indexed_instance(&self, instance: B::Instance) -> IndexedInstance<B::Instance>;
 }
 
-impl<B: IndexedInteractiveReduction> PreparedReduction<B> {
+impl<B: PreprocessingInteractiveReduction> PreparedReduction<B> {
     pub fn prepare(body: B, ix: &B::Index) -> Self;
     pub fn with_keys(body: B, pk: B::ProverKey, vk: B::VerifierKey) -> Self;
     pub fn indexed_source(
@@ -299,14 +299,14 @@ let verified_target = narg.verify(&session, &x, &proof)?;
 ```
 
 Add `.prepare(&ix)` and `.with_keys(pk, vk)` as inherent methods on the same
-wrappers. An indexed body can be stored in `DsfsArgument<IA, S, H, SALT_LEN>`
+wrappers. An preprocessing core can be stored in `DsfsArgument<IA, S, H, SALT_LEN>`
 even though the `NonInteractiveArgument` impl is available only after
 preparation.
 
 ```rust
 impl<IA, S, H, const SALT_LEN: usize> DsfsArgument<IA, S, H, SALT_LEN>
 where
-    IA: IndexedInteractiveArgument,
+    IA: PreprocessingInteractiveArgument,
 {
     pub fn prepare(self, ix: &IA::Index) -> PreparedDsfsArgument<IA, S, H, SALT_LEN>;
     pub fn with_keys(
@@ -318,7 +318,7 @@ where
 
 impl<IR, S, H, const SALT_LEN: usize> DsfsReduction<IR, S, H, SALT_LEN>
 where
-    IR: IndexedInteractiveReduction,
+    IR: PreprocessingInteractiveReduction,
 {
     pub fn prepare(self, ix: &IR::Index) -> PreparedDsfsReduction<IR, S, H, SALT_LEN>;
     pub fn with_keys(
@@ -402,7 +402,7 @@ proof bytes must remain byte-for-byte unchanged.
 
 ## Explicit Trivial-Index Adapters
 
-Mixed plain/indexed composition is supported only through explicit adapters.
+Mixed plain/preprocessing composition is supported only through explicit adapters.
 There is no blanket conversion.
 
 ```rust
@@ -410,7 +410,7 @@ pub struct TrivialIndexedArgument<A>(pub A);
 pub struct TrivialIndexedReduction<R>(pub R);
 ```
 
-`TrivialIndexedArgument<A>` implements `IndexedInteractiveArgument` when
+`TrivialIndexedArgument<A>` implements `PreprocessingInteractiveArgument` when
 `A: InteractiveArgument` with:
 
 ```rust
@@ -433,7 +433,7 @@ let plain_as_indexed = TrivialIndexedReduction(plain_reduction);
 
 ## Composition
 
-Indexed composition is implemented when both components are indexed, either
+Preprocessing composition is implemented when both components are indexed, either
 natively or through explicit trivial-index adapters.
 
 ```rust
@@ -461,10 +461,10 @@ second.prove(ch, &pk.1, &x2, &w2);
 Keep existing `ArgumentSecurity` and `ReductionSecurity` unchanged for plain
 protocols.
 
-Indexed variants are part of the current API:
+Preprocessing variants are part of the current API:
 
 ```rust
-pub trait IndexedArgumentSecurity: IndexedInteractiveArgument {
+pub trait PreprocessingArgumentSecurity: PreprocessingInteractiveArgument {
     type IndexParams;
     type IndexBound;
     type InstanceParams;
@@ -472,7 +472,7 @@ pub trait IndexedArgumentSecurity: IndexedInteractiveArgument {
     // methods mirror ArgumentSecurity but take index-derived params/bounds
 }
 
-pub trait IndexedReductionSecurity: IndexedInteractiveReduction {
+pub trait PreprocessingReductionSecurity: PreprocessingInteractiveReduction {
     type IndexParams;
     type IndexBound;
     type SourceParams;
@@ -492,13 +492,13 @@ WARP's security parameters are split into:
 ## Type Lattice Decision
 
 The public implementation does not use a `Protocol<B, P, M, W>` carrier. The
-body-trait inheritance tree is the actual type lattice:
+core-trait inheritance tree is the actual type lattice:
 
 ```text
-ProtocolBody -> ArgumentBody -> InteractiveArgument
-ProtocolBody -> ArgumentBody + IndexedBody -> IndexedInteractiveArgument
-ProtocolBody -> ReductionBody -> InteractiveReduction
-ProtocolBody -> ReductionBody + IndexedBody -> IndexedInteractiveReduction
+ProtocolCore -> ArgumentCore -> InteractiveArgument
+ProtocolCore -> ArgumentCore + PreprocessingCore -> PreprocessingInteractiveArgument
+ProtocolCore -> ReductionCore -> InteractiveReduction
+ProtocolCore -> ReductionCore + PreprocessingCore -> PreprocessingInteractiveReduction
 ```
 
 Add a sealed `Protocol<B, P, M, W>` wrapper only if a future generic compiler
@@ -529,8 +529,8 @@ pub struct WARPInstance<...> {
 ```
 
 `VerifierKeyCommitment` is implemented for `WARPVerifierKey`.
-`WARPReduction` implements `IndexedInteractiveReduction`; `WARPDeciderIA`
-implements `IndexedInteractiveArgument`; and
+`WARPReduction` implements `PreprocessingInteractiveReduction`; `WARPDeciderIA`
+implements `PreprocessingInteractiveArgument`; and
 `FullWARP = ReducedArgument<WARPReduction, WARPDeciderIA>` is indexed through
 composition. The previous pattern of reading `instance.pk` in the prover and
 reconstructing `vk` from `instance.pk` in the verifier has been removed.
@@ -539,8 +539,8 @@ reconstructing `vk` from `instance.pk` in the verifier has been removed.
 
 1. **Core indexed vocabulary in Argus.**
    Add `ia-core::indexed`, `CommittedIndexBytes`, `VerifierKeyCommitment`,
-   `IndexedInstance`, `IndexedInstanceRef`, `IndexedInteractiveArgument`, and
-   `IndexedInteractiveReduction`. Add unit tests for injective encodings.
+   `IndexedInstance`, `IndexedInstanceRef`, `PreprocessingInteractiveArgument`, and
+   `PreprocessingInteractiveReduction`. Add unit tests for injective encodings.
 
 2. **Prepared interactive adapters in Argus.**
    Add `PreparedArgument`, `PreparedReduction`, and explicit trivial-index
@@ -551,23 +551,23 @@ reconstructing `vk` from `instance.pk` in the verifier has been removed.
    In `../spongefish/spongefish-dsfs`, add semantic constructors
    `non_interactive_argument` and `non_interactive_reduction`, plus
    `.prepare(&ix)` and `.with_keys(pk, vk)` on the returned DSFS wrappers for
-   indexed bodies. Add internal indexed DSFS runners using `IndexedInstanceRef`.
+   preprocessing cores. Add internal indexed DSFS runners using `IndexedInstanceRef`.
    Refactor existing helpers as needed; preserving plain proof bytes is the hard
    requirement.
 
-4. **Indexed composition in Argus.**
+4. **Preprocessing composition in Argus.**
    Add composition impls for indexed reductions and reduced arguments when both
    components are indexed. Add canonical pair commitment tests.
 
 5. **Security metadata in Argus.**
-   Add `IndexedArgumentSecurity` and `IndexedReductionSecurity`. Keep the plain
+   Add `PreprocessingArgumentSecurity` and `PreprocessingReductionSecurity`. Keep the plain
    security traits unchanged.
 
 6. **Body-trait lattice.**
-   Implement `ProtocolBody`, `ArgumentBody`, `ReductionBody`, and
-   `IndexedBody` as the public inheritance tree. Keep `InteractiveArgument`,
-   `InteractiveReduction`, `IndexedInteractiveArgument`, and
-   `IndexedInteractiveReduction` as executable leaves.
+   Implement `ProtocolCore`, `ArgumentCore`, `ReductionCore`, and
+   `PreprocessingCore` as the public inheritance tree. Keep `InteractiveArgument`,
+   `InteractiveReduction`, `PreprocessingInteractiveArgument`, and
+   `PreprocessingInteractiveReduction` as executable leaves.
 
 7. **WARP migration.**
    Split WARP's index/key/instance types and migrate it to indexed reduction

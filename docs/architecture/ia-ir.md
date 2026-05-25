@@ -1,28 +1,28 @@
 # IA, IR, Indexed Bodies, and Composition
 
-Argus now uses a small inheritance-style body tree. The root traits carry
+Argus now uses a small inheritance-style core tree. The root traits carry
 protocol identity and relation shape; the leaf traits add executable protocol
 logic.
 
 ```text
-ProtocolBody
-├── ArgumentBody
+ProtocolCore
+├── ArgumentCore
 │   ├── InteractiveArgument
-│   └── IndexedInteractiveArgument
-└── ReductionBody
+│   └── PreprocessingInteractiveArgument
+└── ReductionCore
     ├── InteractiveReduction
-    └── IndexedInteractiveReduction
+    └── PreprocessingInteractiveReduction
 ```
 
-`IndexedBody` is a sibling capability used by indexed leaves. It carries
+`PreprocessingCore` is a sibling capability used by preprocessing leaves. It carries
 `Index`, `ProverKey`, `VerifierKey`, and the deterministic `index(ix)` method.
 
-## Body Traits
+## Core Traits
 
-Every protocol body has a protocol identifier:
+Every protocol core has a protocol identifier:
 
 ```rust
-pub trait ProtocolBody {
+pub trait ProtocolCore {
     fn protocol_id(&self) -> impl AsRef<[u8]>;
 }
 ```
@@ -30,7 +30,7 @@ pub trait ProtocolBody {
 Arguments add statement and witness types:
 
 ```rust
-pub trait ArgumentBody: ProtocolBody {
+pub trait ArgumentCore: ProtocolCore {
     type Instance;
     type Witness;
 }
@@ -39,7 +39,7 @@ pub trait ArgumentBody: ProtocolBody {
 Reductions add source and target relation types:
 
 ```rust
-pub trait ReductionBody: ProtocolBody {
+pub trait ReductionCore: ProtocolCore {
     type SourceInstance;
     type TargetInstance;
     type SourceWitness;
@@ -47,10 +47,10 @@ pub trait ReductionBody: ProtocolBody {
 }
 ```
 
-Indexed bodies add preprocessing:
+Preprocessing cores add preprocessing:
 
 ```rust
-pub trait IndexedBody: ProtocolBody {
+pub trait PreprocessingCore: ProtocolCore {
     type Index;
     type ProverKey;
     type VerifierKey: VerifierKeyCommitment;
@@ -62,10 +62,10 @@ pub trait IndexedBody: ProtocolBody {
 ## Executable Leaves
 
 Plain arguments and reductions only contain channel execution methods. Their
-identity and associated types come from the body traits.
+identity and associated types come from the core traits.
 
 ```rust
-pub trait InteractiveArgument: ArgumentBody {
+pub trait InteractiveArgument: ArgumentCore {
     fn prove<P: ProverChannel>(
         &self,
         ch: &mut P,
@@ -82,7 +82,7 @@ pub trait InteractiveArgument: ArgumentBody {
 ```
 
 ```rust
-pub trait InteractiveReduction: ReductionBody {
+pub trait InteractiveReduction: ReductionCore {
     fn prove<P: ProverChannel>(
         &self,
         ch: &mut P,
@@ -98,11 +98,11 @@ pub trait InteractiveReduction: ReductionBody {
 }
 ```
 
-Indexed leaves combine the argument/reduction body shape with `IndexedBody`.
+Preprocessing leaves combine the argument/reduction body shape with `PreprocessingCore`.
 Their execution methods receive keys explicitly:
 
 ```rust
-pub trait IndexedInteractiveArgument: ArgumentBody + IndexedBody {
+pub trait PreprocessingInteractiveArgument: ArgumentCore + PreprocessingCore {
     fn prove<P: ProverChannel>(
         &self,
         ch: &mut P,
@@ -120,15 +120,15 @@ pub trait IndexedInteractiveArgument: ArgumentBody + IndexedBody {
 }
 ```
 
-`IndexedInteractiveReduction` is the same idea for reductions.
+`PreprocessingInteractiveReduction` is the same idea for reductions.
 
 ## Prepared Adapters
 
-Indexed bodies are not executable as plain IA/IR until keys exist.
+Preprocessing cores are not executable as plain IA/IR until keys exist.
 
 ```text
-IndexedInteractiveArgument --prepare(ix)--> PreparedArgument
-IndexedInteractiveReduction --prepare(ix)--> PreparedReduction
+PreprocessingInteractiveArgument --prepare(ix)--> PreparedArgument
+PreprocessingInteractiveReduction --prepare(ix)--> PreparedReduction
 ```
 
 `PreparedArgument<B>` stores private `pk`, public `vk`, and
@@ -160,7 +160,7 @@ let nir = dsfs::non_interactive_reduction(body, dsfs::Keccak::default());
 For plain bodies, the returned wrapper immediately implements
 `NonInteractiveArgument` or `NonInteractiveReduction`.
 
-For indexed bodies, call `.prepare(&ix)` first:
+For preprocessing cores, call `.prepare(&ix)` first:
 
 ```rust
 let nia = dsfs::non_interactive_argument(indexed_body, dsfs::Keccak::default())
@@ -193,7 +193,7 @@ IR followed by IA: proves R0
 Composition derives protocol IDs using injective length-prefixed encoding, so
 nested protocols remain domain-separated.
 
-Indexed composition is implemented when both components are indexed. The
+Preprocessing composition is implemented when both components are indexed. The
 composed index/key shape is a pair:
 
 ```rust
@@ -202,15 +202,15 @@ type ProverKey = (First::ProverKey, Second::ProverKey);
 type VerifierKey = (First::VerifierKey, Second::VerifierKey);
 ```
 
-Mixed plain/indexed composition is explicit through `TrivialIndexedArgument`
+Mixed plain/preprocessing composition is explicit through `TrivialIndexedArgument`
 and `TrivialIndexedReduction`. There is no blanket conversion that silently
-turns plain protocols into indexed protocols.
+turns plain protocols into preprocessing protocols.
 
 ## Security Composition
 
 Plain security metadata remains on `ArgumentSecurity` and `ReductionSecurity`.
-Indexed security metadata lives on `IndexedArgumentSecurity` and
-`IndexedReductionSecurity`, with index-derived params/bounds separated from
+Indexed security metadata lives on `PreprocessingArgumentSecurity` and
+`PreprocessingReductionSecurity`, with index-derived params/bounds separated from
 per-instance params/bounds.
 
 For composed protocols, security bounds are threaded through intermediate

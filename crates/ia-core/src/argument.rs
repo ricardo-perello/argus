@@ -2,10 +2,10 @@
 
 use crate::VerificationResult;
 use crate::channel::{ProverChannel, VerifierChannel};
-use crate::protocol::ArgumentBody;
+use crate::protocol::ArgumentCore;
 
 /// Executable public-coin interactive argument.
-pub trait InteractiveArgument: ArgumentBody {
+pub trait InteractiveArgument: ArgumentCore {
     /// Prover logic: writes messages to and reads challenges from a `ProverChannel`.
     fn prove<P: ProverChannel>(
         &self,

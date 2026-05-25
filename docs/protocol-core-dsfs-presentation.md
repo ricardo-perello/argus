@@ -1,4 +1,4 @@
-# Protocol Body Tree and DSFS Constructors
+# Protocol Core Tree and DSFS Constructors
 
 **Audience:** Giacomo / Chiesa implementation review.
 
@@ -7,19 +7,19 @@
 ## 1. The Inheritance Tree
 
 ```text
-ProtocolBody
-├── ArgumentBody
+ProtocolCore
+├── ArgumentCore
 │   ├── InteractiveArgument
-│   └── IndexedInteractiveArgument
-└── ReductionBody
+│   └── PreprocessingInteractiveArgument
+└── ReductionCore
     ├── InteractiveReduction
-    └── IndexedInteractiveReduction
+    └── PreprocessingInteractiveReduction
 ```
 
-`IndexedBody` is the preprocessing capability shared by both indexed leaves:
+`PreprocessingCore` is the preprocessing capability shared by both preprocessing leaves:
 
 ```text
-IndexedBody
+PreprocessingCore
 ├── Index
 ├── ProverKey
 ├── VerifierKey: VerifierKeyCommitment
@@ -35,11 +35,11 @@ at the leaves.
 Plain Schnorr-style protocols implement three small traits:
 
 ```rust
-impl ProtocolBody for Schnorr {
+impl ProtocolCore for Schnorr {
     fn protocol_id(&self) -> impl AsRef<[u8]> { ... }
 }
 
-impl ArgumentBody for Schnorr {
+impl ArgumentCore for Schnorr {
     type Instance = ...;
     type Witness = ...;
 }
@@ -54,13 +54,13 @@ The execution methods contain only channel operations. Protocol code still does
 not absorb public input, instantiate a sponge, derive Fiat-Shamir challenges, or
 know whether it is running live or non-interactively.
 
-## 3. What Indexed Authors Write
+## 3. What Preprocessing Authors Write
 
-WARP-style or preprocessing-style protocols add `IndexedBody` and use keyed
+WARP-style or preprocessing-style protocols add `PreprocessingCore` and use keyed
 execution:
 
 ```rust
-impl IndexedBody for WARPReduction {
+impl PreprocessingCore for WARPReduction {
     type Index = WARPIndex;
     type ProverKey = WARPProverKey;
     type VerifierKey = WARPVerifierKey;
@@ -68,7 +68,7 @@ impl IndexedBody for WARPReduction {
     fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) { ... }
 }
 
-impl IndexedInteractiveReduction for WARPReduction {
+impl PreprocessingInteractiveReduction for WARPReduction {
     fn prove<P: ProverChannel>(&self, ch: &mut P, pk: &Self::ProverKey, x: &Self::SourceInstance, w: &Self::SourceWitness)
         -> (Self::TargetInstance, Self::TargetWitness) { ... }
 
@@ -99,14 +99,14 @@ let (proof, target, target_witness) = nir.prove(&session, &source, &witness);
 let verified_target = nir.verify(&session, &source, &proof)?;
 ```
 
-Indexed argument:
+Preprocessing argument:
 
 ```rust
 let nia = dsfs::non_interactive_argument(indexed_argument, dsfs::Keccak::default())
     .prepare(&index);
 ```
 
-Indexed reduction:
+Preprocessing reduction:
 
 ```rust
 let nir = dsfs::non_interactive_reduction(indexed_reduction, dsfs::Keccak::default())
@@ -184,7 +184,7 @@ ChainedReduction<IR1, IR2>: IR
 ReducedArgument<IR, IA>: IA
 ```
 
-Indexed composition exists when both components are indexed:
+Preprocessing composition exists when both components are indexed:
 
 ```rust
 type Index = (First::Index, Second::Index);
@@ -193,7 +193,7 @@ type VerifierKey = (First::VerifierKey, Second::VerifierKey);
 ```
 
 Verifier-key commitments are composed with a canonical tagged pair encoding.
-Mixed plain/indexed composition requires an explicit `TrivialIndexedArgument`
+Mixed plain/preprocessing composition requires an explicit `TrivialIndexedArgument`
 or `TrivialIndexedReduction`, making the empty verifier-index commitment a
 visible author choice.
 
@@ -206,11 +206,11 @@ ArgumentSecurity
 ReductionSecurity
 ```
 
-Indexed protocols use:
+Preprocessing protocols use:
 
 ```text
-IndexedArgumentSecurity
-IndexedReductionSecurity
+PreprocessingArgumentSecurity
+PreprocessingReductionSecurity
 ```
 
 The indexed traits separate:
@@ -235,8 +235,8 @@ WARPInstance     per-claim instances/accumulators
 WARPWitness      per-claim witnesses
 ```
 
-`WARPReduction` implements `IndexedInteractiveReduction`.
-`WARPDeciderIA` implements `IndexedInteractiveArgument`.
+`WARPReduction` implements `PreprocessingInteractiveReduction`.
+`WARPDeciderIA` implements `PreprocessingInteractiveArgument`.
 `FullWARP = ReducedArgument<WARPReduction, WARPDeciderIA>` is itself indexed.
 
 This removes the old reach-through where prover code read `instance.pk` and the

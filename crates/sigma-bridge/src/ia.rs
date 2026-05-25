@@ -25,7 +25,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 use ia_core::{
-    ArgumentBody, InteractiveArgument, ProtocolBody, ProverChannel, VerificationError,
+    ArgumentCore, InteractiveArgument, ProtocolCore, ProverChannel, VerificationError,
     VerificationResult, VerifierChannel,
 };
 use rand_chacha::rand_core::SeedableRng;
@@ -39,7 +39,7 @@ use spongefish::Encoding;
 /// provides fresh randomness for `prover_commit` via `ChaCha20Rng`.
 pub struct SigmaIA<S>(pub S);
 
-impl<S> ProtocolBody for SigmaIA<S>
+impl<S> ProtocolCore for SigmaIA<S>
 where
     S: SigmaProtocol,
 {
@@ -52,7 +52,7 @@ where
     }
 }
 
-impl<S> ArgumentBody for SigmaIA<S>
+impl<S> ArgumentCore for SigmaIA<S>
 where
     S: SigmaProtocol,
 {

@@ -100,7 +100,7 @@ pub struct WARPVerifierKey<F: Field, P: BundledPESAT<F>, C: LinearCode<F> + Clon
 }
 
 // -----------------------------------------------------------------------
-// Per-claim instance / witness for the WARP IndexedInteractiveReduction
+// Per-claim instance / witness for the WARP PreprocessingInteractiveReduction
 // -----------------------------------------------------------------------
 
 pub struct WARPInstance<F: Field, MT: Config> {

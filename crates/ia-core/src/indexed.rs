@@ -1,12 +1,12 @@
 //! Indexed (preprocessed) interactive arguments and reductions.
 //!
 //! Plain protocols implement [`InteractiveArgument`] / [`InteractiveReduction`].
-//! Protocols with real preprocessing implement [`IndexedInteractiveArgument`] /
-//! [`IndexedInteractiveReduction`]: an indexer splits the relation into a
+//! Protocols with real preprocessing implement [`PreprocessingInteractiveArgument`] /
+//! [`PreprocessingInteractiveReduction`]: an indexer splits the relation into a
 //! prover key and a verifier key, and prove/verify execute keyed.
 //!
 //! Once preprocessing keys exist, [`PreparedArgument`] / [`PreparedReduction`]
-//! wrap an indexed protocol as an ordinary IA/IR whose public input is an
+//! wrap an preprocessing protocol as an ordinary IA/IR whose public input is an
 //! [`IndexedInstance`] pairing the per-claim instance with a canonical
 //! commitment to the verifier index. That lets backends bind the committed
 //! index through the same public-input absorption path they already use.
@@ -16,8 +16,8 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 use crate::{
-    ArgumentBody, ChainedReduction, Encoding, IndexedBody, InteractiveArgument,
-    InteractiveReduction, ProtocolBody, ProverChannel, ReducedArgument, ReductionBody,
+    ArgumentCore, ChainedReduction, Encoding, InteractiveArgument, InteractiveReduction,
+    PreprocessingCore, ProtocolCore, ProverChannel, ReducedArgument, ReductionCore,
     VerificationError, VerificationResult, VerifierChannel,
 };
 
@@ -142,7 +142,7 @@ where
 /// Tag prefixed to the canonical encoding of an [`IndexedInstance`].
 const INDEXED_INSTANCE_TAG: &[u8] = b"argus:indexed-instance:v1";
 
-/// Public input for a prepared indexed protocol: the verifier-index commitment
+/// Public input for a prepared preprocessing protocol: the verifier-index commitment
 /// paired with the per-claim instance.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IndexedInstance<I> {
@@ -237,16 +237,15 @@ impl<I: Encoding<[u8]>> Encoding<[u8]> for IndexedInstanceRef<'_, I> {
 /// Indexed (preprocessed) interactive argument.
 ///
 /// Splits the relation into an index and a per-claim instance/witness pair.
-/// The `IndexedBody::index` function deterministically derives prover and
+/// The `PreprocessingCore::index` function deterministically derives prover and
 /// verifier keys; [`prove`](Self::prove) / [`verify`](Self::verify) execute
 /// keyed.
 ///
 /// There is no blanket implementation from [`InteractiveArgument`] into this
 /// trait. Plain protocols stay plain. A protocol with real preprocessing
 /// implements this trait directly. To use a plain protocol in the *inner* slot
-/// of an indexed composition, wrap it in [`TrivialIndexedArgument`].
-pub trait IndexedInteractiveArgument: ArgumentBody + IndexedBody {
-    // TODO: rename to PreprocessingInteractiveArgument
+/// of an preprocessing composition, wrap it in [`TrivialIndexedArgument`].
+pub trait PreprocessingInteractiveArgument: ArgumentCore + PreprocessingCore {
     fn prove<P: ProverChannel>(
         &self,
         ch: &mut P,
@@ -265,11 +264,10 @@ pub trait IndexedInteractiveArgument: ArgumentBody + IndexedBody {
 
 /// Indexed (preprocessed) interactive reduction.
 ///
-/// Same split as [`IndexedInteractiveArgument`], with the standard reduction
+/// Same split as [`PreprocessingInteractiveArgument`], with the standard reduction
 /// shape: prove returns a target instance/witness pair; verify returns the
 /// target instance.
-pub trait IndexedInteractiveReduction: ReductionBody + IndexedBody {
-    // TODO: rename to PreprocessingInteractiveReduction
+pub trait PreprocessingInteractiveReduction: ReductionCore + PreprocessingCore {
     fn prove<P: ProverChannel>(
         &self,
         ch: &mut P,
@@ -298,14 +296,14 @@ pub trait IndexedInteractiveReduction: ReductionBody + IndexedBody {
 /// `IndexedInstance` it receives has a matching commitment: prover-side
 /// mismatch panics (programmer error); verifier-side mismatch returns
 /// [`VerificationError`].
-pub struct PreparedArgument<B: IndexedInteractiveArgument> {
+pub struct PreparedArgument<B: PreprocessingInteractiveArgument> {
     body: B,
     pk: B::ProverKey,
     vk: B::VerifierKey,
     committed_index: CommittedIndexBytes,
 }
 
-impl<B: IndexedInteractiveArgument> PreparedArgument<B> {
+impl<B: PreprocessingInteractiveArgument> PreparedArgument<B> {
     /// Run `body.index(ix)` and store the resulting keys.
     pub fn prepare(body: B, ix: &B::Index) -> Self {
         let (pk, vk) = body.index(ix);
@@ -353,7 +351,7 @@ impl<B: IndexedInteractiveArgument> PreparedArgument<B> {
     }
 }
 
-impl<B: IndexedInteractiveArgument> Preprocessed for PreparedArgument<B> {
+impl<B: PreprocessingInteractiveArgument> Preprocessed for PreparedArgument<B> {
     type ProverKey = B::ProverKey;
     type VerifierKey = B::VerifierKey;
 
@@ -370,18 +368,18 @@ impl<B: IndexedInteractiveArgument> Preprocessed for PreparedArgument<B> {
     }
 }
 
-impl<B: IndexedInteractiveArgument> ProtocolBody for PreparedArgument<B> {
+impl<B: PreprocessingInteractiveArgument> ProtocolCore for PreparedArgument<B> {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         self.body.protocol_id()
     }
 }
 
-impl<B: IndexedInteractiveArgument> ArgumentBody for PreparedArgument<B> {
+impl<B: PreprocessingInteractiveArgument> ArgumentCore for PreparedArgument<B> {
     type Instance = IndexedInstance<B::Instance>;
     type Witness = B::Witness;
 }
 
-impl<B: IndexedInteractiveArgument> InteractiveArgument for PreparedArgument<B> {
+impl<B: PreprocessingInteractiveArgument> InteractiveArgument for PreparedArgument<B> {
     fn prove<P: ProverChannel>(
         &self,
         ch: &mut P,
@@ -408,14 +406,14 @@ impl<B: IndexedInteractiveArgument> InteractiveArgument for PreparedArgument<B> 
 }
 
 /// Reduction counterpart to [`PreparedArgument`].
-pub struct PreparedReduction<B: IndexedInteractiveReduction> {
+pub struct PreparedReduction<B: PreprocessingInteractiveReduction> {
     body: B,
     pk: B::ProverKey,
     vk: B::VerifierKey,
     committed_index: CommittedIndexBytes,
 }
 
-impl<B: IndexedInteractiveReduction> PreparedReduction<B> {
+impl<B: PreprocessingInteractiveReduction> PreparedReduction<B> {
     pub fn prepare(body: B, ix: &B::Index) -> Self {
         let (pk, vk) = body.index(ix);
         let committed_index = vk.committed_index();
@@ -462,7 +460,7 @@ impl<B: IndexedInteractiveReduction> PreparedReduction<B> {
     }
 }
 
-impl<B: IndexedInteractiveReduction> Preprocessed for PreparedReduction<B> {
+impl<B: PreprocessingInteractiveReduction> Preprocessed for PreparedReduction<B> {
     type ProverKey = B::ProverKey;
     type VerifierKey = B::VerifierKey;
 
@@ -479,20 +477,20 @@ impl<B: IndexedInteractiveReduction> Preprocessed for PreparedReduction<B> {
     }
 }
 
-impl<B: IndexedInteractiveReduction> ProtocolBody for PreparedReduction<B> {
+impl<B: PreprocessingInteractiveReduction> ProtocolCore for PreparedReduction<B> {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         self.body.protocol_id()
     }
 }
 
-impl<B: IndexedInteractiveReduction> ReductionBody for PreparedReduction<B> {
+impl<B: PreprocessingInteractiveReduction> ReductionCore for PreparedReduction<B> {
     type SourceInstance = IndexedInstance<B::SourceInstance>;
     type TargetInstance = B::TargetInstance;
     type SourceWitness = B::SourceWitness;
     type TargetWitness = B::TargetWitness;
 }
 
-impl<B: IndexedInteractiveReduction> InteractiveReduction for PreparedReduction<B> {
+impl<B: PreprocessingInteractiveReduction> InteractiveReduction for PreparedReduction<B> {
     fn prove<P: ProverChannel>(
         &self,
         ch: &mut P,
@@ -522,10 +520,10 @@ impl<B: IndexedInteractiveReduction> InteractiveReduction for PreparedReduction<
 // Trivial-index adapters
 // ---------------------------------------------------------------------------
 
-/// Wraps a plain [`InteractiveArgument`] as an [`IndexedInteractiveArgument`]
+/// Wraps a plain [`InteractiveArgument`] as an [`PreprocessingInteractiveArgument`]
 /// with unit index and unit keys (empty committed index).
 ///
-/// Intended for the *inner* slot of a heterogeneous indexed composition so that
+/// Intended for the *inner* slot of a heterogeneous preprocessing composition so that
 /// a plain protocol can sit beside a real indexed component. Wrapping a plain
 /// protocol with this adapter and pushing it through prepared DSFS at the top
 /// level will NOT produce the same bytes as the plain DSFS path — the prepared
@@ -534,18 +532,18 @@ impl<B: IndexedInteractiveReduction> InteractiveReduction for PreparedReduction<
 /// protocols.
 pub struct TrivialIndexedArgument<A>(pub A);
 
-impl<A: InteractiveArgument> ProtocolBody for TrivialIndexedArgument<A> {
+impl<A: InteractiveArgument> ProtocolCore for TrivialIndexedArgument<A> {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         self.0.protocol_id()
     }
 }
 
-impl<A: InteractiveArgument> ArgumentBody for TrivialIndexedArgument<A> {
+impl<A: InteractiveArgument> ArgumentCore for TrivialIndexedArgument<A> {
     type Instance = A::Instance;
     type Witness = A::Witness;
 }
 
-impl<A: InteractiveArgument> IndexedBody for TrivialIndexedArgument<A> {
+impl<A: InteractiveArgument> PreprocessingCore for TrivialIndexedArgument<A> {
     type Index = ();
     type ProverKey = ();
     type VerifierKey = ();
@@ -555,7 +553,7 @@ impl<A: InteractiveArgument> IndexedBody for TrivialIndexedArgument<A> {
     }
 }
 
-impl<A: InteractiveArgument> IndexedInteractiveArgument for TrivialIndexedArgument<A> {
+impl<A: InteractiveArgument> PreprocessingInteractiveArgument for TrivialIndexedArgument<A> {
     fn prove<P: ProverChannel>(
         &self,
         ch: &mut P,
@@ -579,20 +577,20 @@ impl<A: InteractiveArgument> IndexedInteractiveArgument for TrivialIndexedArgume
 /// Reduction counterpart to [`TrivialIndexedArgument`].
 pub struct TrivialIndexedReduction<R>(pub R);
 
-impl<R: InteractiveReduction> ProtocolBody for TrivialIndexedReduction<R> {
+impl<R: InteractiveReduction> ProtocolCore for TrivialIndexedReduction<R> {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         self.0.protocol_id()
     }
 }
 
-impl<R: InteractiveReduction> ReductionBody for TrivialIndexedReduction<R> {
+impl<R: InteractiveReduction> ReductionCore for TrivialIndexedReduction<R> {
     type SourceInstance = R::SourceInstance;
     type TargetInstance = R::TargetInstance;
     type SourceWitness = R::SourceWitness;
     type TargetWitness = R::TargetWitness;
 }
 
-impl<R: InteractiveReduction> IndexedBody for TrivialIndexedReduction<R> {
+impl<R: InteractiveReduction> PreprocessingCore for TrivialIndexedReduction<R> {
     type Index = ();
     type ProverKey = ();
     type VerifierKey = ();
@@ -602,7 +600,7 @@ impl<R: InteractiveReduction> IndexedBody for TrivialIndexedReduction<R> {
     }
 }
 
-impl<R: InteractiveReduction> IndexedInteractiveReduction for TrivialIndexedReduction<R> {
+impl<R: InteractiveReduction> PreprocessingInteractiveReduction for TrivialIndexedReduction<R> {
     fn prove<P: ProverChannel>(
         &self,
         ch: &mut P,
@@ -624,13 +622,13 @@ impl<R: InteractiveReduction> IndexedInteractiveReduction for TrivialIndexedRedu
 }
 
 // ---------------------------------------------------------------------------
-// Indexed composition (phase 4)
+// Preprocessing composition (phase 4)
 // ---------------------------------------------------------------------------
 
-impl<First, Second> IndexedBody for ChainedReduction<First, Second>
+impl<First, Second> PreprocessingCore for ChainedReduction<First, Second>
 where
-    First: IndexedInteractiveReduction,
-    Second: IndexedInteractiveReduction<
+    First: PreprocessingInteractiveReduction,
+    Second: PreprocessingInteractiveReduction<
             SourceInstance = First::TargetInstance,
             SourceWitness = First::TargetWitness,
         >,
@@ -646,10 +644,10 @@ where
     }
 }
 
-impl<First, Second> IndexedInteractiveReduction for ChainedReduction<First, Second>
+impl<First, Second> PreprocessingInteractiveReduction for ChainedReduction<First, Second>
 where
-    First: IndexedInteractiveReduction,
-    Second: IndexedInteractiveReduction<
+    First: PreprocessingInteractiveReduction,
+    Second: PreprocessingInteractiveReduction<
             SourceInstance = First::TargetInstance,
             SourceWitness = First::TargetWitness,
         >,
@@ -676,10 +674,10 @@ where
     }
 }
 
-impl<R, A> IndexedBody for ReducedArgument<R, A>
+impl<R, A> PreprocessingCore for ReducedArgument<R, A>
 where
-    R: IndexedInteractiveReduction,
-    A: IndexedInteractiveArgument<Instance = R::TargetInstance, Witness = R::TargetWitness>,
+    R: PreprocessingInteractiveReduction,
+    A: PreprocessingInteractiveArgument<Instance = R::TargetInstance, Witness = R::TargetWitness>,
 {
     type Index = (R::Index, A::Index);
     type ProverKey = (R::ProverKey, A::ProverKey);
@@ -692,10 +690,10 @@ where
     }
 }
 
-impl<R, A> IndexedInteractiveArgument for ReducedArgument<R, A>
+impl<R, A> PreprocessingInteractiveArgument for ReducedArgument<R, A>
 where
-    R: IndexedInteractiveReduction,
-    A: IndexedInteractiveArgument<Instance = R::TargetInstance, Witness = R::TargetWitness>,
+    R: PreprocessingInteractiveReduction,
+    A: PreprocessingInteractiveArgument<Instance = R::TargetInstance, Witness = R::TargetWitness>,
 {
     fn prove<P: ProverChannel>(
         &self,
@@ -839,19 +837,19 @@ mod tests {
         }
     }
 
-    impl ProtocolBody for DummyIndexedArg {
+    impl ProtocolCore for DummyIndexedArg {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
             pad_protocol_id(b"dummy-indexed-arg")
         }
     }
 
-    impl ArgumentBody for DummyIndexedArg {
+    impl ArgumentCore for DummyIndexedArg {
         type Instance = ();
         // [u8; 1] gives us both NargSerialize and NargDeserialize for a single byte.
         type Witness = [u8; 1];
     }
 
-    impl IndexedBody for DummyIndexedArg {
+    impl PreprocessingCore for DummyIndexedArg {
         type Index = Vec<u8>;
         type ProverKey = ();
         type VerifierKey = DummyVerifierKey;
@@ -861,7 +859,7 @@ mod tests {
         }
     }
 
-    impl IndexedInteractiveArgument for DummyIndexedArg {
+    impl PreprocessingInteractiveArgument for DummyIndexedArg {
         fn prove<P: ProverChannel>(
             &self,
             ch: &mut P,
@@ -969,13 +967,13 @@ mod tests {
     #[derive(Default)]
     struct PlainOk;
 
-    impl ProtocolBody for PlainOk {
+    impl ProtocolCore for PlainOk {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
             pad_protocol_id(b"plain-ok")
         }
     }
 
-    impl ArgumentBody for PlainOk {
+    impl ArgumentCore for PlainOk {
         type Instance = ();
         type Witness = ();
     }
@@ -994,9 +992,9 @@ mod tests {
         assert!(vk.committed_index().is_empty());
     }
 
-    // ---- Indexed composition tests ----
+    // ---- Preprocessing composition tests ----
 
-    /// Indexed reduction: source instance is a `u8`, target is the same byte
+    /// Preprocessing reduction: source instance is a `u8`, target is the same byte
     /// plus the prover-key value. The verifier key carries an opaque byte that
     /// is exposed as the committed index.
     struct AddPk;
@@ -1010,20 +1008,20 @@ mod tests {
         }
     }
 
-    impl ProtocolBody for AddPk {
+    impl ProtocolCore for AddPk {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
             pad_protocol_id(b"add-pk")
         }
     }
 
-    impl ReductionBody for AddPk {
+    impl ReductionCore for AddPk {
         type SourceInstance = u8;
         type TargetInstance = u8;
         type SourceWitness = ();
         type TargetWitness = ();
     }
 
-    impl IndexedBody for AddPk {
+    impl PreprocessingCore for AddPk {
         type Index = u8;
         type ProverKey = u8;
         type VerifierKey = AddPkVk;
@@ -1033,7 +1031,7 @@ mod tests {
         }
     }
 
-    impl IndexedInteractiveReduction for AddPk {
+    impl PreprocessingInteractiveReduction for AddPk {
         fn prove<P: ProverChannel>(
             &self,
             _: &mut P,
@@ -1054,7 +1052,7 @@ mod tests {
         }
     }
 
-    /// Indexed argument that succeeds iff the per-claim instance equals the
+    /// Preprocessing argument that succeeds iff the per-claim instance equals the
     /// verifier-key byte.
     struct EqualsKey;
 
@@ -1067,18 +1065,18 @@ mod tests {
         }
     }
 
-    impl ProtocolBody for EqualsKey {
+    impl ProtocolCore for EqualsKey {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
             pad_protocol_id(b"equals-key")
         }
     }
 
-    impl ArgumentBody for EqualsKey {
+    impl ArgumentCore for EqualsKey {
         type Instance = u8;
         type Witness = ();
     }
 
-    impl IndexedBody for EqualsKey {
+    impl PreprocessingCore for EqualsKey {
         type Index = u8;
         type ProverKey = ();
         type VerifierKey = EqualsKeyVk;
@@ -1088,7 +1086,7 @@ mod tests {
         }
     }
 
-    impl IndexedInteractiveArgument for EqualsKey {
+    impl PreprocessingInteractiveArgument for EqualsKey {
         fn prove<P: ProverChannel>(
             &self,
             _: &mut P,

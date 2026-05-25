@@ -7,10 +7,11 @@ use ark_poly::{DenseMultilinearExtension, Polynomial};
 use ark_std::log2;
 
 use ia_core::{
-    ArgumentBody, CommittedIndexBytes, IndexedArgumentSecurity, IndexedBody,
-    IndexedInteractiveArgument, IndexedInteractiveReduction, IndexedReductionSecurity,
-    ProtocolBody, ProverChannel, ReducedArgument, ReductionBody, SecurityErrorBound,
-    SecurityProfile, VerificationResult, VerifierChannel, VerifierKeyCommitment,
+    ArgumentCore, CommittedIndexBytes, PreprocessingArgumentSecurity, PreprocessingCore,
+    PreprocessingInteractiveArgument, PreprocessingInteractiveReduction,
+    PreprocessingReductionSecurity, ProtocolCore, ProverChannel, ReducedArgument, ReductionCore,
+    SecurityErrorBound, SecurityProfile, VerificationResult, VerifierChannel,
+    VerifierKeyCommitment,
 };
 
 use crate::protocol::warp::{
@@ -28,7 +29,7 @@ use crate::utils::poly::{eq_poly, Hypercube};
 /// Tag prefixed to the canonical bytes returned by
 /// [`WARPVerifierKey::committed_index`]. Distinct from any other Argus tag
 /// so the prepared DSFS transcript cannot confuse a WARP verifier index with
-/// some other indexed protocol's commitment.
+/// some other preprocessing protocol's commitment.
 const WARP_VK_COMMIT_TAG: &[u8] = b"argus:warp:vk:v1";
 
 impl<F, P, C, MT> VerifierKeyCommitment for WARPVerifierKey<F, P, C, MT>
@@ -53,7 +54,7 @@ where
 }
 
 // -----------------------------------------------------------------------
-// WARPReduction: the full IOR as a single IndexedInteractiveReduction
+// WARPReduction: the full IOR as a single PreprocessingInteractiveReduction
 // -----------------------------------------------------------------------
 
 pub struct WARPReduction<F, P, C, MT> {
@@ -104,7 +105,7 @@ pub struct WARPSecurityParams {
 /// shape, with each field interpreted as a maximum over the instance family.
 pub type WARPSecurityBound = WARPSecurityParams;
 
-impl<F, P, C, MT> ProtocolBody for WARPReduction<F, P, C, MT>
+impl<F, P, C, MT> ProtocolCore for WARPReduction<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -122,7 +123,7 @@ where
     }
 }
 
-impl<F, P, C, MT> ReductionBody for WARPReduction<F, P, C, MT>
+impl<F, P, C, MT> ReductionCore for WARPReduction<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -141,7 +142,7 @@ where
     type TargetWitness = DeciderWitness<F, MT>;
 }
 
-impl<F, P, C, MT> IndexedBody for WARPReduction<F, P, C, MT>
+impl<F, P, C, MT> PreprocessingCore for WARPReduction<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -175,7 +176,7 @@ where
     }
 }
 
-impl<F, P, C, MT> IndexedInteractiveReduction for WARPReduction<F, P, C, MT>
+impl<F, P, C, MT> PreprocessingInteractiveReduction for WARPReduction<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -234,7 +235,7 @@ where
     }
 }
 
-impl<F, P, C, MT> IndexedReductionSecurity for WARPReduction<F, P, C, MT>
+impl<F, P, C, MT> PreprocessingReductionSecurity for WARPReduction<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -394,7 +395,7 @@ fn warp_security_profile(params: &WARPSecurityParams) -> SecurityProfile {
 }
 
 // -----------------------------------------------------------------------
-// WARPDeciderIA: the decider as an IndexedInteractiveArgument
+// WARPDeciderIA: the decider as an PreprocessingInteractiveArgument
 //
 // The decider has no prover-side preprocessing of its own (`ProverKey =
 // ()`), but it reads warp.code / merkle params / p.evaluate_bundled from
@@ -411,7 +412,7 @@ impl<F, P, C, MT> Default for WARPDeciderIA<F, P, C, MT> {
     }
 }
 
-impl<F, P, C, MT> ProtocolBody for WARPDeciderIA<F, P, C, MT>
+impl<F, P, C, MT> ProtocolCore for WARPDeciderIA<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -429,7 +430,7 @@ where
     }
 }
 
-impl<F, P, C, MT> ArgumentBody for WARPDeciderIA<F, P, C, MT>
+impl<F, P, C, MT> ArgumentCore for WARPDeciderIA<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -446,7 +447,7 @@ where
     type Witness = DeciderWitness<F, MT>;
 }
 
-impl<F, P, C, MT> IndexedBody for WARPDeciderIA<F, P, C, MT>
+impl<F, P, C, MT> PreprocessingCore for WARPDeciderIA<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -474,7 +475,7 @@ where
     }
 }
 
-impl<F, P, C, MT> IndexedInteractiveArgument for WARPDeciderIA<F, P, C, MT>
+impl<F, P, C, MT> PreprocessingInteractiveArgument for WARPDeciderIA<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -564,7 +565,7 @@ where
     }
 }
 
-impl<F, P, C, MT> IndexedArgumentSecurity for WARPDeciderIA<F, P, C, MT>
+impl<F, P, C, MT> PreprocessingArgumentSecurity for WARPDeciderIA<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -633,7 +634,7 @@ fn decider_security_profile() -> SecurityProfile {
 // -----------------------------------------------------------------------
 //
 // Both components are indexed, so `FullWARP` implements
-// `IndexedInteractiveArgument` via the composition impl in
+// `PreprocessingInteractiveArgument` via the composition impl in
 // `ia_core::indexed`. The composed `Index` is `(WARPIndex, WARPIndex)` —
 // callers pass the same index twice for now. Folding into a single
 // `WARPIndex` for the composed `FullWARP` is a future cleanup.

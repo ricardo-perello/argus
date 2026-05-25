@@ -14,7 +14,7 @@ let nia = spongefish_dsfs::non_interactive_argument(argument, sponge);
 let nir = spongefish_dsfs::non_interactive_reduction(reduction, sponge);
 ```
 
-For indexed bodies, the same constructors return an unprepared handle whose
+For preprocessing cores, the same constructors return an unprepared handle whose
 `.prepare(&ix)` method stores preprocessing keys and returns a prepared
 non-interactive argument or reduction.
 

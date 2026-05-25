@@ -5,7 +5,7 @@ document are intentionally obsolete (`Dsfs::new`, `PreparedDsfs`, blanket
 plain-to-indexed conversion). The active implementation plan is
 [Preprocessing Indexed Relations v2](preprocessing-indexed-relations-v2.md), and
 the current presentation snapshot is
-[Protocol Body Tree and DSFS Constructors](protocol-body-dsfs-presentation.md).
+[Protocol Core Tree and DSFS Constructors](protocol-core-dsfs-presentation.md).
 
 ## Context
 
@@ -39,15 +39,15 @@ let vk = (instance.pk.1, instance.pk.2, instance.pk.3);
 ```
 
 This proposal adds preprocessing as a first-class layer without forcing every
-non-indexed protocol to write `Index = ()` boilerplate.
+non-preprocessing protocol to write `Index = ()` boilerplate.
 
 ## Design Requirements
 
-1. **Keep non-indexed protocols ergonomic.** Schnorr, sumcheck, sigma-bridge,
+1. **Keep non-preprocessing protocols ergonomic.** Schnorr, sumcheck, sigma-bridge,
    and similar protocols should keep implementing the existing
    `InteractiveArgument` / `InteractiveReduction` traits.
-2. **Expose indexed protocols explicitly.** Protocols with real preprocessing
-   implement `IndexedInteractiveArgument` / `IndexedInteractiveReduction`.
+2. **Expose preprocessing protocols explicitly.** Protocols with real preprocessing
+   implement `PreprocessingInteractiveArgument` / `PreprocessingInteractiveReduction`.
 3. **Use one DSFS compiler wrapper.** Users should not choose between `Dsfs`
    and `IndexedDsfs`. `Dsfs::new(...)` stays the public compiler constructor.
 4. **Let composition use heterogeneous preprocessing.** A composed protocol's
@@ -99,10 +99,10 @@ No protocol should have to add empty `Index`, `ProverKey`, `VerifierKey`, or
 
 ### 2. Add indexed IA/IR traits
 
-Indexed protocols implement a separate surface:
+Preprocessing protocols implement a separate surface:
 
 ```rust
-pub trait IndexedInteractiveArgument {
+pub trait PreprocessingInteractiveArgument {
     type Index;
     type ProverKey;
     type VerifierKey: VerifierKeyCommitment;
@@ -132,7 +132,7 @@ pub trait IndexedInteractiveArgument {
 }
 ```
 
-`IndexedInteractiveReduction` mirrors this shape with
+`PreprocessingInteractiveReduction` mirrors this shape with
 `SourceInstance`, `TargetInstance`, `SourceWitness`, and `TargetWitness`.
 
 The conservative Rust rule is: a concrete protocol type implements either the
@@ -140,7 +140,7 @@ non-indexed trait or the indexed trait. That makes a blanket lift possible for
 ordinary protocols:
 
 ```rust
-impl<T: InteractiveArgument> IndexedInteractiveArgument for T {
+impl<T: InteractiveArgument> PreprocessingInteractiveArgument for T {
     type Index = ();
     type ProverKey = ();
     type VerifierKey = ();
@@ -265,7 +265,7 @@ pub struct PreparedDsfs<IA, S> {
 
 impl<IA, S> NonInteractiveArgument for PreparedDsfs<IA, S>
 where
-    IA: IndexedInteractiveArgument,
+    IA: PreprocessingInteractiveArgument,
 {
     // Existing NIA shape: no indexed NARG trait needed.
 }
@@ -278,7 +278,7 @@ let prepared = dsfs.prepare(&ix);        // runs protocol.index(ix)
 let prepared = dsfs.with_keys(pk, vk);   // uses externally stored keys
 ```
 
-For non-indexed protocols, `Dsfs<IA, S>` keeps implementing
+For non-preprocessing protocols, `Dsfs<IA, S>` keeps implementing
 `NonInteractiveArgument` and `DsfsReduction<IR, S>` keeps implementing
 `NonInteractiveReduction` directly. Internally they can still compile through
 the indexed adapter with `Index = ()`, `ProverKey = ()`, `VerifierKey = ()`,
@@ -308,13 +308,13 @@ usually a `protocol_id` bump. The `protocol_id` itself should remain a label for
 the compiled proof format; the concrete index is already bound as public input
 through `committed_index()`.
 
-### 5. Make security metadata index-aware without disturbing non-indexed protocols
+### 5. Make security metadata index-aware without disturbing non-preprocessing protocols
 
 Keep the current `ArgumentSecurity` and `ReductionSecurity` traits for
-non-indexed protocols. Add indexed variants for preprocessing:
+non-preprocessing protocols. Add preprocessing variants:
 
 ```rust
-pub trait IndexedArgumentSecurity: IndexedInteractiveArgument {
+pub trait PreprocessingArgumentSecurity: PreprocessingInteractiveArgument {
     type IndexParams;
     type IndexBound;
     type InstanceParams;
@@ -408,7 +408,7 @@ struct WARPInstance<F> {
 Then:
 
 ```rust
-impl IndexedInteractiveReduction for WARPReduction<...> {
+impl PreprocessingInteractiveReduction for WARPReduction<...> {
     type Index = WARPIndex<...>;
     type ProverKey = WARPProverKey<...>;
     type VerifierKey = WARPVerifierKey<...>;
@@ -433,18 +433,18 @@ becomes a direct use of `vk`.
 
 `crates/ibcs` needs a place for the preprocessed verifier oracle commitment.
 With the indexed traits in place, iBCS can be written against
-`IndexedInteractiveArgument` / `IndexedInteractiveReduction` from day one
+`PreprocessingInteractiveArgument` / `PreprocessingInteractiveReduction` from day one
 instead of smuggling index material through `Instance`.
 
 ## Migration Order
 
 1. Add `VerifierKeyCommitment`, indexed IA/IR traits, and the blanket lift for
    non-indexed IA/IR. Existing protocols should keep compiling unchanged.
-2. Add `PreparedDsfs` / `PreparedDsfsReduction` views for indexed protocols.
+2. Add `PreparedDsfs` / `PreparedDsfsReduction` views for preprocessing protocols.
    They store `(pk, vk)` and implement the existing `NonInteractiveArgument` /
    `NonInteractiveReduction` traits. Keep direct NIA/NIR impls for ordinary
-   non-indexed protocols.
-3. Add tuple commitments and heterogeneous indexed composition for
+   non-preprocessing protocols.
+3. Add tuple commitments and heterogeneous preprocessing composition for
    `ChainedReduction` and `ReducedArgument`.
 4. Add indexed security traits and blanket lifts from the existing security
    traits.

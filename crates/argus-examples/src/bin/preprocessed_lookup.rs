@@ -40,8 +40,8 @@ use blake3::{Hash, Hasher};
 use spongefish_dsfs as dsfs;
 
 use ia_core::{
-    ArgumentBody, CommittedIndexBytes, IndexedBody, IndexedInteractiveArgument,
-    NonInteractiveArgument, Preprocessed, ProtocolBody, ProverChannel, VerificationError,
+    ArgumentCore, CommittedIndexBytes, NonInteractiveArgument, Preprocessed, PreprocessingCore,
+    PreprocessingInteractiveArgument, ProtocolCore, ProverChannel, VerificationError,
     VerificationResult, VerifierChannel, VerifierKeyCommitment,
 };
 
@@ -148,19 +148,19 @@ impl VerifierKeyCommitment for LookupVerifierKey {
 #[derive(Default)]
 struct PreprocessedLookup;
 
-impl ProtocolBody for PreprocessedLookup {
+impl ProtocolCore for PreprocessedLookup {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"preprocessed-merkle-lookup")
     }
 }
 
-impl ArgumentBody for PreprocessedLookup {
+impl ArgumentCore for PreprocessedLookup {
     /// Per-claim instance is (i, claimed_value).
     type Instance = (u32, u32);
     type Witness = ();
 }
 
-impl IndexedBody for PreprocessedLookup {
+impl PreprocessingCore for PreprocessedLookup {
     type Index = Vec<u32>;
     type ProverKey = LookupProverKey;
     type VerifierKey = LookupVerifierKey;
@@ -180,7 +180,7 @@ impl IndexedBody for PreprocessedLookup {
     }
 }
 
-impl IndexedInteractiveArgument for PreprocessedLookup {
+impl PreprocessingInteractiveArgument for PreprocessedLookup {
     fn prove<P: ProverChannel>(
         &self,
         ch: &mut P,

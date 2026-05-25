@@ -1,10 +1,10 @@
 //! Preprocessed multilinear sumcheck — first example of an
-//! `IndexedInteractiveReduction`.
+//! `PreprocessingInteractiveReduction`.
 //!
 //! All previous preprocessed examples (preprocessed_schnorr, dleq,
-//! preprocessed_lookup) implement [`ia_core::IndexedInteractiveArgument`]: the
+//! preprocessed_lookup) implement [`ia_core::PreprocessingInteractiveArgument`]: the
 //! verifier outputs accept/reject. This one implements
-//! [`ia_core::IndexedInteractiveReduction`]: the verifier outputs a *new target
+//! [`ia_core::PreprocessingInteractiveReduction`]: the verifier outputs a *new target
 //! instance* that a downstream decider then checks.
 //!
 //! The protocol is the standard multilinear sumcheck of Lund-Fortnow-
@@ -57,9 +57,9 @@ use rand::rngs::OsRng;
 use spongefish_dsfs as dsfs;
 
 use ia_core::{
-    CommittedIndexBytes, IndexedBody, IndexedInteractiveReduction, NonInteractiveReduction,
-    Preprocessed, ProtocolBody, ProverChannel, ReductionBody, VerificationError,
-    VerificationResult, VerifierChannel, VerifierKeyCommitment,
+    CommittedIndexBytes, NonInteractiveReduction, Preprocessed, PreprocessingCore,
+    PreprocessingInteractiveReduction, ProtocolCore, ProverChannel, ReductionCore,
+    VerificationError, VerificationResult, VerifierChannel, VerifierKeyCommitment,
 };
 
 // ---------------------------------------------------------------------------
@@ -153,20 +153,20 @@ impl VerifierKeyCommitment for SumcheckVerifierKey {
 #[derive(Default)]
 struct PreprocessedSumcheck;
 
-impl ProtocolBody for PreprocessedSumcheck {
+impl ProtocolCore for PreprocessedSumcheck {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"preprocessed-sumcheck-n2")
     }
 }
 
-impl ReductionBody for PreprocessedSumcheck {
+impl ReductionCore for PreprocessedSumcheck {
     type SourceInstance = Fr; // claimed sum T
     type SourceWitness = ();
     type TargetInstance = ((Fr, Fr), Fr); // ((r_1, r_2), v)
     type TargetWitness = ();
 }
 
-impl IndexedBody for PreprocessedSumcheck {
+impl PreprocessingCore for PreprocessedSumcheck {
     type Index = [Fr; 4];
     type ProverKey = SumcheckProverKey;
     type VerifierKey = SumcheckVerifierKey;
@@ -180,7 +180,7 @@ impl IndexedBody for PreprocessedSumcheck {
     }
 }
 
-impl IndexedInteractiveReduction for PreprocessedSumcheck {
+impl PreprocessingInteractiveReduction for PreprocessedSumcheck {
     fn prove<P: ProverChannel>(
         &self,
         ch: &mut P,

@@ -21,8 +21,8 @@ use rand::rngs::OsRng;
 use spongefish_dsfs as dsfs;
 
 use ia_core::{
-    ArgumentBody, ArgumentSecurity, Decoding, Deserialize, Encoding, InteractiveArgument,
-    NonInteractiveArgument, ProtocolBody, ProverChannel, SecurityErrorBound, SecurityProfile,
+    ArgumentCore, ArgumentSecurity, Decoding, Deserialize, Encoding, InteractiveArgument,
+    NonInteractiveArgument, ProtocolCore, ProverChannel, SecurityErrorBound, SecurityProfile,
     VerificationError, VerificationResult, VerifierChannel,
 };
 
@@ -38,7 +38,7 @@ impl<G: CurveGroup> Default for Schnorr<G> {
     }
 }
 
-impl<G> ProtocolBody for Schnorr<G>
+impl<G> ProtocolCore for Schnorr<G>
 where
     G: CurveGroup + PrimeGroup + Encoding + Deserialize,
     G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
@@ -48,7 +48,7 @@ where
     }
 }
 
-impl<G> ArgumentBody for Schnorr<G>
+impl<G> ArgumentCore for Schnorr<G>
 where
     G: CurveGroup + PrimeGroup + Encoding + Deserialize,
     G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,

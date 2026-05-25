@@ -46,8 +46,8 @@ use rand::rngs::OsRng;
 use spongefish_dsfs as dsfs;
 
 use ia_core::{
-    ArgumentBody, CommittedIndexBytes, Decoding, Deserialize, Encoding, IndexedBody,
-    IndexedInteractiveArgument, NonInteractiveArgument, Preprocessed, ProtocolBody, ProverChannel,
+    ArgumentCore, CommittedIndexBytes, Decoding, Deserialize, Encoding, NonInteractiveArgument,
+    Preprocessed, PreprocessingCore, PreprocessingInteractiveArgument, ProtocolCore, ProverChannel,
     VerificationError, VerificationResult, VerifierChannel, VerifierKeyCommitment,
 };
 
@@ -88,7 +88,7 @@ impl<G: CurveGroup> Default for Dleq<G> {
     }
 }
 
-impl<G> ProtocolBody for Dleq<G>
+impl<G> ProtocolCore for Dleq<G>
 where
     G: CurveGroup + PrimeGroup + Encoding + Deserialize,
     G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
@@ -98,7 +98,7 @@ where
     }
 }
 
-impl<G> ArgumentBody for Dleq<G>
+impl<G> ArgumentCore for Dleq<G>
 where
     G: CurveGroup + PrimeGroup + Encoding + Deserialize,
     G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
@@ -107,7 +107,7 @@ where
     type Witness = G::ScalarField; // x
 }
 
-impl<G> IndexedBody for Dleq<G>
+impl<G> PreprocessingCore for Dleq<G>
 where
     G: CurveGroup + PrimeGroup + Encoding + Deserialize,
     G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
@@ -126,7 +126,7 @@ where
     }
 }
 
-impl<G> IndexedInteractiveArgument for Dleq<G>
+impl<G> PreprocessingInteractiveArgument for Dleq<G>
 where
     G: CurveGroup + PrimeGroup + Encoding + Deserialize,
     G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,

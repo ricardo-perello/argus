@@ -52,9 +52,9 @@ the protocol.
   - Channel traits: `ProverChannel`, `VerifierChannel`
   - NARG traits and proof artifact: `NonInteractiveArgument`, `NonInteractiveReduction`, `NargProof`
   - Protocol traits:
-    - root/body traits: `ProtocolBody`, `ArgumentBody`, `ReductionBody`, `IndexedBody`
-    - IA: `InteractiveArgument` and `IndexedInteractiveArgument`
-    - IOR/IR: `InteractiveReduction` and `IndexedInteractiveReduction`
+    - root/core traits: `ProtocolCore`, `ArgumentCore`, `ReductionCore`, `PreprocessingCore`
+    - IA: `InteractiveArgument` and `PreprocessingInteractiveArgument`
+    - IOR/IR: `InteractiveReduction` and `PreprocessingInteractiveReduction`
     - Security: `ArgumentSecurity` / `ReductionSecurity` (opt-in; instance-aware DSFS bound evaluation)
   - Composition:
     - `ChainedReduction` (IR ∘ IR → IR)
@@ -62,12 +62,12 @@ the protocol.
 - **`spongefish::dsfs`**: a **backend** that compiles IA/IR into NARGs using DSFS.
   - `non_interactive_argument(body, sponge)` constructs a `NonInteractiveArgument`
   - `non_interactive_reduction(body, sponge)` constructs a `NonInteractiveReduction`
-  - `.prepare(&ix)` turns indexed bodies into prepared non-interactive arguments/reductions
+  - `.prepare(&ix)` turns preprocessing cores into prepared non-interactive arguments/reductions
   - DSFS security bound evaluation (Theorems 1 & 2 style bounds)
 - **`crates/live-channel`**: a **backend** that runs IA/IR interactively (prover/verifier in threads via `mpsc`).
 - **`crates/warp`**: a WARP (ePrint 2025/753) implementation expressed as:
-  - `WARPReduction` (an `IndexedInteractiveReduction`)
-  - `WARPDeciderIA` (an `IndexedInteractiveArgument`)
+  - `WARPReduction` (a `PreprocessingInteractiveReduction`)
+  - `WARPDeciderIA` (a `PreprocessingInteractiveArgument`)
   - `FullWARP = ReducedArgument<WARPReduction, WARPDeciderIA>`
 - **`crates/argus-examples`**: runnable examples (e.g. Schnorr).
 - **`crates/ibcs`**: WIP — will implement the IOP-to-IA compiler (BCS[IOP, MT] = DSFS[IBCS[IOP, MT]]).
@@ -144,12 +144,12 @@ cargo test -p warp
 At a high level:
 
 1. Define your statement/witness types in some crate.
-2. Implement `ProtocolBody` plus `ArgumentBody` or `ReductionBody`.
+2. Implement `ProtocolCore` plus `ArgumentCore` or `ReductionCore`.
 3. Implement `InteractiveArgument` or `InteractiveReduction` **against the channel traits** from `ia-core`.
 4. Compile it non-interactively with `spongefish_dsfs::non_interactive_argument(body, sponge)` or `spongefish_dsfs::non_interactive_reduction(body, sponge)`.
 
-For a preprocessed protocol, implement `IndexedBody` plus
-`IndexedInteractiveArgument` or `IndexedInteractiveReduction`, then call
+For a preprocessed protocol, implement `PreprocessingCore` plus
+`PreprocessingInteractiveArgument` or `PreprocessingInteractiveReduction`, then call
 `.prepare(&ix)` on the DSFS wrapper before proving/verifying.
 
 Protocol code should only ever call:

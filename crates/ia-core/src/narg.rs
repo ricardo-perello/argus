@@ -20,7 +20,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 use crate::{
-    ArgumentBody, Encoding, InteractiveArgument, NargDeserialize, ProtocolBody, ProverChannel,
+    ArgumentCore, Encoding, InteractiveArgument, NargDeserialize, ProtocolCore, ProverChannel,
     VerificationError, VerificationResult, VerifierChannel,
 };
 
@@ -189,28 +189,28 @@ pub trait NonInteractiveReduction {
 ///
 /// Plain NARGs (e.g. `DsfsArgument<plain_ia>`) do NOT implement `Preprocessed` and
 /// therefore do NOT satisfy this bound: the type system enforces that a
-/// generic consumer with bound `T: IndexedNonInteractiveArgument` provably
+/// generic consumer with bound `T: PreprocessingNonInteractiveArgument` provably
 /// receives a NARG built from a preprocessed body.
-pub trait IndexedNonInteractiveArgument:
+pub trait PreprocessingNonInteractiveArgument:
     NonInteractiveArgument + crate::indexed::Preprocessed
 {
 }
 
-impl<T> IndexedNonInteractiveArgument for T where
+impl<T> PreprocessingNonInteractiveArgument for T where
     T: NonInteractiveArgument + crate::indexed::Preprocessed
 {
 }
 
 /// Non-interactive reduction produced from a preprocessed (indexed) body.
 ///
-/// Reduction counterpart to [`IndexedNonInteractiveArgument`]; same composition,
+/// Reduction counterpart to [`PreprocessingNonInteractiveArgument`]; same composition,
 /// same strong-typing argument.
-pub trait IndexedNonInteractiveReduction:
+pub trait PreprocessingNonInteractiveReduction:
     NonInteractiveReduction + crate::indexed::Preprocessed
 {
 }
 
-impl<T> IndexedNonInteractiveReduction for T where
+impl<T> PreprocessingNonInteractiveReduction for T where
     T: NonInteractiveReduction + crate::indexed::Preprocessed
 {
 }
@@ -238,7 +238,7 @@ impl<N: NonInteractiveArgument> NargAsInteractiveArgument<N> {
     }
 }
 
-impl<N> ProtocolBody for NargAsInteractiveArgument<N>
+impl<N> ProtocolCore for NargAsInteractiveArgument<N>
 where
     N: NonInteractiveArgument,
 {
@@ -247,7 +247,7 @@ where
     }
 }
 
-impl<N> ArgumentBody for NargAsInteractiveArgument<N>
+impl<N> ArgumentCore for NargAsInteractiveArgument<N>
 where
     N: NonInteractiveArgument,
 {

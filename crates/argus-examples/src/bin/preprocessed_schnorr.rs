@@ -11,7 +11,7 @@
 //! purpose.
 //!
 //! ┌──────────────────── 1. Author trait ───────────────────────────────┐
-//! │  IndexedInteractiveArgument *declares*:                            │
+//! │  PreprocessingInteractiveArgument *declares*:                            │
 //! │    type Index       = G        (static problem description)        │
 //! │    type ProverKey   = G        (what the prover holds after index) │
 //! │    type VerifierKey = `SchnorrVerifierKey<G>` (verifier-side key)  │
@@ -45,8 +45,8 @@ use rand::rngs::OsRng;
 use spongefish_dsfs as dsfs;
 
 use ia_core::{
-    ArgumentBody, CommittedIndexBytes, Decoding, Deserialize, Encoding, IndexedBody,
-    IndexedInteractiveArgument, NonInteractiveArgument, Preprocessed, ProtocolBody, ProverChannel,
+    ArgumentCore, CommittedIndexBytes, Decoding, Deserialize, Encoding, NonInteractiveArgument,
+    Preprocessed, PreprocessingCore, PreprocessingInteractiveArgument, ProtocolCore, ProverChannel,
     VerificationError, VerificationResult, VerifierChannel, VerifierKeyCommitment,
 };
 
@@ -84,7 +84,7 @@ impl<G: CurveGroup> Default for PreprocessedSchnorr<G> {
     }
 }
 
-impl<G> ProtocolBody for PreprocessedSchnorr<G>
+impl<G> ProtocolCore for PreprocessedSchnorr<G>
 where
     G: CurveGroup + PrimeGroup + Encoding + Deserialize,
     G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
@@ -94,7 +94,7 @@ where
     }
 }
 
-impl<G> ArgumentBody for PreprocessedSchnorr<G>
+impl<G> ArgumentCore for PreprocessedSchnorr<G>
 where
     G: CurveGroup + PrimeGroup + Encoding + Deserialize,
     G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
@@ -103,7 +103,7 @@ where
     type Witness = G::ScalarField;
 }
 
-impl<G> IndexedBody for PreprocessedSchnorr<G>
+impl<G> PreprocessingCore for PreprocessedSchnorr<G>
 where
     G: CurveGroup + PrimeGroup + Encoding + Deserialize,
     G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
@@ -120,7 +120,7 @@ where
     }
 }
 
-impl<G> IndexedInteractiveArgument for PreprocessedSchnorr<G>
+impl<G> PreprocessingInteractiveArgument for PreprocessedSchnorr<G>
 where
     G: CurveGroup + PrimeGroup + Encoding + Deserialize,
     G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,

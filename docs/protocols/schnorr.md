@@ -16,7 +16,7 @@ cargo run -p argus-examples --bin schnorr -- --live
 
 ## What It Demonstrates
 
-- Splitting identity and shape into `ProtocolBody` and `ArgumentBody`.
+- Splitting identity and shape into `ProtocolCore` and `ArgumentCore`.
 - Implementing `InteractiveArgument`.
 - Using only channel calls inside protocol code.
 - Compiling the IA with `spongefish_dsfs::non_interactive_argument`.

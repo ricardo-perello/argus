@@ -21,7 +21,7 @@ use rand::rngs::OsRng;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
 use ia_core::{
-    ArgumentBody, ArgumentSecurity, InteractiveArgument, NonInteractiveArgument, ProtocolBody,
+    ArgumentCore, ArgumentSecurity, InteractiveArgument, NonInteractiveArgument, ProtocolCore,
     ProverChannel, SecurityErrorBound, SecurityProfile, VerificationError, VerificationResult,
     VerifierChannel,
 };
@@ -125,13 +125,13 @@ impl Config for Sha256MerkleConfig {
 
 struct CommittedSumcheck;
 
-impl ProtocolBody for CommittedSumcheck {
+impl ProtocolCore for CommittedSumcheck {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"committed sumcheck sha256")
     }
 }
 
-impl ArgumentBody for CommittedSumcheck {
+impl ArgumentCore for CommittedSumcheck {
     type Instance = Instance;
     type Witness = Vec<Fr>;
 }

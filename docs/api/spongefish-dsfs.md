@@ -43,7 +43,7 @@ The concrete wrapper is `DsfsReduction<IR, S, H, SALT_LEN>`.
 
 ## Indexed Arguments and Reductions
 
-For indexed bodies, construct the DSFS wrapper and then prepare it:
+For preprocessing cores, construct the DSFS wrapper and then prepare it:
 
 ```rust
 let nia = spongefish_dsfs::non_interactive_argument(indexed_argument, sponge)
@@ -94,7 +94,7 @@ DSFS owns transcript mechanics. It must absorb public inputs before the first
 challenge, absorb prover messages before challenge derivation, replay
 deterministically, and reject malformed proof byte streams.
 
-Plain protocols absorb the ordinary instance. Prepared indexed protocols absorb
+Plain protocols absorb the ordinary instance. Prepared preprocessing protocols absorb
 the committed verifier index plus the ordinary instance. Protocol code never
 performs either absorption itself.
 

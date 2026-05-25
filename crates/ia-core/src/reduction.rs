@@ -2,7 +2,7 @@
 
 use crate::VerificationResult;
 use crate::channel::{ProverChannel, VerifierChannel};
-use crate::protocol::ReductionBody;
+use crate::protocol::ReductionCore;
 
 /// Executable public-coin interactive oracle reduction.
 ///
@@ -10,7 +10,7 @@ use crate::protocol::ReductionBody;
 /// an `InteractiveReduction` verifier outputs a **new instance** of a
 /// (potentially simpler) target relation.  The prover consumes a
 /// *source* witness and produces a *target* witness for the reduced claim.
-pub trait InteractiveReduction: ReductionBody {
+pub trait InteractiveReduction: ReductionCore {
     /// Prover logic: takes `(source_instance, source_witness)` and returns both the target
     /// instance and target witness.  In a public-coin protocol the prover can always compute
     /// the target instance (it sees the same transcript as the verifier).

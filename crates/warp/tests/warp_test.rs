@@ -28,7 +28,7 @@ use warp::{
     FullWARP, WARPDeciderIA, WARPIndex, WARPReduction,
 };
 
-use ia_core::{IndexedReductionSecurity, NonInteractiveArgument, NonInteractiveReduction};
+use ia_core::{NonInteractiveArgument, NonInteractiveReduction, PreprocessingReductionSecurity};
 use spongefish_dsfs::{self as dsfs, Keccak, SpongeInfo, SpongeProver, SpongeVerifier};
 
 type MT = Blake3MerkleTreeParams<Fp>;

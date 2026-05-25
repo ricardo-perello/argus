@@ -18,9 +18,9 @@ use rand::rngs::OsRng;
 use spongefish_dsfs as dsfs;
 
 use ia_core::{
-    ArgumentBody, ArgumentSecurity, ChainedReduction, InteractiveArgument, InteractiveReduction,
-    NonInteractiveArgument, NonInteractiveReduction, ProtocolBody, ProverChannel, ReducedArgument,
-    ReductionBody, ReductionSecurity, SecurityErrorBound, SecurityProfile, VerificationError,
+    ArgumentCore, ArgumentSecurity, ChainedReduction, InteractiveArgument, InteractiveReduction,
+    NonInteractiveArgument, NonInteractiveReduction, ProtocolCore, ProverChannel, ReducedArgument,
+    ReductionCore, ReductionSecurity, SecurityErrorBound, SecurityProfile, VerificationError,
     VerificationResult, VerifierChannel,
 };
 
@@ -103,13 +103,13 @@ impl InteractiveReduction for FoldPairs {
     }
 }
 
-impl ProtocolBody for FoldPairs {
+impl ProtocolCore for FoldPairs {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"fold pairs")
     }
 }
 
-impl ReductionBody for FoldPairs {
+impl ReductionCore for FoldPairs {
     type SourceInstance = Claims;
     type TargetInstance = Claims;
     type SourceWitness = Values;
@@ -213,13 +213,13 @@ impl InteractiveReduction for Accumulate {
     }
 }
 
-impl ProtocolBody for Accumulate {
+impl ProtocolCore for Accumulate {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"accumulate")
     }
 }
 
-impl ReductionBody for Accumulate {
+impl ReductionCore for Accumulate {
     type SourceInstance = Claims;
     type TargetInstance = AccPair;
     type SourceWitness = Values;
@@ -277,13 +277,13 @@ impl InteractiveArgument for EqualityCheck {
     }
 }
 
-impl ProtocolBody for EqualityCheck {
+impl ProtocolCore for EqualityCheck {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"equality check")
     }
 }
 
-impl ArgumentBody for EqualityCheck {
+impl ArgumentCore for EqualityCheck {
     type Instance = AccPair;
     type Witness = ();
 }

@@ -1,4 +1,4 @@
-//! Shared protocol body traits.
+//! Shared protocol core traits.
 //!
 //! These traits provide the inheritance spine for Argus protocol authoring:
 //! protocol identity at the root, argument/reduction shape metadata in the
@@ -6,8 +6,8 @@
 
 use crate::indexed::VerifierKeyCommitment;
 
-/// Common identity for any protocol body.
-pub trait ProtocolBody {
+/// Common identity for any protocol core.
+pub trait ProtocolCore {
     /// Variable-length protocol identifier for domain separation.
     ///
     /// May depend on runtime structure of the protocol instance (e.g. a
@@ -18,16 +18,16 @@ pub trait ProtocolBody {
     fn protocol_id(&self) -> impl AsRef<[u8]>;
 }
 
-/// Shared shape metadata for protocol bodies whose verifier accepts/rejects.
-pub trait ArgumentBody: ProtocolBody {
+/// Shared shape metadata for protocol cores whose verifier accepts/rejects.
+pub trait ArgumentCore: ProtocolCore {
     /// Public statement.
     type Instance;
     /// Prover's private input.
     type Witness;
 }
 
-/// Shared shape metadata for protocol bodies whose verifier outputs a target.
-pub trait ReductionBody: ProtocolBody {
+/// Shared shape metadata for protocol cores whose verifier outputs a target.
+pub trait ReductionCore: ProtocolCore {
     /// Input instance (the claim being reduced).
     type SourceInstance;
     /// Output instance (the reduced claim the verifier computes).
@@ -38,8 +38,8 @@ pub trait ReductionBody: ProtocolBody {
     type TargetWitness;
 }
 
-/// Shared preprocessing metadata for indexed protocol bodies.
-pub trait IndexedBody: ProtocolBody {
+/// Shared preprocessing metadata for protocol cores with preprocessing.
+pub trait PreprocessingCore: ProtocolCore {
     /// Static problem description that is preprocessed once.
     type Index;
     /// Prover-side key derived from the index.

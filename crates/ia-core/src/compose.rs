@@ -7,7 +7,7 @@ use alloc::vec::Vec;
 use crate::VerificationResult;
 use crate::argument::InteractiveArgument;
 use crate::channel::{ProverChannel, VerifierChannel};
-use crate::protocol::{ArgumentBody, ProtocolBody, ReductionBody};
+use crate::protocol::{ArgumentCore, ProtocolCore, ReductionCore};
 use crate::reduction::InteractiveReduction;
 use crate::security::{ArgumentSecurity, ReductionSecurity, SecurityProfile};
 
@@ -42,10 +42,10 @@ impl<First, Second> ChainedReduction<First, Second> {
     }
 }
 
-impl<First, Second> ProtocolBody for ChainedReduction<First, Second>
+impl<First, Second> ProtocolCore for ChainedReduction<First, Second>
 where
-    First: ProtocolBody,
-    Second: ProtocolBody,
+    First: ProtocolCore,
+    Second: ProtocolCore,
 {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         derive_composition_id(
@@ -56,11 +56,11 @@ where
     }
 }
 
-impl<First, Second> ReductionBody for ChainedReduction<First, Second>
+impl<First, Second> ReductionCore for ChainedReduction<First, Second>
 where
-    First: ReductionBody,
+    First: ReductionCore,
     Second:
-        ReductionBody<SourceInstance = First::TargetInstance, SourceWitness = First::TargetWitness>,
+        ReductionCore<SourceInstance = First::TargetInstance, SourceWitness = First::TargetWitness>,
 {
     type SourceInstance = First::SourceInstance;
     type TargetInstance = Second::TargetInstance;
@@ -172,10 +172,10 @@ impl<R, A> ReducedArgument<R, A> {
     }
 }
 
-impl<R, A> ProtocolBody for ReducedArgument<R, A>
+impl<R, A> ProtocolCore for ReducedArgument<R, A>
 where
-    R: ProtocolBody,
-    A: ProtocolBody,
+    R: ProtocolCore,
+    A: ProtocolCore,
 {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         derive_composition_id(
@@ -186,10 +186,10 @@ where
     }
 }
 
-impl<R, A> ArgumentBody for ReducedArgument<R, A>
+impl<R, A> ArgumentCore for ReducedArgument<R, A>
 where
-    R: ReductionBody,
-    A: ArgumentBody<Instance = R::TargetInstance, Witness = R::TargetWitness>,
+    R: ReductionCore,
+    A: ArgumentCore<Instance = R::TargetInstance, Witness = R::TargetWitness>,
 {
     type Instance = R::SourceInstance;
     type Witness = R::SourceWitness;
@@ -270,13 +270,13 @@ mod tests {
     #[derive(Default)]
     struct SizedReduction;
 
-    impl ProtocolBody for SizedReduction {
+    impl ProtocolCore for SizedReduction {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
             b"sized-reduction"
         }
     }
 
-    impl ReductionBody for SizedReduction {
+    impl ReductionCore for SizedReduction {
         type SourceInstance = usize;
         type TargetInstance = usize;
         type SourceWitness = ();
@@ -342,13 +342,13 @@ mod tests {
     #[derive(Default)]
     struct BoundedArgument;
 
-    impl ProtocolBody for BoundedArgument {
+    impl ProtocolCore for BoundedArgument {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
             b"bounded-argument"
         }
     }
 
-    impl ArgumentBody for BoundedArgument {
+    impl ArgumentCore for BoundedArgument {
         type Instance = usize;
         type Witness = ();
     }

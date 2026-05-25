@@ -38,7 +38,7 @@ cargo doc --workspace --no-deps
 ## Implementing a protocol
 
 1. Define the public instance and private witness types.
-2. Implement `ProtocolBody` plus `ArgumentBody` or `ReductionBody`.
+2. Implement `ProtocolCore` plus `ArgumentCore` or `ReductionCore`.
 3. Implement `InteractiveArgument` or `InteractiveReduction`.
 4. Use only the channel API inside protocol code.
 5. Optionally implement `ArgumentSecurity` or `ReductionSecurity`.
@@ -52,8 +52,8 @@ let proof = nia.prove(&session, &instance, &witness);
 nia.verify(&session, &instance, &proof)?;
 ```
 
-For preprocessed protocols, implement `IndexedBody` plus
-`IndexedInteractiveArgument` or `IndexedInteractiveReduction`, then prepare the
+For preprocessed protocols, implement `PreprocessingCore` plus
+`PreprocessingInteractiveArgument` or `PreprocessingInteractiveReduction`, then prepare the
 DSFS wrapper:
 
 ```rust

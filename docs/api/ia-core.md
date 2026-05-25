@@ -4,48 +4,48 @@
 implement a protocol using this crate alone: no transcript internals, sponge
 APIs, or DSFS-specific state.
 
-## Body Tree
+## Core Tree
 
-Argus uses explicit body traits as an inheritance spine:
+Argus uses explicit core traits as an inheritance spine:
 
 ```text
-ProtocolBody
-├── ArgumentBody
+ProtocolCore
+├── ArgumentCore
 │   ├── InteractiveArgument
-│   └── IndexedInteractiveArgument
-└── ReductionBody
+│   └── PreprocessingInteractiveArgument
+└── ReductionCore
     ├── InteractiveReduction
-    └── IndexedInteractiveReduction
+    └── PreprocessingInteractiveReduction
 ```
 
-`ProtocolBody` owns `protocol_id(&self)`. `ArgumentBody` owns `Instance` and
-`Witness`. `ReductionBody` owns source/target instance and witness types.
+`ProtocolCore` owns `protocol_id(&self)`. `ArgumentCore` owns `Instance` and
+`Witness`. `ReductionCore` owns source/target instance and witness types.
 
-`IndexedBody` is the preprocessing capability:
+`PreprocessingCore` is the preprocessing capability:
 
 - `Index`
 - `ProverKey`
 - `VerifierKey: VerifierKeyCommitment`
 - `index(ix) -> (pk, vk)`
 
-Plain execution traits only contain channel logic. Indexed execution traits
+Plain execution traits only contain channel logic. Preprocessing execution traits
 receive `pk` or `vk` explicitly.
 
 ## Core Traits
 
-- `ProtocolBody`: protocol identity for domain separation.
-- `ArgumentBody`: statement/witness shape for accept/reject protocols.
-- `ReductionBody`: source/target relation shape for reductions.
-- `IndexedBody`: preprocessing key-generation capability.
+- `ProtocolCore`: protocol identity for domain separation.
+- `ArgumentCore`: statement/witness shape for accept/reject protocols.
+- `ReductionCore`: source/target relation shape for reductions.
+- `PreprocessingCore`: preprocessing key-generation capability.
 - `InteractiveArgument`: public-coin argument with accept/reject verifier.
 - `InteractiveReduction`: public-coin reduction with verifier-produced target
   instance.
-- `IndexedInteractiveArgument`: keyed/preprocessed argument authoring surface.
-- `IndexedInteractiveReduction`: keyed/preprocessed reduction authoring surface.
+- `PreprocessingInteractiveArgument`: keyed/preprocessed argument authoring surface.
+- `PreprocessingInteractiveReduction`: keyed/preprocessed reduction authoring surface.
 - `ProverChannel`: prover-side channel interface.
 - `VerifierChannel`: verifier-side channel interface.
 
-## Prepared Indexed Protocols
+## Prepared Preprocessing Protocols
 
 `PreparedArgument<B>` and `PreparedReduction<B>` store keys produced by
 `B::index(ix)`. They implement ordinary `InteractiveArgument` /
@@ -81,8 +81,8 @@ can accept bare instances without cloning them.
 - `NargProof`
 - `NonInteractiveArgument`
 - `NonInteractiveReduction`
-- `IndexedNonInteractiveArgument`
-- `IndexedNonInteractiveReduction`
+- `PreprocessingNonInteractiveArgument`
+- `PreprocessingNonInteractiveReduction`
 
 Concrete compilation to proof bytes is backend-owned.
 
@@ -94,18 +94,18 @@ Use:
 - `ReducedArgument` for `IR -> IA`
 
 Composition derives protocol IDs and security metadata from the components.
-Indexed composition is available when both components are indexed; mixed
-composition uses `TrivialIndexedArgument` or `TrivialIndexedReduction`
+Preprocessing composition is available when both components use preprocessing;
+mixed composition uses `TrivialIndexedArgument` or `TrivialIndexedReduction`
 explicitly.
 
 ## Security Metadata
 
 - `ArgumentSecurity`
 - `ReductionSecurity`
-- `IndexedArgumentSecurity`
-- `IndexedReductionSecurity`
+- `PreprocessingArgumentSecurity`
+- `PreprocessingReductionSecurity`
 
-The indexed variants separate index-derived security information from
+The preprocessing variants separate index-derived security information from
 per-instance security information.
 
 ## Protocol Implementation Rule

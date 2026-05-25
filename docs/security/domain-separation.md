@@ -8,7 +8,7 @@ This note describes how Argus binds **protocol identity**, **compilation / trans
 
 | Input | Meaning | Typical source |
 | ----- | ------- | -------------- |
-| **Protocol id** | What protocol body is being run (may be runtime-dependent, e.g. composed σ-protocols). | `ProtocolBody::protocol_id(&self)` as `impl AsRef<[u8]>`. |
+| **Protocol id** | What protocol core is being run (may be runtime-dependent, e.g. composed σ-protocols). | `ProtocolCore::protocol_id(&self)` as `impl AsRef<[u8]>`. |
 | **Sponge / compilation info** | Which NARG layout and sponge bootstrap apply (must change if transcript format or sponge changes). | `spongefish::dsfs::SpongeInfo::SPONGE_INFO` per duplex/`StdHash` choice. |
 | **Session** | Per-invocation context (ceremony, request id, etc.). | Any `S: spongefish::Encoding<[u8]>`; DSFS uses `session.encode()`. |
 

@@ -6,15 +6,15 @@
 //! many per-claim instances without recomputing the index portion of the
 //! security profile.
 
-use crate::indexed::{IndexedInteractiveArgument, IndexedInteractiveReduction};
 use crate::SecurityProfile;
+use crate::indexed::{PreprocessingInteractiveArgument, PreprocessingInteractiveReduction};
 
-/// Index-aware security metadata for an [`IndexedInteractiveArgument`].
+/// Index-aware security metadata for an [`PreprocessingInteractiveArgument`].
 ///
 /// The security profile may depend on both the static index and the per-claim
 /// instance. Separating the two lets callers cache the index-derived portion
 /// across instances under the same preprocessed verifier key.
-pub trait IndexedArgumentSecurity: IndexedInteractiveArgument {
+pub trait PreprocessingArgumentSecurity: PreprocessingInteractiveArgument {
     /// Compact security-relevant parameters derived from a concrete index.
     type IndexParams;
     /// A worst-case/adaptive bound for a family of indices.
@@ -56,19 +56,15 @@ pub trait IndexedArgumentSecurity: IndexedInteractiveArgument {
 
     /// Convenience: extract index and instance params from concrete values,
     /// then build the profile.
-    fn profile_for_concrete(
-        &self,
-        ix: &Self::Index,
-        instance: &Self::Instance,
-    ) -> SecurityProfile {
+    fn profile_for_concrete(&self, ix: &Self::Index, instance: &Self::Instance) -> SecurityProfile {
         let ix_params = self.index_security_params(ix);
         let instance_params = self.instance_security_params(&ix_params, instance);
         self.profile_for_instance_params(&ix_params, &instance_params)
     }
 }
 
-/// Index-aware security metadata for an [`IndexedInteractiveReduction`].
-pub trait IndexedReductionSecurity: IndexedInteractiveReduction {
+/// Index-aware security metadata for an [`PreprocessingInteractiveReduction`].
+pub trait PreprocessingReductionSecurity: PreprocessingInteractiveReduction {
     /// Compact security-relevant parameters derived from a concrete index.
     type IndexParams;
     /// A worst-case/adaptive bound for a family of indices.

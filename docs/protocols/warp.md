@@ -101,12 +101,12 @@ All channel operations go through `ia_core::ProverChannel` / `ia_core::VerifierC
 WARP is expressed as two composable indexed components using the `ia-core`
 traits:
 
-- **`WARPReduction`** (`IndexedInteractiveReduction`): The full IOR -- runs
+- **`WARPReduction`** (`PreprocessingInteractiveReduction`): The full IOR -- runs
   all five phases of the protocol (parse/commit, twin sumcheck, commit/sample,
   batching sumcheck) and produces a target `AccumulatorInstances`. The prover
   receives `WARPProverKey`; the verifier receives `WARPVerifierKey`.
 
-- **`WARPDeciderIA`** (`IndexedInteractiveArgument`): The decider as an
+- **`WARPDeciderIA`** (`PreprocessingInteractiveArgument`): The decider as an
   indexed IA -- the prover sends the accumulated codeword and witness through
   the channel; the verifier reads them back, reconstructs the Merkle tree, and
   checks code consistency, PESAT evaluation, and encoding correctness.
@@ -117,7 +117,7 @@ These are composed via `ReducedArgument` (IR . IA -> IA):
 type FullWARP<F, P, C, MT> = ReducedArgument<WARPReduction<F, P, C, MT>, WARPDeciderIA<F, P, C, MT>>;
 ```
 
-This gives a single `IndexedInteractiveArgument` that can be prepared and then
+This gives a single `PreprocessingInteractiveArgument` that can be prepared and then
 compiled through DSFS:
 
 ```rust
@@ -176,9 +176,9 @@ impl WARP<F, P, C, MT> {
 
 The `ark-crypto-primitives` dependency uses a [patched fork](https://github.com/dmpierre/crypto-primitives/tree/dev/blake3) that adds Blake3 support.
 
-## Security profile (IndexedReductionSecurity)
+## Security profile (PreprocessingReductionSecurity)
 
-`WARPReduction` implements `IndexedReductionSecurity` with bounds from eprint 2025/753.
+`WARPReduction` implements `PreprocessingReductionSecurity` with bounds from eprint 2025/753.
 Both the Schwartz-Zippel per-round errors and the code-specific one-time terms
 (errPG, OOD sampling, shift sampling, PESAT→code) are included.
 

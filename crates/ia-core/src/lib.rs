@@ -45,15 +45,15 @@ pub use argument::InteractiveArgument;
 pub use channel::{ProverChannel, VerifierChannel};
 pub use compose::{ChainedReduction, ReducedArgument};
 pub use indexed::{
-    CommittedIndexBytes, IndexedInstance, IndexedInstanceRef, IndexedInteractiveArgument,
-    IndexedInteractiveReduction, PreparedArgument, PreparedReduction, Preprocessed,
+    CommittedIndexBytes, IndexedInstance, IndexedInstanceRef, PreparedArgument, PreparedReduction,
+    Preprocessed, PreprocessingInteractiveArgument, PreprocessingInteractiveReduction,
     TrivialIndexedArgument, TrivialIndexedReduction, VerifierKeyCommitment,
 };
-pub use indexed_security::{IndexedArgumentSecurity, IndexedReductionSecurity};
+pub use indexed_security::{PreprocessingArgumentSecurity, PreprocessingReductionSecurity};
 pub use narg::{
-    IndexedNonInteractiveArgument, IndexedNonInteractiveReduction, NargAsInteractiveArgument,
-    NargProof, NonInteractiveArgument, NonInteractiveReduction,
+    NargAsInteractiveArgument, NargProof, NonInteractiveArgument, NonInteractiveReduction,
+    PreprocessingNonInteractiveArgument, PreprocessingNonInteractiveReduction,
 };
-pub use protocol::{ArgumentBody, IndexedBody, ProtocolBody, ReductionBody};
+pub use protocol::{ArgumentCore, PreprocessingCore, ProtocolCore, ReductionCore};
 pub use reduction::InteractiveReduction;
 pub use security::{ArgumentSecurity, ReductionSecurity, SecurityErrorBound, SecurityProfile};

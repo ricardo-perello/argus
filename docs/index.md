@@ -24,10 +24,10 @@ Historical design iterations are preserved under [Documentation History](history
 
 ## Active Design Plans
 
-- [Protocol Body Tree and DSFS Constructors](protocol-body-dsfs-presentation.md)
-  is the current presentation snapshot of the OOP-style body traits, semantic
-  DSFS constructors, prepared wrappers, indexed composition, security metadata,
+- [Protocol Core Tree and DSFS Constructors](protocol-core-dsfs-presentation.md)
+  is the current presentation snapshot of the OOP-style core traits, semantic
+  DSFS constructors, prepared wrappers, preprocessing composition, security metadata,
   and WARP shape.
 - [Preprocessing Indexed Relations v2](preprocessing-indexed-relations-v2.md)
-  is the standalone implementation plan for keyed indexed protocols, prepared
+  is the standalone implementation plan for keyed preprocessing protocols, prepared
   DSFS wrappers, and WARP migration.

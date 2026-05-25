@@ -24,7 +24,7 @@ use rand::rngs::OsRng;
 use spongefish_dsfs as dsfs;
 
 use ia_core::{
-    InteractiveReduction, NonInteractiveReduction, ProtocolBody, ProverChannel, ReductionBody,
+    InteractiveReduction, NonInteractiveReduction, ProtocolCore, ProverChannel, ReductionCore,
     ReductionSecurity, SecurityErrorBound, SecurityProfile, VerificationError, VerificationResult,
     VerifierChannel,
 };
@@ -54,13 +54,13 @@ struct TargetInstance {
 
 struct Accumulate;
 
-impl ProtocolBody for Accumulate {
+impl ProtocolCore for Accumulate {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"warp-style rlc accumulator")
     }
 }
 
-impl ReductionBody for Accumulate {
+impl ReductionCore for Accumulate {
     type SourceInstance = SourceInstance;
     type TargetInstance = TargetInstance;
     type SourceWitness = Vec<Fr>;
