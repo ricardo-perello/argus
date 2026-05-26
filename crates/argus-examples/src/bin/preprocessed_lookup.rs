@@ -285,6 +285,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ia_core::PreparedArgument;
 
     fn sample_table() -> Vec<u32> {
         (0..8u32).map(|i| 1000 + i).collect()
@@ -307,6 +308,65 @@ mod tests {
                 .verify(&session, &(i, y), &proof)
                 .expect("opening should verify");
         }
+    }
+
+    #[test]
+    fn lookup_roundtrip_prepare_then_dsfs() {
+        let session = spongefish::session!("preprocessed lookup prepared-argument test");
+        let table = sample_table();
+
+        let prepared_lookup = PreparedArgument::prepare(PreprocessedLookup, &table);
+
+        let i = 5u32;
+        let instance = (i, table[i as usize]);
+        let indexed_instance = prepared_lookup.indexed_instance(instance);
+
+        let prepared_nia_lookup = dsfs::plain_non_interactive_argument::<_, [u8; 64], _>(
+            prepared_lookup,
+            dsfs::Keccak::default(),
+        );
+
+        let proof = prepared_nia_lookup.prove(&session, &indexed_instance, &());
+        prepared_nia_lookup
+            .verify(&session, &indexed_instance, &proof)
+            .expect("prepare then DSFS opening verifies");
+    }
+
+    #[test]
+    fn lookup_prepare_then_dsfs_matches_dsfs_then_prepare_exactly() {
+        let session = spongefish::session!("preprocessed lookup route-equivalence test");
+        let table = sample_table();
+        let direct = dsfs::preprocessing_non_interactive_argument(
+            PreprocessedLookup,
+            dsfs::Keccak::default(),
+        )
+        .prepare(&table);
+
+        let prepared_lookup = PreparedArgument::prepare(PreprocessedLookup, &table);
+        assert_eq!(direct.committed_index(), prepared_lookup.committed_index());
+
+        let i = 5u32;
+        let instance = (i, table[i as usize]);
+        let indexed_instance = prepared_lookup.indexed_instance(instance);
+        let prepared_first = dsfs::plain_non_interactive_argument::<_, [u8; 64], _>(
+            prepared_lookup,
+            dsfs::Keccak::default(),
+        );
+
+        let direct_proof = direct.prove(&session, &instance, &());
+        let prepared_first_proof = prepared_first.prove(&session, &indexed_instance, &());
+        assert_eq!(
+            direct_proof.as_bytes(),
+            prepared_first_proof.as_bytes(),
+            "deterministic protocol should produce identical proof bytes through both prepared routes"
+        );
+
+        prepared_first
+            .verify(&session, &indexed_instance, &direct_proof)
+            .expect("prepare-then-DSFS verifies the direct prepared proof");
+        direct
+            .verify(&session, &instance, &prepared_first_proof)
+            .expect("direct prepared DSFS verifies the prepare-then-DSFS proof");
     }
 
     /// Wrong claimed value at a valid index — verifier rejects.

@@ -234,6 +234,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ia_core::PreparedArgument;
 
     type G = ark_curve25519::EdwardsProjective;
     type F = ark_curve25519::Fr;
@@ -246,8 +247,8 @@ mod tests {
     }
 
     #[test]
-    fn dleq_roundtrip() {
-        let session = spongefish::session!("dleq test");
+    fn dleq_roundtrip_dsfs_then_prepare() {
+        let session = spongefish::session!("dleq test dsfs then prepare");
         let (g, x, h) = keygen();
         let prepared = dsfs::preprocessing_non_interactive_argument(
             Dleq::<G>::default(),
@@ -261,6 +262,58 @@ mod tests {
         prepared
             .verify(&session, &(u, v), &proof)
             .expect("verify under correct key");
+    }
+
+    #[test]
+    fn dleq_roundtrip_prepare_then_dsfs() {
+        let session = spongefish::session!("dleq test prepare then dsfs");
+        let (g, x, h) = keygen();
+
+        let prepared_dleq = PreparedArgument::prepare(Dleq::<G>::default(), &(g, h));
+
+        let u = G::generator() * F::rand(&mut OsRng);
+        let instance = (u, u * x);
+        let indexed_instance = prepared_dleq.indexed_instance(instance);
+
+        let prepared_nia_dleq =
+            dsfs::plain_non_interactive_argument(prepared_dleq, dsfs::Keccak::default());
+
+        let proof = prepared_nia_dleq.prove(&session, &indexed_instance, &x);
+        prepared_nia_dleq
+            .verify(&session, &indexed_instance, &proof)
+            .expect("prepare then DSFS proof verifies");
+    }
+
+    #[test]
+    fn dleq_prepare_then_dsfs_cross_verifies_with_dsfs_then_prepare() {
+        let session = spongefish::session!("dleq route-equivalence test");
+        let (g, x, h) = keygen();
+        let direct = dsfs::preprocessing_non_interactive_argument(
+            Dleq::<G>::default(),
+            dsfs::Keccak::default(),
+        )
+        .prepare(&(g, h));
+
+        let prepared_dleq = PreparedArgument::prepare(Dleq::<G>::default(), &(g, h));
+        assert_eq!(direct.committed_index(), prepared_dleq.committed_index());
+
+        let u = G::generator() * F::rand(&mut OsRng);
+        let instance = (u, u * x);
+        let indexed_instance = prepared_dleq.indexed_instance(instance);
+        let prepared_first = dsfs::plain_non_interactive_argument::<_, [u8; 64], _>(
+            prepared_dleq,
+            dsfs::Keccak::default(),
+        );
+
+        let prepared_first_proof = prepared_first.prove(&session, &indexed_instance, &x);
+        direct
+            .verify(&session, &instance, &prepared_first_proof)
+            .expect("DSFS-then-prepare verifies prepare-then-DSFS proof");
+
+        let direct_proof = direct.prove(&session, &instance, &x);
+        prepared_first
+            .verify(&session, &indexed_instance, &direct_proof)
+            .expect("prepare-then-DSFS verifies DSFS-then-prepare proof");
     }
 
     /// A proof produced under (g, h_alice) cannot be redirected at

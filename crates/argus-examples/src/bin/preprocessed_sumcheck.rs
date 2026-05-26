@@ -310,6 +310,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ia_core::PreparedReduction;
 
     fn sample_coeffs() -> [Fr; 4] {
         let mut rng = OsRng;
@@ -338,6 +339,72 @@ mod tests {
         let ((r1, r2), v) = prepared.verify(&session, &t, &proof).expect("verify");
 
         assert_eq!(eval(&coeffs, r1, r2), v, "decider check");
+    }
+
+    #[test]
+    fn sumcheck_roundtrip_prepare_then_dsfs() {
+        let session = spongefish::session!("preprocessed sumcheck prepared-reduction test");
+        let coeffs = sample_coeffs();
+        let t = sum_over_hypercube(&coeffs);
+
+        let prepared_sumcheck = PreparedReduction::prepare(PreprocessedSumcheck, &coeffs);
+        let indexed_source = prepared_sumcheck.indexed_source(t);
+        let prepared_nir_sumcheck = dsfs::plain_non_interactive_reduction::<_, [u8; 64], _>(
+            prepared_sumcheck,
+            dsfs::Keccak::default(),
+        );
+
+        let (proof, target_p, ()) = prepared_nir_sumcheck.prove(&session, &indexed_source, &());
+        let target_v = prepared_nir_sumcheck
+            .verify(&session, &indexed_source, &proof)
+            .expect("prepare then DSFS reduction verifies");
+        assert_eq!(target_p, target_v);
+
+        let ((r1, r2), v) = target_v;
+        assert_eq!(eval(&coeffs, r1, r2), v, "decider check");
+    }
+
+    #[test]
+    fn sumcheck_prepare_then_dsfs_matches_dsfs_then_prepare_exactly() {
+        let session = spongefish::session!("preprocessed sumcheck route-equivalence test");
+        let coeffs = sample_coeffs();
+        let t = sum_over_hypercube(&coeffs);
+        let direct = dsfs::preprocessing_non_interactive_reduction(
+            PreprocessedSumcheck,
+            dsfs::Keccak::default(),
+        )
+        .prepare(&coeffs);
+
+        let prepared_sumcheck = PreparedReduction::prepare(PreprocessedSumcheck, &coeffs);
+        assert_eq!(
+            direct.committed_index(),
+            prepared_sumcheck.committed_index()
+        );
+
+        let indexed_source = prepared_sumcheck.indexed_source(t);
+        let prepared_first = dsfs::plain_non_interactive_reduction::<_, [u8; 64], _>(
+            prepared_sumcheck,
+            dsfs::Keccak::default(),
+        );
+
+        let (direct_proof, direct_target, ()) = direct.prove(&session, &t, &());
+        let (prepared_first_proof, prepared_first_target, ()) =
+            prepared_first.prove(&session, &indexed_source, &());
+        assert_eq!(
+            direct_proof.as_bytes(),
+            prepared_first_proof.as_bytes(),
+            "deterministic reduction should produce identical proof bytes through both prepared routes"
+        );
+        assert_eq!(direct_target, prepared_first_target);
+
+        let direct_verified_target = direct
+            .verify(&session, &t, &prepared_first_proof)
+            .expect("direct prepared DSFS verifies the prepare-then-DSFS proof");
+        let prepared_verified_target = prepared_first
+            .verify(&session, &indexed_source, &direct_proof)
+            .expect("prepare-then-DSFS verifies the direct prepared proof");
+        assert_eq!(direct_verified_target, direct_target);
+        assert_eq!(prepared_verified_target, prepared_first_target);
     }
 
     /// If the prover claims a wrong T, the round-1 two-point check fails
