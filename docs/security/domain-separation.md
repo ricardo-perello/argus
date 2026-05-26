@@ -45,9 +45,10 @@ StdHash::SPONGE_INFO    = b"dsfs/v2/shake128-r168c32"
 ```
 
 `plain_non_interactive_argument` / `plain_non_interactive_reduction` construct DSFS wrappers
-that compute session bytes during `prove` / `verify`, then:
+that compute session bytes during `prove` / `verify`, then derive the transcript
+using the `DS` duplex-sponge type parameter:
 
-`DomainSeparator::derive(ia.protocol_id().as_ref(), H::SPONGE_INFO, session_bytes.as_ref()).instance(instance)`
+`DomainSeparator::derive(ia.protocol_id().as_ref(), DS::SPONGE_INFO, session_bytes.as_ref()).instance(instance)`
 
 and attach the duplex sponge or `std_prover` / `std_verifier` as documented in [`../history/backends/dsfs-v2.md`](../history/backends/dsfs-v2.md).
 

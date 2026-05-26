@@ -354,32 +354,32 @@ and `.with_keys(pk, vk)`, while only the prepared result implements
 `NonInteractiveArgument` / `NonInteractiveReduction`.
 
 ```rust
-pub struct UnpreparedDsfsArgument<IA, S, H = Keccak, const SALT_LEN: usize = 0>;
+pub struct UnpreparedDsfsArgument<IA, S, DS = Keccak, const SALT_LEN: usize = 0>;
 
-impl<IA, S, H, const SALT_LEN: usize> UnpreparedDsfsArgument<IA, S, H, SALT_LEN>
+impl<IA, S, DS, const SALT_LEN: usize> UnpreparedDsfsArgument<IA, S, DS, SALT_LEN>
 where
     IA: PreprocessingInteractiveArgument,
 {
-    pub fn prepare(self, ix: &IA::Index) -> PreparedDsfsArgument<IA, S, H, SALT_LEN>;
+    pub fn prepare(self, ix: &IA::Index) -> PreparedDsfsArgument<IA, S, DS, SALT_LEN>;
     pub fn with_keys(
         self,
         pk: IA::ProverKey,
         vk: IA::VerifierKey,
-    ) -> PreparedDsfsArgument<IA, S, H, SALT_LEN>;
+    ) -> PreparedDsfsArgument<IA, S, DS, SALT_LEN>;
 }
 
-pub struct UnpreparedDsfsReduction<IR, S, H = Keccak, const SALT_LEN: usize = 0>;
+pub struct UnpreparedDsfsReduction<IR, S, DS = Keccak, const SALT_LEN: usize = 0>;
 
-impl<IR, S, H, const SALT_LEN: usize> UnpreparedDsfsReduction<IR, S, H, SALT_LEN>
+impl<IR, S, DS, const SALT_LEN: usize> UnpreparedDsfsReduction<IR, S, DS, SALT_LEN>
 where
     IR: PreprocessingInteractiveReduction,
 {
-    pub fn prepare(self, ix: &IR::Index) -> PreparedDsfsReduction<IR, S, H, SALT_LEN>;
+    pub fn prepare(self, ix: &IR::Index) -> PreparedDsfsReduction<IR, S, DS, SALT_LEN>;
     pub fn with_keys(
         self,
         pk: IR::ProverKey,
         vk: IR::VerifierKey,
-    ) -> PreparedDsfsReduction<IR, S, H, SALT_LEN>;
+    ) -> PreparedDsfsReduction<IR, S, DS, SALT_LEN>;
 }
 ```
 
@@ -408,12 +408,12 @@ must not force callers to construct `IndexedInstance` and must not require
 Implementation shape in `spongefish-dsfs`:
 
 ```rust
-pub struct PreparedDsfsArgument<IA, S, H = Keccak, const SALT_LEN: usize = 0> {
+pub struct PreparedDsfsArgument<IA, S, DS = Keccak, const SALT_LEN: usize = 0> {
     ia: IA,
     pk: IA::ProverKey,
     vk: IA::VerifierKey,
     committed_index: CommittedIndexBytes,
-    sponge: H,
+    duplex_sponge: DS,
     _session: PhantomData<S>,
 }
 ```
@@ -565,29 +565,35 @@ WARP is implemented as preprocessing components on this branch.
 The source instance split is:
 
 ```rust
-pub struct WARPIndex<...> {
+pub struct WarpIndex<...> {
     // static relation data: code, config, Merkle params, constraint system
 }
 
-pub struct WARPProverKey<...> {
+impl WarpIndex<...> {
+    pub fn new(config, relation, code, merkle_params) -> Self { ... }
+}
+
+pub struct WarpProverKey<...> {
     // prover-side encoded matrices, trees, or other heavy preprocessing
 }
 
-pub struct WARPVerifierKey<...> {
+pub struct WarpVerifierKey<...> {
     // verifier-side dimensions, roots, digest commitments, compact metadata
 }
 
-pub struct WARPInstance<...> {
+pub struct WarpInstance<...> {
     // per-claim public instances and accumulator instances only
 }
 ```
 
-`VerifierKeyCommitment` is implemented for `WARPVerifierKey`.
-`WARPReduction` implements `PreprocessingInteractiveReduction`; `WARPDeciderIA`
-implements `PreprocessingInteractiveArgument`; and
-`FullWARP = ReducedArgument<WARPReduction, WARPDeciderIA>` is indexed through
-composition. The previous pattern of reading `instance.pk` in the prover and
-reconstructing `vk` from `instance.pk` in the verifier has been removed.
+`VerifierKeyCommitment` is implemented for `WarpVerifierKey`, and the
+commitment is derived when the verifier key is constructed so verifier material
+and commitment bytes cannot be supplied independently. `WarpReduction`
+implements `PreprocessingInteractiveReduction`; `WarpDecider` implements
+`PreprocessingInteractiveArgument`; and `FullWarp` is a first-class
+preprocessing argument with `Index = WarpIndex<...>`. The previous pattern of
+reading `instance.pk` in the prover, reconstructing `vk` from `instance.pk` in
+the verifier, and preparing composed WARP with `(ix, ix)` has been removed.
 
 ## Implemented Work Items
 

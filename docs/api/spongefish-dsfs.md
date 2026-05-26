@@ -18,7 +18,7 @@ let proof = nia.prove(&session, &instance, &witness);
 nia.verify(&session, &instance, &proof)?;
 ```
 
-The concrete wrapper is `DsfsArgument<IA, S, H, SALT_LEN>`, but most callers
+The concrete wrapper is `DsfsArgument<IA, S, DS, SALT_LEN>`, but most callers
 interact with it through `ia_core::NonInteractiveArgument`.
 
 Use `plain_non_interactive_argument_with_salt` when the proof layout includes an
@@ -39,7 +39,7 @@ let verified_target =
     nir.verify(&session, &source_instance, &proof)?;
 ```
 
-The concrete wrapper is `DsfsReduction<IR, S, H, SALT_LEN>`.
+The concrete wrapper is `DsfsReduction<IR, S, DS, SALT_LEN>`.
 
 ## Preprocessing Arguments and Reductions
 
@@ -47,15 +47,24 @@ For preprocessing cores, construct the unprepared DSFS wrapper and then prepare
 it:
 
 ```rust
-let nia = spongefish_dsfs::preprocessing_non_interactive_argument(preprocessing_argument, sponge)
-    .prepare(&index);
+let nia = spongefish_dsfs::preprocessing_non_interactive_argument(
+    preprocessing_argument,
+    spongefish_dsfs::Keccak::default(),
+)
+.prepare(&index);
 
 let proof = nia.prove(&session, &instance, &witness);
 nia.verify(&session, &instance, &proof)?;
 
-let nir = spongefish_dsfs::preprocessing_non_interactive_reduction(preprocessing_reduction, sponge)
-    .prepare(&index);
+let nir = spongefish_dsfs::preprocessing_non_interactive_reduction(
+    preprocessing_reduction,
+    spongefish_dsfs::Keccak::default(),
+)
+.prepare(&index);
 ```
+
+The second constructor parameter is named `duplex_sponge` in the API; the
+corresponding type parameter is `DS`.
 
 Prepared wrappers store `pk`, `vk`, and `vk.committed_index()`. They accept
 bare per-claim instances. Internally the backend absorbs:
