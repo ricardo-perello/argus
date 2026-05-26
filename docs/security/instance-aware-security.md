@@ -37,7 +37,7 @@ profile_for_instance_bound(n)
 Here `n` is not necessarily a single integer. It is any protocol-defined bound
 type that covers a family of instances.
 
-For WARP, the bound currently mirrors `WARPSecurityParams`, with fields
+For WARP, the bound currently mirrors `WarpSecurityParams`, with fields
 interpreted as maxima. For Schnorr, the bound is `()` because the tracked error
 is instance-independent.
 

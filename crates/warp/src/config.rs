@@ -3,7 +3,7 @@ use ark_ff::Field;
 use crate::relations::BundledPESAT;
 
 #[derive(Clone)]
-pub struct WARPConfig<F: Field, P: BundledPESAT<F>> {
+pub struct WarpConfig<F: Field, P: BundledPESAT<F>> {
     pub l: usize,
     pub l1: usize,
     pub s: usize,
@@ -12,7 +12,7 @@ pub struct WARPConfig<F: Field, P: BundledPESAT<F>> {
     pub n: usize,
 }
 
-impl<F: Field, P: BundledPESAT<F>> WARPConfig<F, P> {
+impl<F: Field, P: BundledPESAT<F>> WarpConfig<F, P> {
     pub fn new(l: usize, l1: usize, s: usize, t: usize, p_conf: P::Config, n: usize) -> Self {
         Self {
             l,

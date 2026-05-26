@@ -1,5 +1,5 @@
+use std::borrow::Borrow;
 use std::marker::PhantomData;
-use std::sync::Arc;
 
 use ark_bls12_381::Fr as Fp;
 use ark_codes::{
@@ -7,13 +7,23 @@ use ark_codes::{
     traits::LinearCode,
 };
 use ark_crypto_primitives::crh::poseidon::{constraints::CRHGadget, CRH};
+use ark_crypto_primitives::{
+    crh::{ByteDigest, CRHScheme, TwoToOneCRHScheme},
+    Error as CryptoError,
+};
 use ark_ff::UniformRand;
+use ark_serialize::CanonicalSerialize;
+use ark_std::rand::Rng;
 use rand::thread_rng;
 
+use ia_core::{
+    Encoding, NonInteractiveArgument, NonInteractiveReduction, PreprocessingCore,
+    PreprocessingReductionSecurity, VerifierKeyCommitment,
+};
+use spongefish_dsfs::{self as dsfs, Keccak};
 use warp::{
-    config::WARPConfig,
-    crypto::merkle::blake3::Blake3MerkleTreeParams,
-    protocol::warp::{WARPInstance, WARPWitness, WARP},
+    config::WarpConfig,
+    crypto::merkle::{blake3::Blake3MerkleTreeParams, parameters::MerkleTreeParams},
     relations::{
         r1cs::{
             hashchain::{
@@ -25,39 +35,68 @@ use warp::{
     },
     types::{AccumulatorInstances, AccumulatorWitnesses},
     utils::poseidon,
-    FullWARP, WARPDeciderIA, WARPIndex, WARPReduction,
+    FullWarp, WarpDecider, WarpIndex, WarpInstance, WarpMerkleParams, WarpReduction, WarpWitness,
 };
-
-use ia_core::{NonInteractiveArgument, NonInteractiveReduction, PreprocessingReductionSecurity};
-use spongefish_dsfs::{self as dsfs, Keccak, SpongeInfo, SpongeProver, SpongeVerifier};
 
 type MT = Blake3MerkleTreeParams<Fp>;
 
-static INSTANCE_TAG: &[u8; 16] = b"warp-test-inst00";
+#[derive(Clone)]
+struct ParamLeafHash;
 
-fn make_prover() -> SpongeProver {
-    let protocol_id = spongefish::protocol_id(core::format_args!("argus::warp::test"));
-    let session = spongefish::session!("warp test session");
-    let domsep = spongefish::DomainSeparator::derive(
-        protocol_id.as_ref(),
-        Keccak::SPONGE_INFO,
-        session.as_slice(),
-    )
-    .instance(INSTANCE_TAG);
-    SpongeProver::new(domsep.to_prover(Keccak::default()))
+impl CRHScheme for ParamLeafHash {
+    type Input = [Fp];
+    type Output = ByteDigest<32>;
+    type Parameters = [u8; 32];
+
+    fn setup<R: Rng>(_: &mut R) -> Result<Self::Parameters, CryptoError> {
+        Ok([0u8; 32])
+    }
+
+    fn evaluate<T: Borrow<Self::Input>>(
+        parameters: &Self::Parameters,
+        input: T,
+    ) -> Result<Self::Output, CryptoError> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(parameters);
+        input.borrow().serialize_uncompressed(&mut bytes)?;
+        Ok(ByteDigest(*blake3::hash(&bytes).as_bytes()))
+    }
 }
 
-fn make_verifier(narg_string: &[u8]) -> SpongeVerifier<'_> {
-    let protocol_id = spongefish::protocol_id(core::format_args!("argus::warp::test"));
-    let session = spongefish::session!("warp test session");
-    let domsep = spongefish::DomainSeparator::derive(
-        protocol_id.as_ref(),
-        Keccak::SPONGE_INFO,
-        session.as_slice(),
-    )
-    .instance(INSTANCE_TAG);
-    SpongeVerifier::new(domsep.to_verifier(Keccak::default(), narg_string))
+#[derive(Clone)]
+struct ParamTwoToOneHash;
+
+impl TwoToOneCRHScheme for ParamTwoToOneHash {
+    type Input = ByteDigest<32>;
+    type Output = ByteDigest<32>;
+    type Parameters = [u8; 32];
+
+    fn setup<R: Rng>(_: &mut R) -> Result<Self::Parameters, CryptoError> {
+        Ok([0u8; 32])
+    }
+
+    fn evaluate<T: Borrow<Self::Input>>(
+        parameters: &Self::Parameters,
+        left_input: T,
+        right_input: T,
+    ) -> Result<Self::Output, CryptoError> {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(parameters);
+        hasher.update(&left_input.borrow().0);
+        hasher.update(&right_input.borrow().0);
+        Ok(ByteDigest(*hasher.finalize().as_bytes()))
+    }
+
+    fn compress<T: Borrow<Self::Output>>(
+        parameters: &Self::Parameters,
+        left_input: T,
+        right_input: T,
+    ) -> Result<Self::Output, CryptoError> {
+        Self::evaluate(parameters, left_input, right_input)
+    }
 }
+
+type ParamMT = MerkleTreeParams<Fp, ParamLeafHash, ParamTwoToOneHash, ByteDigest<32>>;
 
 #[allow(clippy::type_complexity)]
 fn setup() -> (R1CS<Fp>, ReedSolomon<Fp>, Vec<Vec<Fp>>, Vec<Vec<Fp>>) {
@@ -108,50 +147,84 @@ fn empty_acc() -> (AccumulatorInstances<Fp, MT>, AccumulatorWitnesses<Fp, MT>) {
     )
 }
 
+fn warp_index(
+    r1cs: R1CS<Fp>,
+    code: ReedSolomon<Fp>,
+    l: usize,
+    l1: usize,
+) -> WarpIndex<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT> {
+    let n = code.code_len();
+    WarpIndex::new(
+        WarpConfig::new(l, l1, 8, 7, r1cs.config(), n),
+        r1cs,
+        code,
+        WarpMerkleParams::new((), ()),
+    )
+}
+
+fn param_warp_index(
+    r1cs: R1CS<Fp>,
+    code: ReedSolomon<Fp>,
+    leaf_param: [u8; 32],
+    two_to_one_param: [u8; 32],
+) -> WarpIndex<Fp, R1CS<Fp>, ReedSolomon<Fp>, ParamMT> {
+    let n = code.code_len();
+    WarpIndex::new(
+        WarpConfig::new(4, 4, 8, 7, r1cs.config(), n),
+        r1cs,
+        code,
+        WarpMerkleParams::new(leaf_param, two_to_one_param),
+    )
+}
+
+fn warp_statement(
+    instances: Vec<Vec<Fp>>,
+    witnesses: Vec<Vec<Fp>>,
+) -> (WarpInstance<Fp, MT>, WarpWitness<Fp, MT>) {
+    let (empty_inst, empty_wit) = empty_acc();
+    (
+        WarpInstance {
+            instances,
+            acc_instances: empty_inst,
+        },
+        WarpWitness {
+            witnesses,
+            acc_witnesses: empty_wit,
+        },
+    )
+}
+
+fn changed_relation_same_dimensions(r1cs: &R1CS<Fp>) -> R1CS<Fp> {
+    let mut changed = r1cs.clone();
+    let (coeff, _) = changed
+        .p
+        .iter_mut()
+        .flat_map(|(a, b, c)| a.iter_mut().chain(b.iter_mut()).chain(c.iter_mut()))
+        .next()
+        .expect("test R1CS has at least one non-zero constraint entry");
+    *coeff += Fp::from(1u64);
+    assert_eq!(r1cs.m, changed.m);
+    assert_eq!(r1cs.n, changed.n);
+    assert_eq!(r1cs.k, changed.k);
+    changed
+}
+
+fn committed_index(ix: &WarpIndex<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>) -> Vec<u8> {
+    let ir = WarpReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
+    let (_, vk) = ir.index(ix);
+    vk.committed_index().as_bytes().to_vec()
+}
+
 #[test]
 fn warp_security_profile_is_derived_from_index() {
     let (r1cs, code, instances, _) = setup();
-    let (empty_inst_a, _) = empty_acc();
-    let (empty_inst_b, _) = empty_acc();
+    let (small_instance, _) = warp_statement(instances.clone(), vec![]);
+    let (large_instance, _) = warp_statement(instances, vec![]);
 
-    let warp_small = Arc::new(WARP::<Fp, R1CS<Fp>, _, MT>::new(
-        WARPConfig::new(4, 4, 8, 7, r1cs.config(), code.code_len()),
-        code.clone(),
-        r1cs.clone(),
-        (),
-        (),
-    ));
-    let warp_large = Arc::new(WARP::<Fp, R1CS<Fp>, _, MT>::new(
-        WARPConfig::new(8, 4, 8, 7, r1cs.config(), code.code_len()),
-        code,
-        r1cs.clone(),
-        (),
-        (),
-    ));
+    let ix_small = warp_index(r1cs.clone(), code.clone(), 4, 4);
+    let ix_large = warp_index(r1cs, code, 8, 4);
 
-    let ix_small = WARPIndex {
-        warp: warp_small,
-        m: r1cs.m,
-        n: r1cs.n,
-        k: r1cs.k,
-    };
-    let ix_large = WARPIndex {
-        warp: warp_large,
-        m: r1cs.m,
-        n: r1cs.n,
-        k: r1cs.k,
-    };
-
-    let small_instance = WARPInstance {
-        instances: instances.clone(),
-        acc_instances: empty_inst_a,
-    };
-    let large_instance = WARPInstance {
-        instances,
-        acc_instances: empty_inst_b,
-    };
-
-    let ir = WARPReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
+    let ir = WarpReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
     let small_profile = ir.profile_for_concrete_source(&ix_small, &small_instance);
     let large_profile = ir.profile_for_concrete_source(&ix_large, &large_instance);
 
@@ -166,233 +239,144 @@ fn warp_security_profile_is_derived_from_index() {
 }
 
 #[test]
-fn warp_bootstrap_prove_verify_decide() {
-    let (r1cs, code, instances, witnesses) = setup();
-    let l1 = instances.len();
-
-    let warp_config = WARPConfig::new(l1, l1, 8, 7, r1cs.config(), code.code_len());
-    let warp = WARP::<Fp, R1CS<Fp>, _, MT>::new(warp_config, code.clone(), r1cs.clone(), (), ());
-
-    let pk = (r1cs.clone(), r1cs.m, r1cs.n, r1cs.k);
-    let vk = (r1cs.m, r1cs.n, r1cs.k);
-    let (empty_inst, empty_wit) = empty_acc();
-
-    // Bootstrap: prove with empty accumulator
-    let mut prover_ch = make_prover();
-
-    let (acc_x, acc_w, proof) = warp
-        .prove_with_channel(
-            &mut prover_ch,
-            &pk,
-            &instances,
-            &witnesses,
-            &empty_inst,
-            &empty_wit,
-        )
-        .expect("prove failed");
-
-    let narg_string = prover_ch.narg_string().to_vec();
-    println!("NARG string: {} bytes", narg_string.len());
-
-    // Verify
-    let mut verifier_ch = make_verifier(&narg_string);
-
-    warp.verify_with_channel(&mut verifier_ch, vk, &acc_x, &proof)
-        .expect("verification failed");
-    println!("Verification: OK");
-
-    // Decide
-    warp.decide(&acc_w, &acc_x).expect("decider failed");
-    println!("Decider: OK");
+fn warp_commitment_stable_for_same_index() {
+    let (r1cs, code, _, _) = setup();
+    let ix_a = warp_index(r1cs.clone(), code.clone(), 4, 4);
+    let ix_b = warp_index(r1cs, code, 4, 4);
+    assert_eq!(committed_index(&ix_a), committed_index(&ix_b));
 }
 
 #[test]
-fn warp_full_accumulation_cycle() {
+fn warp_commitment_changes_when_constraints_change() {
+    let (r1cs, code, _, _) = setup();
+    let changed_r1cs = changed_relation_same_dimensions(&r1cs);
+
+    let ix_a = warp_index(r1cs, code.clone(), 4, 4);
+    let ix_b = warp_index(changed_r1cs, code, 4, 4);
+
+    assert_ne!(committed_index(&ix_a), committed_index(&ix_b));
+}
+
+#[test]
+fn warp_commitment_changes_when_code_changes() {
+    let (r1cs, code, _, _) = setup();
+    let larger_code = ReedSolomon::new(ReedSolomonConfig::<Fp>::default(
+        r1cs.k,
+        r1cs.k.next_power_of_two() * 2,
+    ));
+
+    let ix_a = warp_index(r1cs.clone(), code, 4, 4);
+    let ix_b = warp_index(r1cs, larger_code, 4, 4);
+
+    assert_ne!(committed_index(&ix_a), committed_index(&ix_b));
+}
+
+#[test]
+fn warp_commitment_changes_when_config_changes() {
+    let (r1cs, code, _, _) = setup();
+    let ix_a = warp_index(r1cs.clone(), code.clone(), 4, 4);
+    let ix_b = warp_index(r1cs, code, 8, 4);
+
+    assert_ne!(committed_index(&ix_a), committed_index(&ix_b));
+}
+
+#[test]
+fn warp_commitment_changes_when_merkle_params_change() {
+    let (r1cs, code, _, _) = setup();
+    let ix_a = param_warp_index(r1cs.clone(), code.clone(), [1u8; 32], [2u8; 32]);
+    let ix_b = param_warp_index(r1cs, code, [3u8; 32], [2u8; 32]);
+
+    let ir = WarpReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, ParamMT>::new();
+    let (_, vk_a) = ir.index(&ix_a);
+    let (_, vk_b) = ir.index(&ix_b);
+
+    assert_ne!(vk_a.committed_index(), vk_b.committed_index());
+}
+
+#[test]
+fn proof_rejects_with_wrong_verifier_key_same_dimensions() {
     let (r1cs, code, instances, witnesses) = setup();
-    let l1 = instances.len();
+    let changed_r1cs = changed_relation_same_dimensions(&r1cs);
+    let (instance, witness) = warp_statement(instances, witnesses);
 
-    let warp_config = WARPConfig::new(l1, l1, 8, 7, r1cs.config(), code.code_len());
-    let warp =
-        WARP::<Fp, R1CS<Fp>, _, MT>::new(warp_config.clone(), code.clone(), r1cs.clone(), (), ());
+    let ix_a = warp_index(r1cs, code.clone(), 4, 4);
+    let ix_b = warp_index(changed_r1cs, code, 4, 4);
 
-    let pk = (r1cs.clone(), r1cs.m, r1cs.n, r1cs.k);
-    let vk = (r1cs.m, r1cs.n, r1cs.k);
-    let (empty_inst, empty_wit) = empty_acc();
+    let session = spongefish::session!("warp wrong verifier key test");
+    let narg_a = dsfs::preprocessing_non_interactive_reduction(
+        WarpReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new(),
+        Keccak::default(),
+    )
+    .prepare(&ix_a);
+    let narg_b = dsfs::preprocessing_non_interactive_reduction(
+        WarpReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new(),
+        Keccak::default(),
+    )
+    .prepare(&ix_b);
 
-    // Phase 1: bootstrap l1 proofs with empty accumulator to build up state
-    let mut acc_roots = vec![];
-    let mut acc_alphas = vec![];
-    let mut acc_mus = vec![];
-    let mut acc_taus = vec![];
-    let mut acc_xs = vec![];
-    let mut acc_etas = vec![];
-    let mut acc_tds = vec![];
-    let mut acc_f = vec![];
-    let mut acc_ws = vec![];
+    let (proof, _, _) = narg_a.prove(&session, &instance, &witness);
+    assert!(narg_b.verify(&session, &instance, &proof).is_err());
+}
 
-    for i in 0..l1 {
-        let mut prover_ch = make_prover();
-        let (acc_instance, acc_witness, _proof) = warp
-            .prove_with_channel(
-                &mut prover_ch,
-                &pk,
-                &instances,
-                &witnesses,
-                &empty_inst,
-                &empty_wit,
-            )
-            .expect("bootstrap prove failed");
+#[test]
+fn warp_instance_encoding_excludes_static_index_material() {
+    let (r1cs, code, instances, witnesses) = setup();
+    let changed_r1cs = changed_relation_same_dimensions(&r1cs);
+    let (instance, _) = warp_statement(instances, witnesses);
+    let ix_a = warp_index(r1cs, code.clone(), 4, 4);
+    let ix_b = warp_index(changed_r1cs, code, 4, 4);
 
-        acc_roots.push(acc_instance.0[0].clone());
-        acc_alphas.push(acc_instance.1[0].clone());
-        acc_mus.push(acc_instance.2[0]);
-        acc_taus.push(acc_instance.3 .0[0].clone());
-        acc_xs.push(acc_instance.3 .1[0].clone());
-        acc_etas.push(acc_instance.4[0]);
-
-        acc_tds.push(acc_witness.0.into_iter().next().unwrap());
-        acc_f.push(acc_witness.1.into_iter().next().unwrap());
-        acc_ws.push(acc_witness.2.into_iter().next().unwrap());
-
-        println!("Bootstrap proof {i}: OK");
-    }
-
-    // Phase 2: full accumulation proof with both fresh + accumulated instances
-    let full_acc_inst: AccumulatorInstances<Fp, MT> =
-        (acc_roots, acc_alphas, acc_mus, (acc_taus, acc_xs), acc_etas);
-    let full_acc_wit: AccumulatorWitnesses<Fp, MT> = (acc_tds, acc_f, acc_ws);
-
-    let l_full = 2 * l1;
-    let full_config =
-        WARPConfig::<_, R1CS<Fp>>::new(l_full, l1, 8, 7, r1cs.config(), code.code_len());
-    let warp_full =
-        WARP::<Fp, R1CS<Fp>, _, MT>::new(full_config, code.clone(), r1cs.clone(), (), ());
-
-    let mut prover_ch = make_prover();
-    let (acc_x, acc_w, proof) = warp_full
-        .prove_with_channel(
-            &mut prover_ch,
-            &pk,
-            &instances,
-            &witnesses,
-            &full_acc_inst,
-            &full_acc_wit,
-        )
-        .expect("full accumulation prove failed");
-
-    let narg_string = prover_ch.narg_string().to_vec();
-    println!("Full accumulation NARG string: {} bytes", narg_string.len());
-
-    // Verify
-    let mut verifier_ch = make_verifier(&narg_string);
-    warp_full
-        .verify_with_channel(&mut verifier_ch, vk, &acc_x, &proof)
-        .expect("full accumulation verification failed");
-    println!("Full accumulation verification: OK");
-
-    // Decide
-    warp_full
-        .decide(&acc_w, &acc_x)
-        .expect("full accumulation decider failed");
-    println!("Full accumulation decider: OK");
+    assert_ne!(committed_index(&ix_a), committed_index(&ix_b));
+    assert_eq!(instance.encode().as_ref(), instance.encode().as_ref());
 }
 
 #[test]
 fn warp_ir_dsfs_prove_verify() {
     let (r1cs, code, instances, witnesses) = setup();
-    let l1 = instances.len();
-
-    let warp_config = WARPConfig::new(l1, l1, 8, 7, r1cs.config(), code.code_len());
-    let warp = Arc::new(WARP::<Fp, R1CS<Fp>, _, MT>::new(
-        warp_config,
-        code,
-        r1cs.clone(),
-        (),
-        (),
-    ));
-
-    let ix = WARPIndex {
-        warp,
-        m: r1cs.m,
-        n: r1cs.n,
-        k: r1cs.k,
-    };
-    let (empty_inst, empty_wit) = empty_acc();
-
-    let instance = WARPInstance {
-        instances,
-        acc_instances: empty_inst,
-    };
-    let witness = WARPWitness {
-        witnesses,
-        acc_witnesses: empty_wit,
-    };
+    let (instance, witness) = warp_statement(instances, witnesses);
+    let ix = warp_index(r1cs, code, 4, 4);
 
     let session = spongefish::session!("warp IR test");
-    let ir = WARPReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
+    let ir = WarpReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
     let narg = dsfs::preprocessing_non_interactive_reduction(ir, Keccak::default()).prepare(&ix);
     let (proof, target_p, _target_w) = narg.prove(&session, &instance, &witness);
-    println!("IR NARG string: {} bytes", proof.len());
 
     let target = narg
         .verify(&session, &instance, &proof)
         .expect("IR verification failed");
-    let _ = target_p;
-
-    println!("IR verification: OK");
-    println!("  target root count: {}", target.acc_instance.0.len());
-    println!("  target alpha len: {}", target.acc_instance.1[0].len());
-
+    assert_eq!(target_p.acc_instance.0, target.acc_instance.0);
     assert_eq!(target.acc_instance.0.len(), 1, "should produce one root");
     assert_eq!(target.acc_instance.2.len(), 1, "should produce one mu");
     assert_eq!(target.acc_instance.4.len(), 1, "should produce one eta");
 }
 
 #[test]
-fn warp_full_ia_dsfs_prove_verify() {
+fn full_warp_uses_single_index() {
+    fn assert_single_index<
+        T: PreprocessingCore<Index = WarpIndex<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>>,
+    >(
+        _: &T,
+    ) {
+    }
+
+    let full = FullWarp::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default();
+    assert_single_index(&full);
+}
+
+#[test]
+fn full_warp_dsfs_roundtrip() {
     let (r1cs, code, instances, witnesses) = setup();
-    let l1 = instances.len();
+    let (instance, witness) = warp_statement(instances, witnesses);
+    let ix = warp_index(r1cs, code, 4, 4);
 
-    let warp_config = WARPConfig::new(l1, l1, 8, 7, r1cs.config(), code.code_len());
-    let warp = Arc::new(WARP::<Fp, R1CS<Fp>, _, MT>::new(
-        warp_config,
-        code,
-        r1cs.clone(),
-        (),
-        (),
-    ));
-
-    let ix = WARPIndex {
-        warp,
-        m: r1cs.m,
-        n: r1cs.n,
-        k: r1cs.k,
-    };
-    let (empty_inst, empty_wit) = empty_acc();
-
-    let instance = WARPInstance {
-        instances,
-        acc_instances: empty_inst,
-    };
-    let witness = WARPWitness {
-        witnesses,
-        acc_witnesses: empty_wit,
-    };
-
-    let session = spongefish::session!("warp FullWARP test");
-    let reduction = WARPReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
-    let full =
-        FullWARP::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new(reduction, WARPDeciderIA::default());
-    // Composed `FullWARP` is an indexed IA with `Index = (WARPIndex,
-    // WARPIndex)` — both components currently share the same index. Folding
-    // into a single `WARPIndex` for FullWARP is a future cleanup.
-    let narg = dsfs::preprocessing_non_interactive_argument(full, Keccak::default())
-        .prepare(&(ix.clone(), ix));
+    let session = spongefish::session!("warp FullWarp test");
+    let full = FullWarp::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new(
+        WarpReduction::new(),
+        WarpDecider::default(),
+    );
+    let narg = dsfs::preprocessing_non_interactive_argument(full, Keccak::default()).prepare(&ix);
     let proof = narg.prove(&session, &instance, &witness);
-    println!("FullWARP NARG string: {} bytes", proof.len());
 
     narg.verify(&session, &instance, &proof)
-        .expect("FullWARP verification failed");
-
-    println!("FullWARP verification: OK");
+        .expect("FullWarp verification failed");
 }

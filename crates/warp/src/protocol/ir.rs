@@ -1,36 +1,87 @@
 use std::marker::PhantomData;
+use std::sync::Arc;
 
 use ark_codes::traits::LinearCode;
 use ark_crypto_primitives::merkle_tree::{Config, MerkleTree};
 use ark_ff::{Field, PrimeField};
 use ark_poly::{DenseMultilinearExtension, Polynomial};
+use ark_serialize::CanonicalSerialize;
 use ark_std::log2;
 
 use ia_core::{
-    CommittedIndexBytes, PreprocessingArgumentSecurity, PreprocessingReductionSecurity,
-    ProverChannel, ReducedArgument, SecurityErrorBound, SecurityProfile, VerificationResult,
-    VerifierChannel, VerifierKeyCommitment,
+    ArgumentCore, CommittedIndexBytes, PreprocessingArgumentSecurity, PreprocessingCore,
+    PreprocessingInteractiveArgument, PreprocessingInteractiveReduction,
+    PreprocessingReductionSecurity, ProtocolCore, ProverChannel, SecurityErrorBound,
+    SecurityProfile, VerificationResult, VerifierChannel, VerifierKeyCommitment,
 };
 
+use crate::protocol::commitment::committed_index_for;
 use crate::protocol::warp::{
-    DeciderInstance, DeciderWitness, WARPIndex, WARPInstance, WARPProverKey, WARPVerifierKey,
-    WARPWitness,
+    DeciderInstance, DeciderWitness, WarpDimensions, WarpIndex, WarpInstance, WarpProverKey,
+    WarpStaticMaterial, WarpVerifierKey, WarpWitness,
 };
 use crate::relations::r1cs::R1CSConstraints;
 use crate::relations::BundledPESAT;
 use crate::utils::poly::{eq_poly, Hypercube};
 
-// -----------------------------------------------------------------------
-// VerifierKeyCommitment
-// -----------------------------------------------------------------------
+fn indexed_material<F, P, C, MT>(
+    ix: &WarpIndex<F, P, C, MT>,
+) -> (Arc<WarpStaticMaterial<F, P, C, MT>>, WarpDimensions)
+where
+    F: Field,
+    P: Clone + BundledPESAT<F, Config = (usize, usize, usize)>,
+    C: LinearCode<F> + Clone,
+    MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
+{
+    let (m, n, k) = ix.relation.config();
+    let dimensions = WarpDimensions::new(m, n, k);
+    let material = Arc::new(WarpStaticMaterial::new(
+        ix.config.clone(),
+        ix.code.clone(),
+        ix.relation.clone(),
+        ix.merkle_params.clone(),
+    ));
+    (material, dimensions)
+}
 
-/// Tag prefixed to the canonical bytes returned by
-/// [`WARPVerifierKey::committed_index`]. Distinct from any other Argus tag
-/// so the prepared DSFS transcript cannot confuse a WARP verifier index with
-/// some other preprocessing protocol's commitment.
-const WARP_VK_COMMIT_TAG: &[u8] = b"argus:warp:vk:v1";
+fn prover_key<F, P, C, MT>(
+    material: Arc<WarpStaticMaterial<F, P, C, MT>>,
+    dimensions: WarpDimensions,
+) -> WarpProverKey<F, P, C, MT>
+where
+    F: Field,
+    P: BundledPESAT<F>,
+    C: LinearCode<F> + Clone,
+    MT: Config,
+{
+    WarpProverKey {
+        material,
+        dimensions,
+    }
+}
 
-impl<F, P, C, MT> VerifierKeyCommitment for WARPVerifierKey<F, P, C, MT>
+fn verifier_key<F, P, C, MT>(
+    material: Arc<WarpStaticMaterial<F, P, C, MT>>,
+    dimensions: WarpDimensions,
+) -> WarpVerifierKey<F, P, C, MT>
+where
+    F: Field,
+    P: BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
+    C: LinearCode<F> + Clone + CanonicalSerialize,
+    MT: Config<Leaf = [F]>,
+    <MT::LeafHash as ark_crypto_primitives::crh::CRHScheme>::Parameters: CanonicalSerialize,
+    <MT::TwoToOneHash as ark_crypto_primitives::crh::TwoToOneCRHScheme>::Parameters:
+        CanonicalSerialize,
+{
+    let commitment = committed_index_for(&material, dimensions);
+    WarpVerifierKey {
+        material,
+        dimensions,
+        commitment,
+    }
+}
+
+impl<F, P, C, MT> VerifierKeyCommitment for WarpVerifierKey<F, P, C, MT>
 where
     F: Field,
     P: BundledPESAT<F>,
@@ -38,28 +89,19 @@ where
     MT: Config,
 {
     fn committed_index(&self) -> CommittedIndexBytes {
-        // v1: canonical bytes of the verifier-visible dimensions only. CY24
-        // §32.7.1 prescribes binding to a Merkle commitment of the encoded
-        // verifier-index oracles (matrix roots); add that once WARP carries
-        // those oracles in the verifier key.
-        let mut out = Vec::with_capacity(WARP_VK_COMMIT_TAG.len() + 3 * 8);
-        out.extend_from_slice(WARP_VK_COMMIT_TAG);
-        out.extend_from_slice(&(self.m as u64).to_le_bytes());
-        out.extend_from_slice(&(self.n as u64).to_le_bytes());
-        out.extend_from_slice(&(self.k as u64).to_le_bytes());
-        CommittedIndexBytes::new(out)
+        self.commitment.clone()
     }
 }
 
 // -----------------------------------------------------------------------
-// WARPReduction: the full IOR as a single PreprocessingInteractiveReduction
+// WarpReduction: the full IOR as a single PreprocessingInteractiveReduction
 // -----------------------------------------------------------------------
 
-pub struct WARPReduction<F, P, C, MT> {
+pub struct WarpReduction<F, P, C, MT> {
     _phantom: PhantomData<(F, P, C, MT)>,
 }
 
-impl<F, P, C, MT> WARPReduction<F, P, C, MT> {
+impl<F, P, C, MT> WarpReduction<F, P, C, MT> {
     pub fn new() -> Self {
         Self {
             _phantom: PhantomData,
@@ -67,7 +109,7 @@ impl<F, P, C, MT> WARPReduction<F, P, C, MT> {
     }
 }
 
-impl<F, P, C, MT> Default for WARPReduction<F, P, C, MT> {
+impl<F, P, C, MT> Default for WarpReduction<F, P, C, MT> {
     fn default() -> Self {
         Self::new()
     }
@@ -80,7 +122,7 @@ impl<F, P, C, MT> Default for WARPReduction<F, P, C, MT> {
 /// not per-claim. The instance-derived security params are empty under the
 /// current analysis.
 #[derive(Clone, Debug)]
-pub struct WARPSecurityParams {
+pub struct WarpSecurityParams {
     /// Number of twin-sumcheck folding rounds (= log2 of total instance count l).
     pub log_l: usize,
     /// Number of batching-sumcheck rounds (= log2 of codeword length n).
@@ -93,18 +135,18 @@ pub struct WARPSecurityParams {
     pub k: usize,
     /// Approximate bit-length of the field size: |F| ≈ 2^field_bits.
     pub field_bits: u32,
-    /// Number of OOD samples s (from `WARPConfig.s`).
+    /// Number of OOD samples s (from `WarpConfig.s`).
     pub ood_samples: usize,
-    /// Number of shift queries t (from `WARPConfig.t`).
+    /// Number of shift queries t (from `WarpConfig.t`).
     pub shift_queries: usize,
 }
 
 /// Worst-case/adaptive WARP bound. For now this mirrors the concrete parameter
 /// shape, with each field interpreted as a maximum over the instance family.
-pub type WARPSecurityBound = WARPSecurityParams;
+pub type WarpSecurityBound = WarpSecurityParams;
 
 ia_core::impl_preprocessing_reduction! {
-impl<F, P, C, MT> PreprocessingInteractiveReduction for WARPReduction<F, P, C, MT>
+impl<F, P, C, MT> PreprocessingInteractiveReduction for WarpReduction<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -114,36 +156,31 @@ where
         + spongefish::Decoding
         + ia_core::Deserialize,
     P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
-    C: LinearCode<F> + Clone,
+    C: LinearCode<F> + Clone + CanonicalSerialize,
     MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
+    <MT::LeafHash as ark_crypto_primitives::crh::CRHScheme>::Parameters: CanonicalSerialize,
+    <MT::TwoToOneHash as ark_crypto_primitives::crh::TwoToOneCRHScheme>::Parameters:
+        CanonicalSerialize,
 {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"argus::warp::reduction")
     }
 
-    type SourceInstance = WARPInstance<F, MT>;
+    type SourceInstance = WarpInstance<F, MT>;
     type TargetInstance = DeciderInstance<F, MT>;
-    type SourceWitness = WARPWitness<F, MT>;
+    type SourceWitness = WarpWitness<F, MT>;
     type TargetWitness = DeciderWitness<F, MT>;
 
-    type Index = WARPIndex<F, P, C, MT>;
-    type ProverKey = WARPProverKey<F, P, C, MT>;
-    type VerifierKey = WARPVerifierKey<F, P, C, MT>;
+    type Index = WarpIndex<F, P, C, MT>;
+    type ProverKey = WarpProverKey<F, P, C, MT>;
+    type VerifierKey = WarpVerifierKey<F, P, C, MT>;
 
     fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
-        let pk = WARPProverKey {
-            warp: ix.warp.clone(),
-            m: ix.m,
-            n: ix.n,
-            k: ix.k,
-        };
-        let vk = WARPVerifierKey {
-            warp: ix.warp.clone(),
-            m: ix.m,
-            n: ix.n,
-            k: ix.k,
-        };
-        (pk, vk)
+        let (material, dimensions) = indexed_material(ix);
+        (
+            prover_key(material.clone(), dimensions),
+            verifier_key(material, dimensions),
+        )
     }
 
     fn prove<Ch: ProverChannel>(
@@ -153,15 +190,11 @@ where
         instance: &Self::SourceInstance,
         witness: &Self::SourceWitness,
     ) -> (DeciderInstance<F, MT>, DeciderWitness<F, MT>) {
-        let warp = &pk.warp;
-        // WARP::prove_with_channel still takes the (P, M, N, k) tuple. Build
-        // it from the prover key.
-        let pk_tuple = (warp.p.clone(), pk.m, pk.n, pk.k);
-
-        let (acc_instance, acc_witness, _proof_data) = warp
+        let (acc_instance, acc_witness, _proof_data) = pk
+            .material
             .prove_with_channel(
                 ch,
-                &pk_tuple,
+                pk,
                 &instance.instances,
                 &witness.witnesses,
                 &instance.acc_instances,
@@ -179,11 +212,9 @@ where
         vk: &Self::VerifierKey,
         _instance: &Self::SourceInstance,
     ) -> VerificationResult<DeciderInstance<F, MT>> {
-        let warp = &vk.warp;
-        let dims = (vk.m, vk.n, vk.k);
-
-        let result = warp
-            .verify_reduction_transcript(ch, dims)
+        let result = vk
+            .material
+            .verify_reduction_transcript(ch, vk)
             .map_err(|_| ia_core::VerificationError)?;
 
         Ok(DeciderInstance {
@@ -193,7 +224,7 @@ where
 }
 }
 
-impl<F, P, C, MT> PreprocessingReductionSecurity for WARPReduction<F, P, C, MT>
+impl<F, P, C, MT> PreprocessingReductionSecurity for WarpReduction<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -203,11 +234,14 @@ where
         + spongefish::Decoding
         + ia_core::Deserialize,
     P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
-    C: LinearCode<F> + Clone,
+    C: LinearCode<F> + Clone + CanonicalSerialize,
     MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
+    <MT::LeafHash as ark_crypto_primitives::crh::CRHScheme>::Parameters: CanonicalSerialize,
+    <MT::TwoToOneHash as ark_crypto_primitives::crh::TwoToOneCRHScheme>::Parameters:
+        CanonicalSerialize,
 {
-    type IndexParams = WARPSecurityParams;
-    type IndexBound = WARPSecurityBound;
+    type IndexParams = WarpSecurityParams;
+    type IndexBound = WarpSecurityBound;
     // Instance-derived security is empty under the current analysis: every
     // soundness term is a function of dimensions / code params / OOD/shift
     // counts, all index-derived.
@@ -216,17 +250,17 @@ where
     type TargetBound = ();
 
     fn index_security_params(&self, ix: &Self::Index) -> Self::IndexParams {
-        let warp = &ix.warp;
-        let n = warp.code.code_len();
-        WARPSecurityParams {
-            log_l: log2(warp.config.l) as usize,
+        let (m, _, _) = ix.relation.config();
+        let n = ix.code.code_len();
+        WarpSecurityParams {
+            log_l: log2(ix.config.l) as usize,
             log_n: log2(n) as usize,
-            log_m: log2(ix.m) as usize,
+            log_m: log2(m) as usize,
             n,
-            k: warp.code.message_len(),
+            k: ix.code.message_len(),
             field_bits: F::MODULUS_BIT_SIZE,
-            ood_samples: warp.config.s,
-            shift_queries: warp.config.t,
+            ood_samples: ix.config.s,
+            shift_queries: ix.config.t,
         }
     }
 
@@ -279,7 +313,7 @@ where
     }
 }
 
-fn warp_security_profile(params: &WARPSecurityParams) -> SecurityProfile {
+fn warp_security_profile(params: &WarpSecurityParams) -> SecurityProfile {
     // Security bounds follow eprint 2025/753.
     //
     // Twin sumcheck (log_l rounds, §6.1–6.2):
@@ -353,25 +387,24 @@ fn warp_security_profile(params: &WARPSecurityParams) -> SecurityProfile {
 }
 
 // -----------------------------------------------------------------------
-// WARPDeciderIA: the decider as an PreprocessingInteractiveArgument
+// WarpDecider: the decider as an PreprocessingInteractiveArgument
 //
 // The decider has no prover-side preprocessing of its own (`ProverKey =
-// ()`), but it reads warp.code / merkle params / p.evaluate_bundled from
-// the verifier key. Index and verifier key are the same shapes as the
-// reduction's, so a composed `ReducedArgument<WARPReduction, WARPDeciderIA>`
-// can take an `(WARPIndex, WARPIndex)` pair.
+// ()`), but it reads code / Merkle params / relation checks from the verifier
+// key. `FullWarp` below shares the same verifier key between the reduction and
+// decider, so callers prepare it with one `WarpIndex`.
 // -----------------------------------------------------------------------
 
-pub struct WARPDeciderIA<F, P, C, MT>(pub PhantomData<(F, P, C, MT)>);
+pub struct WarpDecider<F, P, C, MT>(pub PhantomData<(F, P, C, MT)>);
 
-impl<F, P, C, MT> Default for WARPDeciderIA<F, P, C, MT> {
+impl<F, P, C, MT> Default for WarpDecider<F, P, C, MT> {
     fn default() -> Self {
         Self(PhantomData)
     }
 }
 
 ia_core::impl_preprocessing_argument! {
-impl<F, P, C, MT> PreprocessingInteractiveArgument for WARPDeciderIA<F, P, C, MT>
+impl<F, P, C, MT> PreprocessingInteractiveArgument for WarpDecider<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -381,8 +414,11 @@ where
         + spongefish::Decoding
         + ia_core::Deserialize,
     P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
-    C: LinearCode<F> + Clone,
+    C: LinearCode<F> + Clone + CanonicalSerialize,
     MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
+    <MT::LeafHash as ark_crypto_primitives::crh::CRHScheme>::Parameters: CanonicalSerialize,
+    <MT::TwoToOneHash as ark_crypto_primitives::crh::TwoToOneCRHScheme>::Parameters:
+        CanonicalSerialize,
 {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"argus::warp::decider")
@@ -391,18 +427,13 @@ where
     type Instance = DeciderInstance<F, MT>;
     type Witness = DeciderWitness<F, MT>;
 
-    type Index = WARPIndex<F, P, C, MT>;
+    type Index = WarpIndex<F, P, C, MT>;
     type ProverKey = ();
-    type VerifierKey = WARPVerifierKey<F, P, C, MT>;
+    type VerifierKey = WarpVerifierKey<F, P, C, MT>;
 
     fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
-        let vk = WARPVerifierKey {
-            warp: ix.warp.clone(),
-            m: ix.m,
-            n: ix.n,
-            k: ix.k,
-        };
-        ((), vk)
+        let (material, dimensions) = indexed_material(ix);
+        ((), verifier_key(material, dimensions))
     }
 
     fn prove<Ch: ProverChannel>(
@@ -427,9 +458,9 @@ where
         vk: &Self::VerifierKey,
         instance: &Self::Instance,
     ) -> VerificationResult<()> {
-        let warp = &vk.warp;
+        let material = &vk.material;
         let (rt, alpha, mu, beta, eta) = &instance.acc_instance;
-        let n = warp.code.code_len();
+        let n = material.code.code_len();
         let log_n = log2(n) as usize;
 
         let mut f = vec![F::default(); n];
@@ -437,15 +468,15 @@ where
             *val = ch.read_prover_message()?;
         }
 
-        let k = warp.config.p_conf.2;
+        let k = material.config.p_conf.2;
         let mut w = vec![F::default(); k];
         for val in w.iter_mut() {
             *val = ch.read_prover_message()?;
         }
 
         let computed_mt = MerkleTree::<MT>::new(
-            &warp.mt_leaf_hash_params,
-            &warp.mt_two_to_one_hash_params,
+            &material.merkle_params.leaf_hash,
+            &material.merkle_params.two_to_one_hash,
             f.chunks(1).collect::<Vec<_>>(),
         )
         .map_err(|_| ia_core::VerificationError)?;
@@ -465,15 +496,15 @@ where
 
         let mut z = beta.1[0].clone();
         z.extend(w.clone());
-        let computed_eta = warp
-            .p
+        let computed_eta = material
+            .relation
             .evaluate_bundled(&tau_zero_evader, &z)
             .map_err(|_| ia_core::VerificationError)?;
         if computed_eta != eta[0] {
             return Err(ia_core::VerificationError);
         }
 
-        let computed_f = warp.code.encode(&w);
+        let computed_f = material.code.encode(&w);
         if f != computed_f {
             return Err(ia_core::VerificationError);
         }
@@ -483,7 +514,7 @@ where
 }
 }
 
-impl<F, P, C, MT> PreprocessingArgumentSecurity for WARPDeciderIA<F, P, C, MT>
+impl<F, P, C, MT> PreprocessingArgumentSecurity for WarpDecider<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -493,8 +524,11 @@ where
         + spongefish::Decoding
         + ia_core::Deserialize,
     P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
-    C: LinearCode<F> + Clone,
+    C: LinearCode<F> + Clone + CanonicalSerialize,
     MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
+    <MT::LeafHash as ark_crypto_primitives::crh::CRHScheme>::Parameters: CanonicalSerialize,
+    <MT::TwoToOneHash as ark_crypto_primitives::crh::TwoToOneCRHScheme>::Parameters:
+        CanonicalSerialize,
 {
     type IndexParams = ();
     type IndexBound = ();
@@ -548,15 +582,103 @@ fn decider_security_profile() -> SecurityProfile {
 }
 
 // -----------------------------------------------------------------------
-// FullWARP = ReducedArgument<WARPReduction, WARPDeciderIA>  (IR . IA -> IA)
+// FullWarp: first-class single-index WARP argument
 // -----------------------------------------------------------------------
-//
-// Both components are indexed, so `FullWARP` implements
-// `PreprocessingInteractiveArgument` via the composition impl in
-// `ia_core`'s interactive preprocessing layer. The composed `Index` is
-// `(WARPIndex, WARPIndex)` — callers pass the same index twice for now.
-// Folding into a single `WARPIndex` for the composed `FullWARP` is a future
-// cleanup.
 
-pub type FullWARP<F, P, C, MT> =
-    ReducedArgument<WARPReduction<F, P, C, MT>, WARPDeciderIA<F, P, C, MT>>;
+pub struct FullWarp<F, P, C, MT> {
+    reduction: WarpReduction<F, P, C, MT>,
+    decider: WarpDecider<F, P, C, MT>,
+}
+
+impl<F, P, C, MT> FullWarp<F, P, C, MT> {
+    pub fn new(reduction: WarpReduction<F, P, C, MT>, decider: WarpDecider<F, P, C, MT>) -> Self {
+        Self { reduction, decider }
+    }
+}
+
+impl<F, P, C, MT> Default for FullWarp<F, P, C, MT> {
+    fn default() -> Self {
+        Self::new(WarpReduction::new(), WarpDecider::default())
+    }
+}
+
+impl<F, P, C, MT> ProtocolCore for FullWarp<F, P, C, MT> {
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        ia_core::pad_protocol_id(b"argus::warp::full")
+    }
+}
+
+impl<F, P, C, MT> ArgumentCore for FullWarp<F, P, C, MT>
+where
+    F: Field,
+    P: BundledPESAT<F>,
+    C: LinearCode<F> + Clone,
+    MT: Config,
+{
+    type Instance = WarpInstance<F, MT>;
+    type Witness = WarpWitness<F, MT>;
+}
+
+impl<F, P, C, MT> PreprocessingCore for FullWarp<F, P, C, MT>
+where
+    F: Field
+        + PrimeField
+        + Send
+        + Sync
+        + spongefish::Encoding
+        + spongefish::Decoding
+        + ia_core::Deserialize,
+    P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
+    C: LinearCode<F> + Clone + CanonicalSerialize,
+    MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
+    <MT::LeafHash as ark_crypto_primitives::crh::CRHScheme>::Parameters: CanonicalSerialize,
+    <MT::TwoToOneHash as ark_crypto_primitives::crh::TwoToOneCRHScheme>::Parameters:
+        CanonicalSerialize,
+{
+    type Index = WarpIndex<F, P, C, MT>;
+    type ProverKey = WarpProverKey<F, P, C, MT>;
+    type VerifierKey = WarpVerifierKey<F, P, C, MT>;
+
+    fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+        self.reduction.index(ix)
+    }
+}
+
+impl<F, P, C, MT> PreprocessingInteractiveArgument for FullWarp<F, P, C, MT>
+where
+    F: Field
+        + PrimeField
+        + Send
+        + Sync
+        + spongefish::Encoding
+        + spongefish::Decoding
+        + ia_core::Deserialize,
+    P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
+    C: LinearCode<F> + Clone + CanonicalSerialize,
+    MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
+    <MT::LeafHash as ark_crypto_primitives::crh::CRHScheme>::Parameters: CanonicalSerialize,
+    <MT::TwoToOneHash as ark_crypto_primitives::crh::TwoToOneCRHScheme>::Parameters:
+        CanonicalSerialize,
+{
+    fn prove<Ch: ProverChannel>(
+        &self,
+        ch: &mut Ch,
+        pk: &Self::ProverKey,
+        instance: &Self::Instance,
+        witness: &Self::Witness,
+    ) {
+        let (target_instance, target_witness) = self.reduction.prove(ch, pk, instance, witness);
+        self.decider
+            .prove(ch, &(), &target_instance, &target_witness);
+    }
+
+    fn verify<Ch: VerifierChannel>(
+        &self,
+        ch: &mut Ch,
+        vk: &Self::VerifierKey,
+        instance: &Self::Instance,
+    ) -> VerificationResult<()> {
+        let target_instance = self.reduction.verify(ch, vk, instance)?;
+        self.decider.verify(ch, vk, &target_instance)
+    }
+}

@@ -7,9 +7,9 @@ pub mod types;
 pub mod utils;
 
 pub use protocol::ir::{
-    FullWARP, WARPDeciderIA, WARPReduction, WARPSecurityBound, WARPSecurityParams,
+    FullWarp, WarpDecider, WarpReduction, WarpSecurityBound, WarpSecurityParams,
 };
 pub use protocol::warp::{
-    DeciderInstance, DeciderWitness, WARPIndex, WARPInstance, WARPProverKey, WARPVerifierKey,
-    WARPWitness, WARP,
+    DeciderInstance, DeciderWitness, WarpDimensions, WarpIndex, WarpInstance, WarpMerkleParams,
+    WarpProverKey, WarpVerifierKey, WarpWitness,
 };

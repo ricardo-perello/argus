@@ -15,14 +15,14 @@ instance.
 ```
 crates/warp/
   src/
-    lib.rs              -- module declarations, re-exports (FullWARP, WARPReduction, WARPDeciderIA)
-    config.rs           -- WARPConfig (l, l1, s, t, etc.)
+    lib.rs              -- module declarations, re-exports (FullWarp, WarpReduction, WarpDecider)
+    config.rs           -- WarpConfig (l, l1, s, t, etc.)
     errors.rs           -- WARPError, WARPProverError, WARPVerifierError, WARPDeciderError
     types.rs            -- all intermediate instance/witness types
     protocol/
       mod.rs            -- sub-module declarations
-      warp.rs           -- WARP struct, prove/verify/decide, Encoding, DeciderInstance
-      ir.rs             -- WARPReduction (IR), WARPDeciderIA (IA), FullWARP type alias
+      warp.rs           -- indexed material, keys, instance/witness encoding, protocol engine
+      ir.rs             -- WarpReduction (IR), WarpDecider (IA), FullWarp single-index IA
       twin_sumcheck.rs  -- twin constraint pseudo-batching sumcheck (prover + verifier)
       batching_sumcheck.rs -- inner product sumcheck / CBBZ23 (prover + verifier)
     relations/
@@ -57,7 +57,8 @@ Each claim then takes:
 - `l1` fresh R1CS instances and witnesses
 - `l2 = l - l1` previously accumulated instances and witnesses from prior WARP runs
 
-The protocol has five phases, all implemented inside a single `WARP` struct:
+The protocol has five phases, implemented by an internal `WarpStaticMaterial`
+engine derived from `WarpIndex` during preprocessing:
 
 ### Phase 1: Parse and Commit
 
@@ -101,29 +102,41 @@ All channel operations go through `ia_core::ProverChannel` / `ia_core::VerifierC
 WARP is expressed as two composable preprocessing components using the `ia-core`
 traits:
 
-- **`WARPReduction`** (`PreprocessingInteractiveReduction`): The full IOR -- runs
+- **`WarpReduction`** (`PreprocessingInteractiveReduction`): The full IOR -- runs
   all five phases of the protocol (parse/commit, twin sumcheck, commit/sample,
   batching sumcheck) and produces a target `AccumulatorInstances`. The prover
-  receives `WARPProverKey`; the verifier receives `WARPVerifierKey`.
+  receives `WarpProverKey`; the verifier receives `WarpVerifierKey`.
+  `WarpVerifierKey::committed_index()` binds a compact digest of the static
+  verifier-side material -- dimensions, WARP configuration, code parameters,
+  Merkle hash parameters, and R1CS constraint matrices -- before DSFS derives
+  any challenges.
 
-- **`WARPDeciderIA`** (`PreprocessingInteractiveArgument`): The decider as a
+- **`WarpDecider`** (`PreprocessingInteractiveArgument`): The decider as a
   preprocessing IA -- the prover sends the accumulated codeword and witness through
   the channel; the verifier reads them back, reconstructs the Merkle tree, and
   checks code consistency, PESAT evaluation, and encoding correctness.
 
-These are composed via `ReducedArgument` (IR . IA -> IA):
+The full argument is a first-class preprocessing IA:
 
 ```rust
-type FullWARP<F, P, C, MT> = ReducedArgument<WARPReduction<F, P, C, MT>, WARPDeciderIA<F, P, C, MT>>;
+struct FullWarp<F, P, C, MT> { /* WarpReduction + WarpDecider */ }
 ```
 
-This gives a single `PreprocessingInteractiveArgument` that can be prepared and then
-compiled through DSFS:
+Unlike the generic composition adapter, `FullWarp` has a single
+`Index = WarpIndex<...>`. The reduction and decider share one verifier key and
+one verifier-key commitment:
 
 ```rust
-let full = FullWARP::<Fp, R1CS<Fp>, RS, MT>::default();
+let warp_index = WarpIndex::new(
+    WarpConfig::new(l, l1, s, t, r1cs.config(), code.code_len()),
+    r1cs,
+    code,
+    WarpMerkleParams::new(leaf_hash_params, two_to_one_hash_params),
+);
+
+let full = FullWarp::<Fp, R1CS<Fp>, RS, MT>::default();
 let prepared = spongefish_dsfs::preprocessing_non_interactive_argument(full, spongefish_dsfs::Keccak::default())
-    .prepare(&(warp_index.clone(), warp_index));
+    .prepare(&warp_index);
 
 let proof = prepared.prove(&session, &instance, &witness);
 prepared.verify(&session, &instance, &proof)?;
@@ -132,7 +145,7 @@ prepared.verify(&session, &instance, &proof)?;
 The reduction can also be used standalone for IOR-level verification:
 
 ```rust
-let reduction = WARPReduction::<Fp, R1CS<Fp>, RS, MT>::new();
+let reduction = WarpReduction::<Fp, R1CS<Fp>, RS, MT>::new();
 let prepared = spongefish_dsfs::preprocessing_non_interactive_reduction(reduction, spongefish_dsfs::Keccak::default())
     .prepare(&warp_index);
 
@@ -141,23 +154,40 @@ let verified_target = prepared.verify(&session, &instance, &proof)?;
 // target.acc_instance is the new AccumulatorInstances
 ```
 
-### Merkle path verification (BCS layer)
+### Index commitment and instance separation
 
-Merkle auth-path verification is separate from the IR/IA composition. The IR verifier handles only transcript-based checks (sumchecks, consistency equations). Oracle opening proofs are verified by `WARP::verify_merkle_paths`, matching the IOR/BCS separation where the IOR handles the interactive protocol and the commitment scheme handles oracle openings.
+The old standalone WARP code absorbed static relation material during
+`index(...)`. In Argus, protocol code cannot touch the transcript, so that setup
+binding is represented by `WarpVerifierKey::committed_index()`.
 
-### Low-level API
+`WarpIndex` contains the static relation/config/code/Merkle data. Indexing
+derives:
 
-The `WARP` struct still exposes `prove_with_channel`, `verify_with_channel`, and `decide` for direct use:
+- `WarpProverKey`: prover-side static material.
+- `WarpVerifierKey`: verifier-side static material plus a derived commitment.
 
-```rust
-impl WARP<F, P, C, MT> {
-    pub fn prove_with_channel<Ch: ProverChannel>(...) -> Result<(AccumulatorInstances, AccumulatorWitnesses, WARPProofData), ...>;
-    pub fn verify_reduction_transcript<Ch: VerifierChannel>(...) -> Result<ReductionTranscriptResult, ...>;
-    pub fn verify_merkle_paths(...) -> Result<(), ...>;
-    pub fn verify_with_channel<Ch: VerifierChannel>(...) -> Result<(), ...>;
-    pub fn decide(...) -> Result<(), ...>;
+The verifier-key commitment binds dimensions, WARP configuration, code material,
+Merkle hash parameters, and the R1CS matrices with explicit tags and
+length-delimited fields. `WarpInstance` contains only per-claim instances and
+accumulator instances. Prepared DSFS absorbs:
+
+```text
+IndexedInstanceRef {
+    committed_index: vk.committed_index(),
+    instance: &WarpInstance,
 }
 ```
+
+before any challenge. Static index material is never smuggled through the
+instance just to make the transcript see it.
+
+### Merkle path verification (BCS layer)
+
+Merkle auth-path verification remains separate from the IR/IA composition. The
+IR verifier handles transcript-based checks (sumchecks, consistency equations).
+The internal protocol engine still contains the oracle-opening checks used by
+the full verifier path, matching the IOR/BCS separation where the IOR handles
+the interactive protocol and the commitment scheme handles oracle openings.
 
 ## Dependencies
 
@@ -178,24 +208,24 @@ The `ark-crypto-primitives` dependency uses a [patched fork](https://github.com/
 
 ## Security profile (PreprocessingReductionSecurity)
 
-`WARPReduction` implements `PreprocessingReductionSecurity` with bounds from eprint 2025/753.
+`WarpReduction` implements `PreprocessingReductionSecurity` with bounds from eprint 2025/753.
 Both the Schwartz-Zippel per-round errors and the code-specific one-time terms
 (errPG, OOD sampling, shift sampling, PESAT→code) are included.
 
 ### Construction
 
-`WARPReduction::new()` carries no duplicated security fields. The instance-aware
-security API derives `WARPSecurityParams` from the source `WARPInstance`:
+`WarpReduction::new()` carries no duplicated security fields. The instance-aware
+security API derives `WarpSecurityParams` from the source `WarpInstance`:
 
 ```rust
-let ir = WARPReduction::new();
+let ir = WarpReduction::new();
 let ix_params = ir.index_security_params(&warp_index);
 let profile = ir.profile_for_source_params(&ix_params, &());
 ```
 
 The derived parameters include `log_l`, `log_n`, `log_m`, Reed-Solomon code
-parameters, `WARPConfig.s`, and `WARPConfig.t`. Worst-case/adaptive evaluation
-uses the same `WARPSecurityBound` shape, interpreted as maxima over the instance
+parameters, `WarpConfig.s`, and `WarpConfig.t`. Worst-case/adaptive evaluation
+uses the same `WarpSecurityBound` shape, interpreted as maxima over the instance
 family.
 
 ### Round structure
@@ -233,7 +263,7 @@ the SR adversary budget; they are placed in `plain_soundness_error`:
 |Λ(C,δ)| · log_m / |F|    (PESAT→code reduction, §5.2)
 ```
 
-`WARPSecurityParams` carries the raw Reed-Solomon parameters (`n`, `k`, `field_bits`); `warp_security_profile` derives the bounds inline:
+`WarpSecurityParams` carries the raw Reed-Solomon parameters (`n`, `k`, `field_bits`); `warp_security_profile` derives the bounds inline:
 - δ = 1 − k/n
 - |Λ(C, δ)| ≤ n  (conservative; TODO: tighten via Johnson bound)
 - err_PG(C, 2, δ) ≤ 3 · n² / |F|  (BCIKS20 bound, degree 2)
@@ -245,7 +275,7 @@ Whether the OOD/shift/PESAT terms should be in `plain_soundness_error` or
 the commitment phase. The current placement (non-SR) matches the intuition that
 these are binding-style terms, not per-round protocol moves. Pending Chiesa Q2.
 
-`WARPDeciderIA` has no public-coin rounds (deterministic local check) -- all its
+`WarpDecider` has no public-coin rounds (deterministic local check) -- all its
 error bounds are zero.
 
 ---
@@ -258,16 +288,26 @@ The `efficient-sumcheck` dependency from the original code was removed entirely.
 
 ## Tests
 
-Four integration tests in `tests/warp_test.rs`:
+Eleven integration tests in `tests/warp_test.rs`:
 
-- `warp_bootstrap_prove_verify_decide` -- single proof with empty accumulator (l1=4 fresh instances, l2=0 accumulated). Proves, verifies via NARG string replay, runs decider.
-- `warp_full_accumulation_cycle` -- runs 4 bootstrap proofs to build up accumulated state, then a full proof with l1=4 fresh + l2=4 accumulated instances (l=8). Proves, verifies, decides.
-- `warp_ir_dsfs_prove_verify` -- uses `preprocessing_non_interactive_reduction(...).prepare(&ix)` with `WARPReduction`. Validates that the preprocessing IR interface works end-to-end through DSFS.
-- `warp_full_ia_dsfs_prove_verify` -- uses `preprocessing_non_interactive_argument(...).prepare(&ix)` with `FullWARP` (= `ReducedArgument<WARPReduction, WARPDeciderIA>`). Validates the full composed preprocessing IA through DSFS.
+- `warp_security_profile_is_derived_from_index` -- checks that WARP security parameters are derived from the static index rather than the per-claim instance.
+- `warp_commitment_stable_for_same_index` -- checks deterministic verifier-key commitments.
+- `warp_commitment_changes_when_constraints_change` -- keeps dimensions fixed while changing one R1CS coefficient and checks that the verifier-key commitment changes.
+- `warp_commitment_changes_when_code_changes` -- checks that code material is part of the verifier-key commitment.
+- `warp_commitment_changes_when_config_changes` -- checks that WARP config changes are bound.
+- `warp_commitment_changes_when_merkle_params_change` -- checks that Merkle hash parameters are bound.
+- `proof_rejects_with_wrong_verifier_key_same_dimensions` -- proves under one static relation and verifies under another relation with the same dimensions; verification rejects.
+- `warp_instance_encoding_excludes_static_index_material` -- checks that the instance encoding stays per-claim and does not carry static index data.
+- `warp_ir_dsfs_prove_verify` -- uses `preprocessing_non_interactive_reduction(...).prepare(&ix)` with `WarpReduction`.
+- `full_warp_uses_single_index` -- compile-time check that `FullWarp::Index = WarpIndex`, not `(WarpIndex, WarpIndex)`.
+- `full_warp_dsfs_roundtrip` -- uses `preprocessing_non_interactive_argument(...).prepare(&ix)` with `FullWarp`.
 
 All tests use the BLS12-381 scalar field with a Poseidon hash-chain R1CS relation, Reed-Solomon encoding, and Blake3 Merkle trees.
 
-## Files changed outside `crates/warp/`
+## Cross-crate boundary
 
-- [Cargo.toml](../Cargo.toml) -- added `crates/warp` to workspace members, added `ark-relations`, `ark-r1cs-std`, `ark-crypto-primitives`, `ark-codes`, `thiserror`, `rayon`, `blake3` to workspace deps, added `[patch.crates-io]` for Blake3-enabled `ark-crypto-primitives`
-- `spongefish::dsfs` -- provides `SpongeProver::new()`, `SpongeProver::narg_string()`, `SpongeVerifier::new()` constructors so test code can create sponge channels directly
+WARP v2 does not change DSFS transcript ordering. It relies on the existing
+prepared DSFS path: `preprocessing_non_interactive_argument(...).prepare(&ix)`
+and `preprocessing_non_interactive_reduction(...).prepare(&ix)` absorb
+`vk.committed_index()` and the encoded `WarpInstance` before the first
+challenge.

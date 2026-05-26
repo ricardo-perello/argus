@@ -79,19 +79,19 @@ same block includes key generation and keyed execution:
 
 ```rust
 ia_core::impl_preprocessing_reduction! {
-    impl PreprocessingInteractiveReduction for WARPReduction {
+    impl PreprocessingInteractiveReduction for WarpReduction {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
             ia_core::pad_protocol_id(b"warp-reduction")
         }
 
-        type SourceInstance = WARPInstance;
+        type SourceInstance = WarpInstance;
         type TargetInstance = DeciderInstance;
-        type SourceWitness = WARPWitness;
+        type SourceWitness = WarpWitness;
         type TargetWitness = DeciderWitness;
 
-        type Index = WARPIndex;
-        type ProverKey = WARPProverKey;
-        type VerifierKey = WARPVerifierKey;
+        type Index = WarpIndex;
+        type ProverKey = WarpProverKey;
+        type VerifierKey = WarpVerifierKey;
 
         fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
             ...
@@ -277,20 +277,22 @@ queries are index-derived; individual accumulated claims are per-instance.
 WARP is now represented as:
 
 ```text
-WARPIndex        static relation/config/code data
-WARPProverKey    prover-side preprocessed data
-WARPVerifierKey  verifier-side compact metadata and commitment bytes
-WARPInstance     per-claim instances/accumulators
-WARPWitness      per-claim witnesses
+WarpIndex        static relation/config/code data
+WarpProverKey    prover-side preprocessed data
+WarpVerifierKey  verifier-side compact metadata and commitment bytes
+WarpInstance     per-claim instances/accumulators
+WarpWitness      per-claim witnesses
 ```
 
-`WARPReduction` implements `PreprocessingInteractiveReduction`.
-`WARPDeciderIA` implements `PreprocessingInteractiveArgument`.
-`FullWARP = ReducedArgument<WARPReduction, WARPDeciderIA>` is itself a
-preprocessing argument.
+`WarpReduction` implements `PreprocessingInteractiveReduction`.
+`WarpDecider` implements `PreprocessingInteractiveArgument`.
+`FullWarp` is itself a preprocessing argument with a single
+`Index = WarpIndex`, so callers prepare it with `prepare(&ix)`, not
+`prepare(&(ix, ix))`.
 
 This removes the old reach-through where prover code read `instance.pk` and the
-verifier reconstructed `vk` from `instance.pk`.
+verifier reconstructed `vk` from `instance.pk`, and it removes the temporary
+tuple-index composition workaround.
 
 ## 10. Review Claims
 

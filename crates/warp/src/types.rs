@@ -5,7 +5,7 @@ use ark_crypto_primitives::{
 };
 use ark_ff::Field;
 
-use crate::config::WARPConfig;
+use crate::config::WarpConfig;
 use crate::relations::r1cs::R1CSConstraints;
 use crate::relations::BundledPESAT;
 
@@ -13,8 +13,8 @@ use crate::relations::BundledPESAT;
 // Source instance for the full WARP pipeline (ParseAndCommit's input)
 // -----------------------------------------------------------------------
 
-pub struct WARPSourceInstance<F: Field, P: BundledPESAT<F>, C: LinearCode<F>, MT: Config> {
-    pub config: WARPConfig<F, P>,
+pub struct WarpSourceInstance<F: Field, P: BundledPESAT<F>, C: LinearCode<F>, MT: Config> {
+    pub config: WarpConfig<F, P>,
     pub code: C,
     pub p: P,
     pub mt_leaf_hash_params: <MT::LeafHash as CRHScheme>::Parameters,
@@ -23,7 +23,7 @@ pub struct WARPSourceInstance<F: Field, P: BundledPESAT<F>, C: LinearCode<F>, MT
     pub acc_instances: AccumulatorInstances<F, MT>,
 }
 
-pub struct WARPSourceWitness<F: Field, MT: Config> {
+pub struct WarpSourceWitness<F: Field, MT: Config> {
     pub witnesses: Vec<Vec<F>>,
     pub acc_witnesses: AccumulatorWitnesses<F, MT>,
 }
@@ -208,7 +208,7 @@ pub struct BatchingSumcheckWitnessOutput<F: Field, MT: Config> {
 // WARP proof (sent alongside the NARG string)
 // -----------------------------------------------------------------------
 
-pub struct WARPProof<F: Field, MT: Config> {
+pub struct WarpProof<F: Field, MT: Config> {
     pub rt_0: MT::InnerDigest,
     pub mus: Vec<F>,
     pub nu_0: F,
@@ -222,8 +222,8 @@ pub struct WARPProof<F: Field, MT: Config> {
 // WARP output: new accumulator instance + witness + proof
 // -----------------------------------------------------------------------
 
-pub struct WARPOutput<F: Field, MT: Config> {
+pub struct WarpOutput<F: Field, MT: Config> {
     pub acc_instance: AccumulatorInstances<F, MT>,
     pub acc_witness: AccumulatorWitnesses<F, MT>,
-    pub proof: WARPProof<F, MT>,
+    pub proof: WarpProof<F, MT>,
 }
