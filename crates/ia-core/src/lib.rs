@@ -15,7 +15,6 @@ extern crate alloc;
 mod channel;
 mod core;
 mod interactive;
-mod macros;
 mod noninteractive;
 mod preprocessing;
 mod security;

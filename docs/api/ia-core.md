@@ -143,10 +143,25 @@ src/
   channel.rs
   core.rs
   interactive/
+    argument.rs
+    reduction.rs
+    preprocessing.rs
+    macros.rs
+    composition/
+      plain.rs
+      preprocessing.rs
+    adapters/
+      preprocessing_to_plain.rs
+      plain_to_preprocessing.rs
   noninteractive/
+    argument.rs
+    reduction.rs
+    preprocessing.rs
+    proof.rs
+    adapters/
+      narg_to_interactive.rs
   preprocessing/
   security/
-  macros.rs
 ```
 
 `lib.rs` keeps the public imports flat, so consumers can continue importing

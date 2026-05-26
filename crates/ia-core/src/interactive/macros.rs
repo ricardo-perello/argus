@@ -60,6 +60,11 @@ macro_rules! __ia_core_parse_interactive_argument {
             [$($impl_generics)* $next] $($rest)*
         }
     };
+    ([$($impl_generics:tt)*]) => {
+        compile_error!(
+            "impl_interactive_argument! could not parse this block. Expected `impl ... InteractiveArgument for Type { fn protocol_id(&self) -> impl AsRef<[u8]> { ... } type Instance = ...; type Witness = ...; fn prove(...) { ... } fn verify(...) -> VerificationResult<()> { ... } }`."
+        );
+    };
 }
 
 #[doc(hidden)]
@@ -107,6 +112,11 @@ macro_rules! __ia_core_parse_interactive_argument_where {
         $crate::__ia_core_parse_interactive_argument_where! {
             [$($impl_generics)*] [$ty] [$($where_clause)* $next] $($rest)*
         }
+    };
+    ([$($impl_generics:tt)*] [$ty:ty] [$($where_clause:tt)*]) => {
+        compile_error!(
+            "impl_interactive_argument! could not parse this block after the `where` clause. Put `fn protocol_id` first, followed by `type Instance`, `type Witness`, then `prove` and `verify`."
+        );
     };
 }
 
@@ -182,6 +192,11 @@ macro_rules! __ia_core_parse_interactive_reduction {
             [$($impl_generics)* $next] $($rest)*
         }
     };
+    ([$($impl_generics:tt)*]) => {
+        compile_error!(
+            "impl_interactive_reduction! could not parse this block. Expected `impl ... InteractiveReduction for Type { fn protocol_id(&self) -> impl AsRef<[u8]> { ... } type SourceInstance = ...; type TargetInstance = ...; type SourceWitness = ...; type TargetWitness = ...; fn prove(...) -> (...) { ... } fn verify(...) -> VerificationResult<_> { ... } }`."
+        );
+    };
 }
 
 #[doc(hidden)]
@@ -242,6 +257,11 @@ macro_rules! __ia_core_parse_interactive_reduction_where {
             [$($impl_generics)*] [$ty] [$($where_clause)* $next] $($rest)*
         }
     };
+    ([$($impl_generics:tt)*] [$ty:ty] [$($where_clause:tt)*]) => {
+        compile_error!(
+            "impl_interactive_reduction! could not parse this block after the `where` clause. Put `fn protocol_id` first, followed by source/target instance and witness types, then `prove` and `verify`."
+        );
+    };
 }
 
 /// Implement a preprocessing interactive argument using one author-facing impl block.
@@ -255,6 +275,16 @@ macro_rules! impl_preprocessing_argument {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __ia_core_parse_preprocessing_argument {
+    ([$($impl_generics:tt)*] IndexedInteractiveArgument for $ty:ty where $($tail:tt)*) => {
+        compile_error!(
+            "`IndexedInteractiveArgument` was renamed to `PreprocessingInteractiveArgument`. Use `impl_preprocessing_argument! { impl ... PreprocessingInteractiveArgument for Type { ... } }`."
+        );
+    };
+    ([$($impl_generics:tt)*] IndexedInteractiveArgument for $ty:ty { $($body:tt)* }) => {
+        compile_error!(
+            "`IndexedInteractiveArgument` was renamed to `PreprocessingInteractiveArgument`. Use `impl_preprocessing_argument! { impl ... PreprocessingInteractiveArgument for Type { ... } }`."
+        );
+    };
     ([$($impl_generics:tt)*] PreprocessingInteractiveArgument for $ty:ty where $($tail:tt)*) => {
         $crate::__ia_core_parse_preprocessing_argument_where! {
             [$($impl_generics)*] [$ty] [] $($tail)*
@@ -334,6 +364,11 @@ macro_rules! __ia_core_parse_preprocessing_argument {
             [$($impl_generics)* $next] $($rest)*
         }
     };
+    ([$($impl_generics:tt)*]) => {
+        compile_error!(
+            "impl_preprocessing_argument! could not parse this block. Expected `impl ... PreprocessingInteractiveArgument for Type { fn protocol_id(...) { ... } type Instance = ...; type Witness = ...; type Index = ...; type ProverKey = ...; type VerifierKey = ...; fn index(...) -> (...) { ... } fn prove(...) { ... } fn verify(...) -> VerificationResult<()> { ... } }`."
+        );
+    };
 }
 
 #[doc(hidden)]
@@ -412,6 +447,11 @@ macro_rules! __ia_core_parse_preprocessing_argument_where {
             [$($impl_generics)*] [$ty] [$($where_clause)* $next] $($rest)*
         }
     };
+    ([$($impl_generics:tt)*] [$ty:ty] [$($where_clause:tt)*]) => {
+        compile_error!(
+            "impl_preprocessing_argument! could not parse this block after the `where` clause. Put `fn protocol_id` first, then `Instance`/`Witness`, preprocessing key types, `index`, `prove`, and `verify`."
+        );
+    };
 }
 
 /// Implement a preprocessing interactive reduction using one author-facing impl block.
@@ -425,6 +465,16 @@ macro_rules! impl_preprocessing_reduction {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __ia_core_parse_preprocessing_reduction {
+    ([$($impl_generics:tt)*] IndexedInteractiveReduction for $ty:ty where $($tail:tt)*) => {
+        compile_error!(
+            "`IndexedInteractiveReduction` was renamed to `PreprocessingInteractiveReduction`. Use `impl_preprocessing_reduction! { impl ... PreprocessingInteractiveReduction for Type { ... } }`."
+        );
+    };
+    ([$($impl_generics:tt)*] IndexedInteractiveReduction for $ty:ty { $($body:tt)* }) => {
+        compile_error!(
+            "`IndexedInteractiveReduction` was renamed to `PreprocessingInteractiveReduction`. Use `impl_preprocessing_reduction! { impl ... PreprocessingInteractiveReduction for Type { ... } }`."
+        );
+    };
     ([$($impl_generics:tt)*] PreprocessingInteractiveReduction for $ty:ty where $($tail:tt)*) => {
         $crate::__ia_core_parse_preprocessing_reduction_where! {
             [$($impl_generics)*] [$ty] [] $($tail)*
@@ -516,6 +566,11 @@ macro_rules! __ia_core_parse_preprocessing_reduction {
             [$($impl_generics)* $next] $($rest)*
         }
     };
+    ([$($impl_generics:tt)*]) => {
+        compile_error!(
+            "impl_preprocessing_reduction! could not parse this block. Expected `impl ... PreprocessingInteractiveReduction for Type { fn protocol_id(...) { ... } type SourceInstance = ...; type TargetInstance = ...; type SourceWitness = ...; type TargetWitness = ...; type Index = ...; type ProverKey = ...; type VerifierKey = ...; fn index(...) -> (...) { ... } fn prove(...) -> (...) { ... } fn verify(...) -> VerificationResult<_> { ... } }`."
+        );
+    };
 }
 
 #[doc(hidden)]
@@ -605,6 +660,11 @@ macro_rules! __ia_core_parse_preprocessing_reduction_where {
         $crate::__ia_core_parse_preprocessing_reduction_where! {
             [$($impl_generics)*] [$ty] [$($where_clause)* $next] $($rest)*
         }
+    };
+    ([$($impl_generics:tt)*] [$ty:ty] [$($where_clause:tt)*]) => {
+        compile_error!(
+            "impl_preprocessing_reduction! could not parse this block after the `where` clause. Put `fn protocol_id` first, then source/target instance and witness types, preprocessing key types, `index`, `prove`, and `verify`."
+        );
     };
 }
 
