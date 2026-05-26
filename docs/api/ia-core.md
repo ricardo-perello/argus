@@ -127,10 +127,14 @@ can accept bare instances without cloning them.
 `ia-core` owns the abstract non-interactive vocabulary:
 
 - `NargProof`
-- `NonInteractiveArgument`
-- `NonInteractiveReduction`
+- `NonInteractiveArgument: ArgumentCore`
+- `NonInteractiveReduction: ReductionCore`
 - `PreprocessingNonInteractiveArgument`
 - `PreprocessingNonInteractiveReduction`
+
+The non-interactive traits inherit their statement/witness shape and
+`protocol_id` from the same core tree as interactive protocols. They add only
+`Session`, `prove`, and `verify`.
 
 Concrete compilation to proof bytes is backend-owned.
 

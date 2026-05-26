@@ -137,14 +137,19 @@ mod tests {
 
     struct DummyNarg;
 
-    impl NonInteractiveArgument for DummyNarg {
-        type Session = ();
-        type Instance = u32;
-        type Witness = u32;
-
+    impl ProtocolCore for DummyNarg {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
             pad_protocol_id(b"dummy narg")
         }
+    }
+
+    impl ArgumentCore for DummyNarg {
+        type Instance = u32;
+        type Witness = u32;
+    }
+
+    impl NonInteractiveArgument for DummyNarg {
+        type Session = ();
 
         fn prove(
             &self,
@@ -167,6 +172,21 @@ mod tests {
                 Err(VerificationError)
             }
         }
+    }
+
+    #[test]
+    fn noninteractive_argument_inherits_core_shape() {
+        fn generic_consumer<N: NonInteractiveArgument>(
+            narg: &N,
+            instance: &N::Instance,
+            witness: &N::Witness,
+        ) -> usize {
+            narg.protocol_id().as_ref().len()
+                + core::mem::size_of_val(instance)
+                + core::mem::size_of_val(witness)
+        }
+
+        assert!(generic_consumer(&DummyNarg, &7, &11) > 0);
     }
 
     #[test]

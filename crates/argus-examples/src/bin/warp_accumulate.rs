@@ -179,7 +179,7 @@ fn main() {
     let witness = values;
 
     let session = spongefish::session!("argus example: warp accumulate");
-    let nir = dsfs::non_interactive_reduction(Accumulate, dsfs::Keccak::default());
+    let nir = dsfs::plain_non_interactive_reduction(Accumulate, dsfs::Keccak::default());
 
     let (proof, _, _) = nir.prove(&session, &instance, &witness);
     println!(
@@ -218,7 +218,7 @@ mod tests {
         let witness = values;
 
         let session = spongefish::session!("argus example: warp accumulate");
-        let nir = dsfs::non_interactive_reduction(Accumulate, dsfs::Keccak::default());
+        let nir = dsfs::plain_non_interactive_reduction(Accumulate, dsfs::Keccak::default());
         let (proof, _, _) = nir.prove(&session, &instance, &witness);
         let target = nir
             .verify(&session, &instance, &proof)

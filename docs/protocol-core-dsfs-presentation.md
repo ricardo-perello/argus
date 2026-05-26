@@ -131,7 +131,7 @@ verifier key.
 Plain argument:
 
 ```rust
-let nia = dsfs::non_interactive_argument(schnorr, dsfs::Keccak::default());
+let nia = dsfs::plain_non_interactive_argument(schnorr, dsfs::Keccak::default());
 let proof = nia.prove(&session, &instance, &witness);
 nia.verify(&session, &instance, &proof)?;
 ```
@@ -139,7 +139,7 @@ nia.verify(&session, &instance, &proof)?;
 Plain reduction:
 
 ```rust
-let nir = dsfs::non_interactive_reduction(reduction, dsfs::Keccak::default());
+let nir = dsfs::plain_non_interactive_reduction(reduction, dsfs::Keccak::default());
 let (proof, target, target_witness) = nir.prove(&session, &source, &witness);
 let verified_target = nir.verify(&session, &source, &proof)?;
 ```
@@ -147,20 +147,22 @@ let verified_target = nir.verify(&session, &source, &proof)?;
 Preprocessing argument:
 
 ```rust
-let nia = dsfs::non_interactive_argument(preprocessing_argument, dsfs::Keccak::default())
+let nia = dsfs::preprocessing_non_interactive_argument(preprocessing_argument, dsfs::Keccak::default())
     .prepare(&index);
 ```
 
 Preprocessing reduction:
 
 ```rust
-let nir = dsfs::non_interactive_reduction(preprocessing_reduction, dsfs::Keccak::default())
+let nir = dsfs::preprocessing_non_interactive_reduction(preprocessing_reduction, dsfs::Keccak::default())
     .prepare(&index);
 ```
 
 The concrete wrapper names are `DsfsArgument`, `DsfsReduction`,
-`PreparedDsfsArgument`, and `PreparedDsfsReduction`, but user code reads as
-"construct a non-interactive argument/reduction."
+`UnpreparedDsfsArgument`, `UnpreparedDsfsReduction`, `PreparedDsfsArgument`,
+and `PreparedDsfsReduction`, but user code reads as "construct a
+non-interactive argument/reduction" with the lifecycle stage spelled out in the
+constructor name.
 
 ## 5. Prepared Objects
 
@@ -182,6 +184,8 @@ PreparedReduction<B>: InteractiveReduction
 Prepared DSFS wrappers exist at the backend layer:
 
 ```text
+UnpreparedDsfsArgument<B>: prepare(ix) -> PreparedDsfsArgument<B>
+UnpreparedDsfsReduction<B>: prepare(ix) -> PreparedDsfsReduction<B>
 PreparedDsfsArgument<B>: NonInteractiveArgument + Preprocessed
 PreparedDsfsReduction<B>: NonInteractiveReduction + Preprocessed
 ```

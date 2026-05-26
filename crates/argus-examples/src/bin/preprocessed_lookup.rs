@@ -241,10 +241,12 @@ fn main() {
     let table: Vec<u32> = (0..8u32).map(|i| 100 + i * 7).collect();
     println!("Public table: {table:?}\n");
 
-    // Preprocessing: non_interactive_argument(body, sponge).prepare(&table) calls
-    // body.index(&table) once. Asymmetry visible in the returned wrapper.
+    // Preprocessing: preprocessing_non_interactive_argument(body, sponge)
+    // .prepare(&table) calls body.index(&table) once. Asymmetry visible in the
+    // returned wrapper.
     let prepared =
-        dsfs::non_interactive_argument(PreprocessedLookup, dsfs::Keccak::default()).prepare(&table);
+        dsfs::preprocessing_non_interactive_argument(PreprocessedLookup, dsfs::Keccak::default())
+            .prepare(&table);
 
     // Inspect the asymmetry via the `Preprocessed` capability.
     fn report<P: Preprocessed>(label: &str, p: &P)
@@ -292,8 +294,11 @@ mod tests {
     fn lookup_roundtrip() {
         let session = spongefish::session!("preprocessed lookup test");
         let table = sample_table();
-        let prepared = dsfs::non_interactive_argument(PreprocessedLookup, dsfs::Keccak::default())
-            .prepare(&table);
+        let prepared = dsfs::preprocessing_non_interactive_argument(
+            PreprocessedLookup,
+            dsfs::Keccak::default(),
+        )
+        .prepare(&table);
 
         for i in 0u32..table.len() as u32 {
             let y = table[i as usize];
@@ -309,8 +314,11 @@ mod tests {
     fn lookup_rejects_wrong_value() {
         let session = spongefish::session!("preprocessed lookup test");
         let table = sample_table();
-        let prepared = dsfs::non_interactive_argument(PreprocessedLookup, dsfs::Keccak::default())
-            .prepare(&table);
+        let prepared = dsfs::preprocessing_non_interactive_argument(
+            PreprocessedLookup,
+            dsfs::Keccak::default(),
+        )
+        .prepare(&table);
 
         let proof = prepared.prove(&session, &(3, table[3]), &());
         // Same proof bytes, but claim a different value -> reject.
@@ -328,12 +336,16 @@ mod tests {
         let mut table_b = sample_table();
         table_b[0] = table_b[0].wrapping_add(1); // perturb one entry
 
-        let prepared_a =
-            dsfs::non_interactive_argument(PreprocessedLookup, dsfs::Keccak::default())
-                .prepare(&table_a);
-        let prepared_b =
-            dsfs::non_interactive_argument(PreprocessedLookup, dsfs::Keccak::default())
-                .prepare(&table_b);
+        let prepared_a = dsfs::preprocessing_non_interactive_argument(
+            PreprocessedLookup,
+            dsfs::Keccak::default(),
+        )
+        .prepare(&table_a);
+        let prepared_b = dsfs::preprocessing_non_interactive_argument(
+            PreprocessedLookup,
+            dsfs::Keccak::default(),
+        )
+        .prepare(&table_b);
         assert_ne!(prepared_a.committed_index(), prepared_b.committed_index());
 
         // Open table_a at index 5 (unperturbed in both).
@@ -367,12 +379,12 @@ mod tests {
 
         let small = (0..2u32).collect::<Vec<_>>();
         let large = (0..1024u32).collect::<Vec<_>>();
-        let p_small = dsfs::non_interactive_argument::<_, [u8; 64], _>(
+        let p_small = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
             PreprocessedLookup,
             dsfs::Keccak::default(),
         )
         .prepare(&small);
-        let p_large = dsfs::non_interactive_argument::<_, [u8; 64], _>(
+        let p_large = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
             PreprocessedLookup,
             dsfs::Keccak::default(),
         )

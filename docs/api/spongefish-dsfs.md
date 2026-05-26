@@ -9,7 +9,7 @@ non-interactive object being constructed.
 ## Arguments
 
 ```rust
-let nia = spongefish_dsfs::non_interactive_argument(
+let nia = spongefish_dsfs::plain_non_interactive_argument(
     argument,
     spongefish_dsfs::Keccak::default(),
 );
@@ -21,13 +21,13 @@ nia.verify(&session, &instance, &proof)?;
 The concrete wrapper is `DsfsArgument<IA, S, H, SALT_LEN>`, but most callers
 interact with it through `ia_core::NonInteractiveArgument`.
 
-Use `non_interactive_argument_with_salt` when the proof layout includes an
+Use `plain_non_interactive_argument_with_salt` when the proof layout includes an
 explicit prover salt.
 
 ## Reductions
 
 ```rust
-let nir = spongefish_dsfs::non_interactive_reduction(
+let nir = spongefish_dsfs::plain_non_interactive_reduction(
     reduction,
     spongefish_dsfs::Keccak::default(),
 );
@@ -43,14 +43,18 @@ The concrete wrapper is `DsfsReduction<IR, S, H, SALT_LEN>`.
 
 ## Preprocessing Arguments and Reductions
 
-For preprocessing cores, construct the DSFS wrapper and then prepare it:
+For preprocessing cores, construct the unprepared DSFS wrapper and then prepare
+it:
 
 ```rust
-let nia = spongefish_dsfs::non_interactive_argument(preprocessing_argument, sponge)
+let nia = spongefish_dsfs::preprocessing_non_interactive_argument(preprocessing_argument, sponge)
     .prepare(&index);
 
 let proof = nia.prove(&session, &instance, &witness);
 nia.verify(&session, &instance, &proof)?;
+
+let nir = spongefish_dsfs::preprocessing_non_interactive_reduction(preprocessing_reduction, sponge)
+    .prepare(&index);
 ```
 
 Prepared wrappers store `pk`, `vk`, and `vk.committed_index()`. They accept

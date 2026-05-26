@@ -20,7 +20,7 @@ cargo run -p argus-examples --bin schnorr -- --live
 - Expanding that block into `ProtocolCore`, `ArgumentCore`, and
   `InteractiveArgument`.
 - Using only channel calls inside protocol code.
-- Compiling the IA with `spongefish_dsfs::non_interactive_argument`.
+- Compiling the IA with `spongefish_dsfs::plain_non_interactive_argument`.
 - Running the same IA with `live-channel`.
 - Implementing constant-error `ArgumentSecurity`.
 

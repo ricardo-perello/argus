@@ -22,7 +22,7 @@
 //! │  hold any values.                                                  │
 //! └────────────────────────────────────────────────────────────────────┘
 //! ┌──────────────────── 2. Wrapper struct ─────────────────────────────┐
-//! │  non_interactive_argument(body, sponge).prepare(&g)                │
+//! │  preprocessing_non_interactive_argument(body, sponge).prepare(&g)  │
 //! │  -> PreparedDsfsArgument { ia, pk, vk, committed_index, sponge }   │
 //! │  This is the wrapper that *holds* generated keys as private fields.│
 //! └────────────────────────────────────────────────────────────────────┘
@@ -149,11 +149,12 @@ fn main() {
     println!("=== Preprocessed Schnorr ===\n");
     let session = spongefish::session!("preprocessed schnorr example");
 
-    // 1. Preprocessing step. `non_interactive_argument(body, sponge)` wraps the body;
-    //    `.prepare(&generator)` calls `body.index(&generator)` and stashes
-    //    `(pk, vk, committed_index)` inside the returned `PreparedDsfsArgument`.
+    // 1. Preprocessing step. `preprocessing_non_interactive_argument(body, sponge)`
+    //    wraps the body; `.prepare(&generator)` calls `body.index(&generator)`
+    //    and stashes `(pk, vk, committed_index)` inside the returned
+    //    `PreparedDsfsArgument`.
     let generator = G::generator();
-    let prepared = dsfs::non_interactive_argument(
+    let prepared = dsfs::preprocessing_non_interactive_argument(
         PreprocessedSchnorr::<G>::default(),
         dsfs::Keccak::default(),
     )
@@ -220,7 +221,7 @@ mod tests {
     fn preprocessed_schnorr_roundtrip() {
         let session = spongefish::session!("preprocessed schnorr test");
         let g = G::generator();
-        let prepared = dsfs::non_interactive_argument(
+        let prepared = dsfs::preprocessing_non_interactive_argument(
             PreprocessedSchnorr::<G>::default(),
             dsfs::Keccak::default(),
         )
@@ -244,12 +245,12 @@ mod tests {
         let g1 = G::generator();
         let g2 = g1 + G::generator(); // 2 * generator — distinct from g1
 
-        let prepared_g1 = dsfs::non_interactive_argument(
+        let prepared_g1 = dsfs::preprocessing_non_interactive_argument(
             PreprocessedSchnorr::<G>::default(),
             dsfs::Keccak::default(),
         )
         .prepare(&g1);
-        let prepared_g2 = dsfs::non_interactive_argument(
+        let prepared_g2 = dsfs::preprocessing_non_interactive_argument(
             PreprocessedSchnorr::<G>::default(),
             dsfs::Keccak::default(),
         )
@@ -278,7 +279,7 @@ mod tests {
         let g = G::generator();
         // Session type pinned to [u8; 64] (`spongefish::session!` returns that).
         // Other tests in this file pin it implicitly by calling `prepare(...).prove(&session, ...)`.
-        let prepared = dsfs::non_interactive_argument::<_, [u8; 64], _>(
+        let prepared = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
             PreprocessedSchnorr::<G>::default(),
             dsfs::Keccak::default(),
         )

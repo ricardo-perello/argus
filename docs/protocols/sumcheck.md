@@ -19,7 +19,7 @@ cargo run -p argus-examples --bin sumcheck_commit
 - Multi-round public-coin channel flow.
 - Repeated prover-message absorption before challenge derivation.
 - DSFS compilation of a protocol with several challenge rounds through
-  `non_interactive_argument`.
+  `plain_non_interactive_argument`.
 - Security metadata whose RBR vector mirrors the round structure.
 
 These examples are useful references when adding a protocol with more than one

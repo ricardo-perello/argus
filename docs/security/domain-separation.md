@@ -44,7 +44,7 @@ Keccak::SPONGE_INFO   = b"dsfs/v2/keccak-f1600-r136c64"
 StdHash::SPONGE_INFO    = b"dsfs/v2/shake128-r168c32"
 ```
 
-`non_interactive_argument` / `non_interactive_reduction` construct DSFS wrappers
+`plain_non_interactive_argument` / `plain_non_interactive_reduction` construct DSFS wrappers
 that compute session bytes during `prove` / `verify`, then:
 
 `DomainSeparator::derive(ia.protocol_id().as_ref(), H::SPONGE_INFO, session_bytes.as_ref()).instance(instance)`

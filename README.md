@@ -60,9 +60,10 @@ the protocol.
     - `ChainedReduction` (IR ∘ IR → IR)
     - `ReducedArgument` (IR ∘ IA → IA)
 - **`spongefish::dsfs`**: a **backend** that compiles IA/IR into NARGs using DSFS.
-  - `non_interactive_argument(body, sponge)` constructs a `NonInteractiveArgument`
-  - `non_interactive_reduction(body, sponge)` constructs a `NonInteractiveReduction`
-  - `.prepare(&ix)` turns preprocessing cores into prepared non-interactive arguments/reductions
+  - `plain_non_interactive_argument(body, sponge)` constructs a plain `NonInteractiveArgument`
+  - `plain_non_interactive_reduction(body, sponge)` constructs a plain `NonInteractiveReduction`
+  - `preprocessing_non_interactive_argument(body, sponge).prepare(&ix)` constructs a prepared preprocessing NARG
+  - `preprocessing_non_interactive_reduction(body, sponge).prepare(&ix)` constructs a prepared preprocessing reduction NARG
   - DSFS security bound evaluation (Theorems 1 & 2 style bounds)
 - **`crates/live-channel`**: a **backend** that runs IA/IR interactively (prover/verifier in threads via `mpsc`).
 - **`crates/warp`**: a WARP (ePrint 2025/753) implementation expressed as:
@@ -147,7 +148,11 @@ At a high level:
 2. Use `ia_core::impl_interactive_argument!` or
    `ia_core::impl_interactive_reduction!` to write one authoring block.
 3. Put only channel operations inside `prove`/`verify`.
-4. Compile it non-interactively with `spongefish_dsfs::non_interactive_argument(body, sponge)` or `spongefish_dsfs::non_interactive_reduction(body, sponge)`.
+4. Compile it non-interactively with `spongefish_dsfs::plain_non_interactive_argument(body, sponge)` or `spongefish_dsfs::plain_non_interactive_reduction(body, sponge)`.
+
+For preprocessing protocols, use
+`spongefish_dsfs::preprocessing_non_interactive_argument(body, sponge).prepare(&ix)`
+or `spongefish_dsfs::preprocessing_non_interactive_reduction(body, sponge).prepare(&ix)`.
 
 The macros expand to the explicit inheritance tree underneath:
 `ProtocolCore` plus `ArgumentCore`/`ReductionCore`, then the executable

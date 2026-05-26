@@ -10,12 +10,14 @@ argument and an `InteractiveReduction` into a non-interactive reduction.
 Constructors name the compiled object:
 
 ```rust
-let nia = spongefish_dsfs::non_interactive_argument(argument, sponge);
-let nir = spongefish_dsfs::non_interactive_reduction(reduction, sponge);
+let nia = spongefish_dsfs::plain_non_interactive_argument(argument, sponge);
+let nir = spongefish_dsfs::plain_non_interactive_reduction(reduction, sponge);
 ```
 
-For preprocessing cores, the same constructors return an unprepared handle whose
-`.prepare(&ix)` method stores preprocessing keys and returns a prepared
+For preprocessing cores, use the symmetric preprocessing constructors:
+`preprocessing_non_interactive_argument` or
+`preprocessing_non_interactive_reduction`. They return an unprepared handle
+whose `.prepare(&ix)` method stores preprocessing keys and returns a prepared
 non-interactive argument or reduction.
 
 It is responsible for:

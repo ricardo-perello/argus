@@ -342,7 +342,7 @@ fn main() {
     println!("    8 values -> 4 -> 2\n");
 
     let two_folds = TwoFolds::default();
-    let nir = dsfs::non_interactive_reduction(two_folds, dsfs::Keccak::default());
+    let nir = dsfs::plain_non_interactive_reduction(two_folds, dsfs::Keccak::default());
     let (proof, target, _) = nir.prove(&session, &instance, &witness);
     println!(
         "  proof ({} bytes): {}",
@@ -363,7 +363,7 @@ fn main() {
     println!("    8 values -> 4 -> 2 -> AccPair -> accept/reject\n");
 
     let full = FullProtocol::default();
-    let nia = dsfs::non_interactive_argument(full, dsfs::Keccak::default());
+    let nia = dsfs::plain_non_interactive_argument(full, dsfs::Keccak::default());
     let proof = nia.prove(&session, &instance, &witness);
     println!(
         "  proof ({} bytes): {}",
@@ -393,9 +393,19 @@ mod tests {
 
         let session = spongefish::session!("argus example: composition");
         let protocol = FullProtocol::default();
-        let nia = dsfs::non_interactive_argument(protocol, dsfs::Keccak::default());
+        let nia = dsfs::plain_non_interactive_argument(protocol, dsfs::Keccak::default());
+        fn assert_narg<N: NonInteractiveArgument>(_: &N) {}
+        assert_narg(&nia);
         let proof = nia.prove(&session, &instance, &witness);
         nia.verify(&session, &instance, &proof)
             .expect("verification failed");
+
+        let reduction = TwoFolds::default();
+        let nir = dsfs::plain_non_interactive_reduction::<_, [u8; 64], _>(
+            reduction,
+            dsfs::Keccak::default(),
+        );
+        fn assert_nir<N: NonInteractiveReduction>(_: &N) {}
+        assert_nir(&nir);
     }
 }

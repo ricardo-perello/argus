@@ -196,8 +196,8 @@ not match the stored verifier key.
 The DSFS API names the non-interactive object being built:
 
 ```rust
-let nia = dsfs::non_interactive_argument(body, dsfs::Keccak::default());
-let nir = dsfs::non_interactive_reduction(body, dsfs::Keccak::default());
+let nia = dsfs::plain_non_interactive_argument(body, dsfs::Keccak::default());
+let nir = dsfs::plain_non_interactive_reduction(body, dsfs::Keccak::default());
 ```
 
 For plain bodies, the returned wrapper immediately implements
@@ -206,7 +206,7 @@ For plain bodies, the returned wrapper immediately implements
 For preprocessing cores, call `.prepare(&ix)` first:
 
 ```rust
-let nia = dsfs::non_interactive_argument(preprocessing_protocol, dsfs::Keccak::default())
+let nia = dsfs::preprocessing_non_interactive_argument(preprocessing_protocol, dsfs::Keccak::default())
     .prepare(&ix);
 ```
 

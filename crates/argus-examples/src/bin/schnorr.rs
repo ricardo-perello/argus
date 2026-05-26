@@ -133,11 +133,12 @@ fn run_dsfs(instance: &[ark_curve25519::EdwardsProjective; 2], sk: &ark_curve255
     let session = spongefish::session!("spongefish examples");
 
     let schnorr = Schnorr::<G>::default();
-    let nia = dsfs::non_interactive_argument(schnorr, dsfs::Keccak::default());
-    let narg = nia.prove(&session, instance, sk);
-    println!("Proof:\n{}", hex::encode(narg.as_bytes()));
+    let nia_schnorr = dsfs::plain_non_interactive_argument(schnorr, dsfs::Keccak::default());
+    let narg_string = nia_schnorr.prove(&session, instance, sk);
+    println!("Proof:\n{}", hex::encode(narg_string.as_bytes()));
 
-    nia.verify(&session, instance, &narg)
+    nia_schnorr
+        .verify(&session, instance, &narg_string)
         .expect("verification failed");
     println!("Verification succeeded");
 }
@@ -310,7 +311,7 @@ mod tests {
 
         let session = spongefish::session!("spongefish examples");
         let schnorr = Schnorr::<G>::default();
-        let nia = dsfs::non_interactive_argument(schnorr, dsfs::Keccak::default());
+        let nia = dsfs::plain_non_interactive_argument(schnorr, dsfs::Keccak::default());
         let narg = nia.prove(&session, &instance, &sk);
         nia.verify(&session, &instance, &narg)
             .expect("dsfs verification failed");
@@ -325,7 +326,9 @@ mod tests {
 
         let session = spongefish::session!("spongefish examples");
         let schnorr = Schnorr::<G>::default();
-        let narg = dsfs::non_interactive_argument(schnorr, dsfs::Keccak::default());
+        let narg = dsfs::plain_non_interactive_argument(schnorr, dsfs::Keccak::default());
+        fn assert_narg<N: NonInteractiveArgument>(_: &N) {}
+        assert_narg(&narg);
 
         let proof = narg.prove(&session, &instance, &sk);
 

@@ -122,7 +122,7 @@ compiled through DSFS:
 
 ```rust
 let full = FullWARP::<Fp, R1CS<Fp>, RS, MT>::default();
-let prepared = spongefish_dsfs::non_interactive_argument(full, spongefish_dsfs::Keccak::default())
+let prepared = spongefish_dsfs::preprocessing_non_interactive_argument(full, spongefish_dsfs::Keccak::default())
     .prepare(&(warp_index.clone(), warp_index));
 
 let proof = prepared.prove(&session, &instance, &witness);
@@ -133,7 +133,7 @@ The reduction can also be used standalone for IOR-level verification:
 
 ```rust
 let reduction = WARPReduction::<Fp, R1CS<Fp>, RS, MT>::new();
-let prepared = spongefish_dsfs::non_interactive_reduction(reduction, spongefish_dsfs::Keccak::default())
+let prepared = spongefish_dsfs::preprocessing_non_interactive_reduction(reduction, spongefish_dsfs::Keccak::default())
     .prepare(&warp_index);
 
 let (proof, target, target_witness) = prepared.prove(&session, &instance, &witness);
@@ -262,8 +262,8 @@ Four integration tests in `tests/warp_test.rs`:
 
 - `warp_bootstrap_prove_verify_decide` -- single proof with empty accumulator (l1=4 fresh instances, l2=0 accumulated). Proves, verifies via NARG string replay, runs decider.
 - `warp_full_accumulation_cycle` -- runs 4 bootstrap proofs to build up accumulated state, then a full proof with l1=4 fresh + l2=4 accumulated instances (l=8). Proves, verifies, decides.
-- `warp_ir_dsfs_prove_verify` -- uses `non_interactive_reduction(...).prepare(&ix)` with `WARPReduction`. Validates that the preprocessing IR interface works end-to-end through DSFS.
-- `warp_full_ia_dsfs_prove_verify` -- uses `non_interactive_argument(...).prepare(&ix)` with `FullWARP` (= `ReducedArgument<WARPReduction, WARPDeciderIA>`). Validates the full composed preprocessing IA through DSFS.
+- `warp_ir_dsfs_prove_verify` -- uses `preprocessing_non_interactive_reduction(...).prepare(&ix)` with `WARPReduction`. Validates that the preprocessing IR interface works end-to-end through DSFS.
+- `warp_full_ia_dsfs_prove_verify` -- uses `preprocessing_non_interactive_argument(...).prepare(&ix)` with `FullWARP` (= `ReducedArgument<WARPReduction, WARPDeciderIA>`). Validates the full composed preprocessing IA through DSFS.
 
 All tests use the BLS12-381 scalar field with a Poseidon hash-chain R1CS relation, Reed-Solomon encoding, and Blake3 Merkle trees.
 

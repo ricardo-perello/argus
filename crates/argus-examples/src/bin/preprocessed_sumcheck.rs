@@ -255,11 +255,14 @@ fn main() {
     println!("Picked p(X, Y) with 4 random coefficients.");
     println!("Claimed sum  T = Σ_{{x∈{{0,1}}^2}} p(x) = {t}\n");
 
-    // Preprocessing: non_interactive_reduction wraps an indexed reduction;
-    // .prepare(&ix) calls body.index(&ix) once and stashes
+    // Preprocessing: preprocessing_non_interactive_reduction wraps an indexed
+    // reduction; .prepare(&ix) calls body.index(&ix) once and stashes
     // (pk, vk, committed_index) inside the returned PreparedDsfsReduction.
-    let prepared = dsfs::non_interactive_reduction(PreprocessedSumcheck, dsfs::Keccak::default())
-        .prepare(&coeffs);
+    let prepared = dsfs::preprocessing_non_interactive_reduction(
+        PreprocessedSumcheck,
+        dsfs::Keccak::default(),
+    )
+    .prepare(&coeffs);
 
     // Inspect asymmetry via the `Preprocessed` capability.
     fn report<P: Preprocessed>(label: &str, p: &P)
@@ -325,9 +328,11 @@ mod tests {
         let session = spongefish::session!("preprocessed sumcheck test");
         let coeffs = sample_coeffs();
         let t = sum_over_hypercube(&coeffs);
-        let prepared =
-            dsfs::non_interactive_reduction(PreprocessedSumcheck, dsfs::Keccak::default())
-                .prepare(&coeffs);
+        let prepared = dsfs::preprocessing_non_interactive_reduction(
+            PreprocessedSumcheck,
+            dsfs::Keccak::default(),
+        )
+        .prepare(&coeffs);
 
         let (proof, _target_p, ()) = prepared.prove(&session, &t, &());
         let ((r1, r2), v) = prepared.verify(&session, &t, &proof).expect("verify");
@@ -345,9 +350,11 @@ mod tests {
         let real_t = sum_over_hypercube(&coeffs);
         let fake_t = real_t + Fr::from(1u64);
 
-        let prepared =
-            dsfs::non_interactive_reduction(PreprocessedSumcheck, dsfs::Keccak::default())
-                .prepare(&coeffs);
+        let prepared = dsfs::preprocessing_non_interactive_reduction(
+            PreprocessedSumcheck,
+            dsfs::Keccak::default(),
+        )
+        .prepare(&coeffs);
 
         // Prover honestly runs on (its true) `coeffs`. But the caller
         // passes the wrong T as the source instance. The verifier reads
@@ -367,12 +374,16 @@ mod tests {
         let mut coeffs_b = coeffs_a;
         coeffs_b[C11] += Fr::from(1u64); // perturb one coefficient
 
-        let prepared_a =
-            dsfs::non_interactive_reduction(PreprocessedSumcheck, dsfs::Keccak::default())
-                .prepare(&coeffs_a);
-        let prepared_b =
-            dsfs::non_interactive_reduction(PreprocessedSumcheck, dsfs::Keccak::default())
-                .prepare(&coeffs_b);
+        let prepared_a = dsfs::preprocessing_non_interactive_reduction(
+            PreprocessedSumcheck,
+            dsfs::Keccak::default(),
+        )
+        .prepare(&coeffs_a);
+        let prepared_b = dsfs::preprocessing_non_interactive_reduction(
+            PreprocessedSumcheck,
+            dsfs::Keccak::default(),
+        )
+        .prepare(&coeffs_b);
         assert_ne!(prepared_a.committed_index(), prepared_b.committed_index());
 
         let t_a = sum_over_hypercube(&coeffs_a);
@@ -388,7 +399,7 @@ mod tests {
             p.committed_index().as_bytes().to_vec()
         }
         let coeffs = sample_coeffs();
-        let prepared = dsfs::non_interactive_reduction::<_, [u8; 64], _>(
+        let prepared = dsfs::preprocessing_non_interactive_reduction::<_, [u8; 64], _>(
             PreprocessedSumcheck,
             dsfs::Keccak::default(),
         )

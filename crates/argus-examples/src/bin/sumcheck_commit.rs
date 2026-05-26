@@ -309,7 +309,7 @@ fn run_dsfs(instance: &Instance, evals: &Vec<Fr>) {
     println!("=== Committed Sumcheck (DSFS / non-interactive) ===\n");
 
     let session = spongefish::session!("argus warmup: committed sumcheck");
-    let nia = dsfs::non_interactive_argument(CommittedSumcheck, dsfs::Keccak::default());
+    let nia = dsfs::plain_non_interactive_argument(CommittedSumcheck, dsfs::Keccak::default());
 
     let narg = nia.prove(&session, instance, evals);
     println!(

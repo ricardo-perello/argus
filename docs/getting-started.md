@@ -83,7 +83,7 @@ impls. Manual impls are still supported for low-level adapters and tests.
 DSFS construction is explicit:
 
 ```rust
-let nia = spongefish_dsfs::non_interactive_argument(body, spongefish_dsfs::Keccak::default());
+let nia = spongefish_dsfs::plain_non_interactive_argument(body, spongefish_dsfs::Keccak::default());
 let proof = nia.prove(&session, &instance, &witness);
 nia.verify(&session, &instance, &proof)?;
 ```
@@ -93,7 +93,7 @@ For preprocessed protocols, use `ia_core::impl_preprocessing_argument!` or
 `VerifierKey`, and `index(ix) -> (pk, vk)`, then prepare the DSFS wrapper:
 
 ```rust
-let nia = spongefish_dsfs::non_interactive_argument(preprocessing_protocol, sponge)
+let nia = spongefish_dsfs::preprocessing_non_interactive_argument(preprocessing_protocol, sponge)
     .prepare(&index);
 ```
 

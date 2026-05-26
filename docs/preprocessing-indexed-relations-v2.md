@@ -332,7 +332,7 @@ is `C'`.
 Prefer semantic constructors that name the non-interactive object being built:
 
 ```rust
-let narg = dsfs::non_interactive_argument(schnorr, dsfs::Keccak::default());
+let narg = dsfs::plain_non_interactive_argument(schnorr, dsfs::Keccak::default());
 let proof = narg.prove(&session, &x, &w);
 narg.verify(&session, &x, &proof)?;
 ```
@@ -343,18 +343,20 @@ usually interact with it through `NonInteractiveArgument`.
 For reductions:
 
 ```rust
-let narg = dsfs::non_interactive_reduction(reduction, dsfs::Keccak::default());
+let narg = dsfs::plain_non_interactive_reduction(reduction, dsfs::Keccak::default());
 let (proof, target, target_witness) = narg.prove(&session, &x, &w);
 let verified_target = narg.verify(&session, &x, &proof)?;
 ```
 
-Add `.prepare(&ix)` and `.with_keys(pk, vk)` as inherent methods on the same
-wrappers. An preprocessing core can be stored in `DsfsArgument<IA, S, H, SALT_LEN>`
-even though the `NonInteractiveArgument` impl is available only after
-preparation.
+Preprocessing uses a separate unprepared wrapper, so the lifecycle is visible
+in the type name: unprepared preprocessing DSFS handles expose `.prepare(&ix)`
+and `.with_keys(pk, vk)`, while only the prepared result implements
+`NonInteractiveArgument` / `NonInteractiveReduction`.
 
 ```rust
-impl<IA, S, H, const SALT_LEN: usize> DsfsArgument<IA, S, H, SALT_LEN>
+pub struct UnpreparedDsfsArgument<IA, S, H = Keccak, const SALT_LEN: usize = 0>;
+
+impl<IA, S, H, const SALT_LEN: usize> UnpreparedDsfsArgument<IA, S, H, SALT_LEN>
 where
     IA: PreprocessingInteractiveArgument,
 {
@@ -366,7 +368,9 @@ where
     ) -> PreparedDsfsArgument<IA, S, H, SALT_LEN>;
 }
 
-impl<IR, S, H, const SALT_LEN: usize> DsfsReduction<IR, S, H, SALT_LEN>
+pub struct UnpreparedDsfsReduction<IR, S, H = Keccak, const SALT_LEN: usize = 0>;
+
+impl<IR, S, H, const SALT_LEN: usize> UnpreparedDsfsReduction<IR, S, H, SALT_LEN>
 where
     IR: PreprocessingInteractiveReduction,
 {
@@ -382,7 +386,7 @@ where
 User-facing prepared DSFS:
 
 ```rust
-let narg = dsfs::non_interactive_argument(preprocessing_argument, dsfs::Keccak::default())
+let narg = dsfs::preprocessing_non_interactive_argument(preprocessing_argument, dsfs::Keccak::default())
     .prepare(&ix);
 let proof = narg.prove(&session, &x, &w);
 narg.verify(&session, &x, &proof)?;
@@ -391,7 +395,7 @@ narg.verify(&session, &x, &proof)?;
 For reductions:
 
 ```rust
-let narg = dsfs::non_interactive_reduction(preprocessing_reduction, dsfs::Keccak::default())
+let narg = dsfs::preprocessing_non_interactive_reduction(preprocessing_reduction, dsfs::Keccak::default())
     .prepare(&ix);
 let (proof, target, target_witness) = narg.prove(&session, &x, &w);
 let verified_target = narg.verify(&session, &x, &proof)?;
@@ -600,7 +604,7 @@ reconstructing `vk` from `instance.pk` in the verifier has been removed.
 
 3. **Prepared DSFS wrappers in spongefish.**
    `spongefish-dsfs` exposes semantic constructors
-   `non_interactive_argument` and `non_interactive_reduction`, plus
+   `plain_non_interactive_argument` and `plain_non_interactive_reduction`, plus
    `.prepare(&ix)` and `.with_keys(pk, vk)` on wrappers whose bodies support
    preprocessing. Prepared runners absorb `IndexedInstanceRef`.
 

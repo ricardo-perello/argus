@@ -330,7 +330,7 @@ fn warp_ir_dsfs_prove_verify() {
 
     let session = spongefish::session!("warp IR test");
     let ir = WARPReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
-    let narg = dsfs::non_interactive_reduction(ir, Keccak::default()).prepare(&ix);
+    let narg = dsfs::preprocessing_non_interactive_reduction(ir, Keccak::default()).prepare(&ix);
     let (proof, target_p, _target_w) = narg.prove(&session, &instance, &witness);
     println!("IR NARG string: {} bytes", proof.len());
 
@@ -386,7 +386,8 @@ fn warp_full_ia_dsfs_prove_verify() {
     // Composed `FullWARP` is an indexed IA with `Index = (WARPIndex,
     // WARPIndex)` — both components currently share the same index. Folding
     // into a single `WARPIndex` for FullWARP is a future cleanup.
-    let narg = dsfs::non_interactive_argument(full, Keccak::default()).prepare(&(ix.clone(), ix));
+    let narg = dsfs::preprocessing_non_interactive_argument(full, Keccak::default())
+        .prepare(&(ix.clone(), ix));
     let proof = narg.prove(&session, &instance, &witness);
     println!("FullWARP NARG string: {} bytes", proof.len());
 

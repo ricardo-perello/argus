@@ -179,12 +179,15 @@ fn main() {
     let h = g * x; // public key
 
     // -------- preprocessing step -------------------------------------------
-    // non_interactive_argument(body, sponge).prepare(&(g, h)) calls body.index(&(g, h))
-    // once and stashes (pk, vk, committed_index) inside the returned
-    // PreparedDsfsArgument. Every subsequent prove/verify call reads from those.
-    let prepared = dsfs::non_interactive_argument(Dleq::<G>::default(), dsfs::Keccak::default())
-        .prepare(&(g, h));
-
+    // preprocessing_non_interactive_argument(body, sponge).prepare(&(g, h))
+    // calls body.index(&(g, h)) once and stashes (pk, vk, committed_index)
+    // inside the returned PreparedDsfsArgument. Every subsequent prove/verify
+    // call reads from those.
+    let dleq = Dleq::<G>::default();
+    let unprepared_nia_dleq =
+        dsfs::preprocessing_non_interactive_argument(dleq, dsfs::Keccak::default());
+    let prepared_nia_dleq = unprepared_nia_dleq.prepare(&(g, h));
+    let _prepared_x = prepared_nia_dleq.committed_index();
     // -------- inspect preprocessing via the Preprocessed capability --------
     // Bound by `P: Preprocessed`, so the same helper works on any prepared
     // wrapper — PreparedArgument (IA layer) or PreparedDsfsArgument (NARG layer).
@@ -201,7 +204,7 @@ fn main() {
     }
     audit(
         "Preprocessed public key (via `Preprocessed` trait)",
-        &prepared,
+        &prepared_nia_dleq,
     );
     println!();
 
@@ -213,8 +216,8 @@ fn main() {
         let u = G::generator() * F::rand(&mut OsRng);
         let v = u * x;
         let instance = (u, v);
-        let proof = prepared.prove(&session, &instance, &x);
-        prepared
+        let proof = prepared_nia_dleq.prove(&session, &instance, &x);
+        prepared_nia_dleq
             .verify(&session, &instance, &proof)
             .expect("verify");
         println!(
@@ -246,9 +249,11 @@ mod tests {
     fn dleq_roundtrip() {
         let session = spongefish::session!("dleq test");
         let (g, x, h) = keygen();
-        let prepared =
-            dsfs::non_interactive_argument(Dleq::<G>::default(), dsfs::Keccak::default())
-                .prepare(&(g, h));
+        let prepared = dsfs::preprocessing_non_interactive_argument(
+            Dleq::<G>::default(),
+            dsfs::Keccak::default(),
+        )
+        .prepare(&(g, h));
 
         let u = G::generator() * F::rand(&mut OsRng);
         let v = u * x;
@@ -267,10 +272,16 @@ mod tests {
         let (g, x_alice, h_alice) = keygen();
         let (_, _x_bob, h_bob) = keygen();
 
-        let alice = dsfs::non_interactive_argument(Dleq::<G>::default(), dsfs::Keccak::default())
-            .prepare(&(g, h_alice));
-        let bob = dsfs::non_interactive_argument(Dleq::<G>::default(), dsfs::Keccak::default())
-            .prepare(&(g, h_bob));
+        let alice = dsfs::preprocessing_non_interactive_argument(
+            Dleq::<G>::default(),
+            dsfs::Keccak::default(),
+        )
+        .prepare(&(g, h_alice));
+        let bob = dsfs::preprocessing_non_interactive_argument(
+            Dleq::<G>::default(),
+            dsfs::Keccak::default(),
+        )
+        .prepare(&(g, h_bob));
         assert_ne!(alice.committed_index(), bob.committed_index());
 
         // Alice produces a valid DLEQ for (u, u^x_alice).
@@ -289,9 +300,11 @@ mod tests {
     fn dleq_rejects_inconsistent_pair() {
         let session = spongefish::session!("dleq test");
         let (g, x, h) = keygen();
-        let prepared =
-            dsfs::non_interactive_argument(Dleq::<G>::default(), dsfs::Keccak::default())
-                .prepare(&(g, h));
+        let prepared = dsfs::preprocessing_non_interactive_argument(
+            Dleq::<G>::default(),
+            dsfs::Keccak::default(),
+        )
+        .prepare(&(g, h));
 
         let u = G::generator() * F::rand(&mut OsRng);
         let v_wrong = u * F::rand(&mut OsRng); // not u^x
@@ -307,7 +320,7 @@ mod tests {
             p.committed_index().as_bytes().to_vec()
         }
         let (g, _x, h) = keygen();
-        let prepared = dsfs::non_interactive_argument::<_, [u8; 64], _>(
+        let prepared = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
             Dleq::<G>::default(),
             dsfs::Keccak::default(),
         )
