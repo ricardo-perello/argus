@@ -17,8 +17,8 @@ use ark_std::rand::Rng;
 use rand::thread_rng;
 
 use ia_core::{
-    Encoding, NonInteractiveArgument, NonInteractiveReduction, PreprocessingCore,
-    PreprocessingReductionSecurity, VerifierKeyCommitment,
+    Encoding, PreprocessingCore, PreprocessingNonInteractiveArgument,
+    PreprocessingNonInteractiveReduction, PreprocessingReductionSecurity, VerifierKeyCommitment,
 };
 use spongefish_dsfs::{self as dsfs, Keccak};
 use warp::{
@@ -303,19 +303,15 @@ fn proof_rejects_with_wrong_verifier_key_same_dimensions() {
     let ix_b = warp_index(changed_r1cs, code, 4, 4);
 
     let session = spongefish::session!("warp wrong verifier key test");
-    let narg_a = dsfs::preprocessing_non_interactive_reduction(
+    let nir = dsfs::preprocessing_non_interactive_reduction(
         WarpReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new(),
         Keccak::default(),
-    )
-    .prepare(&ix_a);
-    let narg_b = dsfs::preprocessing_non_interactive_reduction(
-        WarpReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new(),
-        Keccak::default(),
-    )
-    .prepare(&ix_b);
+    );
+    let (pk_a, _vk_a) = nir.preprocess(&ix_a);
+    let (_pk_b, vk_b) = nir.preprocess(&ix_b);
 
-    let (proof, _, _) = narg_a.prove(&session, &instance, &witness);
-    assert!(narg_b.verify(&session, &instance, &proof).is_err());
+    let (proof, _, _) = nir.prove(&pk_a, &session, &instance, &witness);
+    assert!(nir.verify(&vk_b, &session, &instance, &proof).is_err());
 }
 
 #[test]
@@ -338,11 +334,12 @@ fn warp_ir_dsfs_prove_verify() {
 
     let session = spongefish::session!("warp IR test");
     let ir = WarpReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
-    let narg = dsfs::preprocessing_non_interactive_reduction(ir, Keccak::default()).prepare(&ix);
-    let (proof, target_p, _target_w) = narg.prove(&session, &instance, &witness);
+    let nir = dsfs::preprocessing_non_interactive_reduction(ir, Keccak::default());
+    let (pk, vk) = nir.preprocess(&ix);
+    let (proof, target_p, _target_w) = nir.prove(&pk, &session, &instance, &witness);
 
-    let target = narg
-        .verify(&session, &instance, &proof)
+    let target = nir
+        .verify(&vk, &session, &instance, &proof)
         .expect("IR verification failed");
     assert_eq!(target_p.acc_instance.0, target.acc_instance.0);
     assert_eq!(target.acc_instance.0.len(), 1, "should produce one root");
@@ -374,9 +371,10 @@ fn full_warp_dsfs_roundtrip() {
         WarpReduction::new(),
         WarpDecider::default(),
     );
-    let narg = dsfs::preprocessing_non_interactive_argument(full, Keccak::default()).prepare(&ix);
-    let proof = narg.prove(&session, &instance, &witness);
+    let nia = dsfs::preprocessing_non_interactive_argument(full, Keccak::default());
+    let (pk, vk) = nia.preprocess(&ix);
+    let proof = nia.prove(&pk, &session, &instance, &witness);
 
-    narg.verify(&session, &instance, &proof)
+    nia.verify(&vk, &session, &instance, &proof)
         .expect("FullWarp verification failed");
 }

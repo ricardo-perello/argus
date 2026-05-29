@@ -57,7 +57,7 @@ use rand::rngs::OsRng;
 use spongefish_dsfs as dsfs;
 
 use ia_core::{
-    CommittedIndexBytes, NonInteractiveReduction, Preprocessed, ProverChannel, VerificationError,
+    CommittedIndexBytes, PreprocessingNonInteractiveReduction, ProverChannel, VerificationError,
     VerificationResult, VerifierChannel, VerifierKeyCommitment,
 };
 
@@ -255,33 +255,27 @@ fn main() {
     println!("Picked p(X, Y) with 4 random coefficients.");
     println!("Claimed sum  T = Σ_{{x∈{{0,1}}^2}} p(x) = {t}\n");
 
-    // Preprocessing: preprocessing_non_interactive_reduction wraps an indexed
-    // reduction; .prepare(&ix) calls body.index(&ix) once and stashes
-    // (pk, vk, committed_index) inside the returned PreparedDsfsReduction.
-    let prepared = dsfs::preprocessing_non_interactive_reduction(
+    // Preprocessing: preprocessing_non_interactive_reduction is the stateless
+    // compiled wrapper; .preprocess(&coeffs) runs body.index(&coeffs) once and
+    // returns (ProvingKey { key, committed_index }, verifier_key).
+    let nir = dsfs::preprocessing_non_interactive_reduction(
         PreprocessedSumcheck,
         dsfs::Keccak::default(),
-    )
-    .prepare(&coeffs);
+    );
+    let (proving_key, verifier_key) = nir.preprocess(&coeffs);
 
-    // Inspect asymmetry via the `Preprocessed` capability.
-    fn report<P: Preprocessed>(label: &str, p: &P)
-    where
-        P::VerifierKey: core::fmt::Debug,
-    {
-        println!("{label}:");
-        println!("  Verifier key: {:?}", p.verifier_key());
-        println!(
-            "  Committed index: 0x{}\n",
-            hex::encode(p.committed_index().as_bytes())
-        );
-    }
-    report("Preprocessed wrapper (via `Preprocessed`)", &prepared);
+    // Inspect the verifier key + committed index directly.
+    println!("Preprocessed keys:");
+    println!("  Verifier key: {verifier_key:?}");
+    println!(
+        "  Committed index: 0x{}\n",
+        hex::encode(proving_key.committed_index.as_bytes())
+    );
 
     // Run the reduction. Source instance is just T; witness is ().
-    let (proof, target_prover, ()) = prepared.prove(&session, &t, &());
-    let target_verifier = prepared
-        .verify(&session, &t, &proof)
+    let (proof, target_prover, ()) = nir.prove(&proving_key, &session, &t, &());
+    let target_verifier = nir
+        .verify(&verifier_key, &session, &t, &proof)
         .expect("sumcheck reduction verifies");
     assert_eq!(target_prover, target_verifier);
 
@@ -310,7 +304,6 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ia_core::PreparedReduction;
 
     fn sample_coeffs() -> [Fr; 4] {
         let mut rng = OsRng;
@@ -329,82 +322,16 @@ mod tests {
         let session = spongefish::session!("preprocessed sumcheck test");
         let coeffs = sample_coeffs();
         let t = sum_over_hypercube(&coeffs);
-        let prepared = dsfs::preprocessing_non_interactive_reduction(
+        let nir = dsfs::preprocessing_non_interactive_reduction(
             PreprocessedSumcheck,
             dsfs::Keccak::default(),
-        )
-        .prepare(&coeffs);
+        );
+        let (pk, vk) = nir.preprocess(&coeffs);
 
-        let (proof, _target_p, ()) = prepared.prove(&session, &t, &());
-        let ((r1, r2), v) = prepared.verify(&session, &t, &proof).expect("verify");
+        let (proof, _target_p, ()) = nir.prove(&pk, &session, &t, &());
+        let ((r1, r2), v) = nir.verify(&vk, &session, &t, &proof).expect("verify");
 
         assert_eq!(eval(&coeffs, r1, r2), v, "decider check");
-    }
-
-    #[test]
-    fn sumcheck_roundtrip_prepare_then_dsfs() {
-        let session = spongefish::session!("preprocessed sumcheck prepared-reduction test");
-        let coeffs = sample_coeffs();
-        let t = sum_over_hypercube(&coeffs);
-
-        let prepared_sumcheck = PreparedReduction::prepare(PreprocessedSumcheck, &coeffs);
-        let indexed_source = prepared_sumcheck.indexed_source(t);
-        let prepared_nir_sumcheck = dsfs::plain_non_interactive_reduction::<_, [u8; 64], _>(
-            prepared_sumcheck,
-            dsfs::Keccak::default(),
-        );
-
-        let (proof, target_p, ()) = prepared_nir_sumcheck.prove(&session, &indexed_source, &());
-        let target_v = prepared_nir_sumcheck
-            .verify(&session, &indexed_source, &proof)
-            .expect("prepare then DSFS reduction verifies");
-        assert_eq!(target_p, target_v);
-
-        let ((r1, r2), v) = target_v;
-        assert_eq!(eval(&coeffs, r1, r2), v, "decider check");
-    }
-
-    #[test]
-    fn sumcheck_prepare_then_dsfs_matches_dsfs_then_prepare_exactly() {
-        let session = spongefish::session!("preprocessed sumcheck route-equivalence test");
-        let coeffs = sample_coeffs();
-        let t = sum_over_hypercube(&coeffs);
-        let direct = dsfs::preprocessing_non_interactive_reduction(
-            PreprocessedSumcheck,
-            dsfs::Keccak::default(),
-        )
-        .prepare(&coeffs);
-
-        let prepared_sumcheck = PreparedReduction::prepare(PreprocessedSumcheck, &coeffs);
-        assert_eq!(
-            direct.committed_index(),
-            prepared_sumcheck.committed_index()
-        );
-
-        let indexed_source = prepared_sumcheck.indexed_source(t);
-        let prepared_first = dsfs::plain_non_interactive_reduction::<_, [u8; 64], _>(
-            prepared_sumcheck,
-            dsfs::Keccak::default(),
-        );
-
-        let (direct_proof, direct_target, ()) = direct.prove(&session, &t, &());
-        let (prepared_first_proof, prepared_first_target, ()) =
-            prepared_first.prove(&session, &indexed_source, &());
-        assert_eq!(
-            direct_proof.as_bytes(),
-            prepared_first_proof.as_bytes(),
-            "deterministic reduction should produce identical proof bytes through both prepared routes"
-        );
-        assert_eq!(direct_target, prepared_first_target);
-
-        let direct_verified_target = direct
-            .verify(&session, &t, &prepared_first_proof)
-            .expect("direct prepared DSFS verifies the prepare-then-DSFS proof");
-        let prepared_verified_target = prepared_first
-            .verify(&session, &indexed_source, &direct_proof)
-            .expect("prepare-then-DSFS verifies the direct prepared proof");
-        assert_eq!(direct_verified_target, direct_target);
-        assert_eq!(prepared_verified_target, prepared_first_target);
     }
 
     /// If the prover claims a wrong T, the round-1 two-point check fails
@@ -417,23 +344,23 @@ mod tests {
         let real_t = sum_over_hypercube(&coeffs);
         let fake_t = real_t + Fr::from(1u64);
 
-        let prepared = dsfs::preprocessing_non_interactive_reduction(
+        let nir = dsfs::preprocessing_non_interactive_reduction(
             PreprocessedSumcheck,
             dsfs::Keccak::default(),
-        )
-        .prepare(&coeffs);
+        );
+        let (pk, vk) = nir.preprocess(&coeffs);
 
         // Prover honestly runs on (its true) `coeffs`. But the caller
         // passes the wrong T as the source instance. The verifier reads
         // the round-1 polynomial, computes q_1(0)+q_1(1) (which equals
         // real_t), and finds it != fake_t. Reject.
-        let (proof, _, ()) = prepared.prove(&session, &fake_t, &());
-        assert!(prepared.verify(&session, &fake_t, &proof).is_err());
+        let (proof, _, ()) = nir.prove(&pk, &session, &fake_t, &());
+        assert!(nir.verify(&vk, &session, &fake_t, &proof).is_err());
     }
 
-    /// Two prepared wrappers over different polynomials have different
-    /// committed indices; a proof produced under one cannot be verified
-    /// under the other (transcript divergence catches it).
+    /// Two indexings over different polynomials have different committed
+    /// indices; a proof produced under one cannot be verified under the
+    /// other (transcript divergence catches it).
     #[test]
     fn sumcheck_proof_does_not_cross_polynomials() {
         let session = spongefish::session!("preprocessed sumcheck test");
@@ -441,37 +368,32 @@ mod tests {
         let mut coeffs_b = coeffs_a;
         coeffs_b[C11] += Fr::from(1u64); // perturb one coefficient
 
-        let prepared_a = dsfs::preprocessing_non_interactive_reduction(
+        let nir = dsfs::preprocessing_non_interactive_reduction(
             PreprocessedSumcheck,
             dsfs::Keccak::default(),
-        )
-        .prepare(&coeffs_a);
-        let prepared_b = dsfs::preprocessing_non_interactive_reduction(
-            PreprocessedSumcheck,
-            dsfs::Keccak::default(),
-        )
-        .prepare(&coeffs_b);
-        assert_ne!(prepared_a.committed_index(), prepared_b.committed_index());
+        );
+        let (pk_a, _vk_a) = nir.preprocess(&coeffs_a);
+        let (_pk_b, vk_b) = nir.preprocess(&coeffs_b);
+        assert_ne!(pk_a.committed_index, vk_b.committed_index());
 
         let t_a = sum_over_hypercube(&coeffs_a);
-        let (proof, _, ()) = prepared_a.prove(&session, &t_a, &());
-        assert!(prepared_b.verify(&session, &t_a, &proof).is_err());
+        let (proof, _, ()) = nir.prove(&pk_a, &session, &t_a, &());
+        assert!(nir.verify(&vk_b, &session, &t_a, &proof).is_err());
     }
 
-    /// `Preprocessed` capability extracts vk from any prepared wrapper,
-    /// reduction-flavored or argument-flavored.
+    /// The proving key carries the tagged committed index derived from the
+    /// verifier key at `preprocess` time.
     #[test]
-    fn preprocessed_capability_reaches_sumcheck_vk_generically() {
-        fn vk_commit_bytes<P: Preprocessed>(p: &P) -> Vec<u8> {
-            p.committed_index().as_bytes().to_vec()
-        }
+    fn sumcheck_proving_key_carries_tagged_committed_index() {
         let coeffs = sample_coeffs();
-        let prepared = dsfs::preprocessing_non_interactive_reduction::<_, [u8; 64], _>(
+        let nir = dsfs::preprocessing_non_interactive_reduction::<_, [u8; 64], _>(
             PreprocessedSumcheck,
             dsfs::Keccak::default(),
-        )
-        .prepare(&coeffs);
-        let bytes = vk_commit_bytes(&prepared);
-        assert!(bytes.starts_with(b"preprocessed-sumcheck:vk:v1"));
+        );
+        let (pk, _vk) = nir.preprocess(&coeffs);
+        assert!(pk
+            .committed_index
+            .as_bytes()
+            .starts_with(b"preprocessed-sumcheck:vk:v1"));
     }
 }

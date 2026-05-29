@@ -43,16 +43,17 @@ pub const fn pad_protocol_id(label: &[u8]) -> [u8; 32] {
 pub use channel::{ProverChannel, VerifierChannel};
 pub use core::{ArgumentCore, PreprocessingCore, ProtocolCore, ReductionCore};
 pub use interactive::{
-    ChainedReduction, InteractiveArgument, InteractiveReduction, PreparedArgument,
-    PreparedReduction, PreprocessingInteractiveArgument, PreprocessingInteractiveReduction,
-    ReducedArgument, TrivialIndexedArgument, TrivialIndexedReduction,
+    ChainedReduction, InteractiveArgument, InteractiveReduction, PreprocessingInteractiveArgument,
+    PreprocessingInteractiveReduction, ReducedArgument, TrivialIndexedArgument,
+    TrivialIndexedReduction,
 };
 pub use noninteractive::{
     NargAsInteractiveArgument, NargProof, NonInteractiveArgument, NonInteractiveReduction,
-    PreprocessingNonInteractiveArgument, PreprocessingNonInteractiveReduction,
+    PreprocessingNonInteractiveArgument, PreprocessingNonInteractiveReduction, Prover,
+    ProverReduction, Verifier, VerifierReduction,
 };
 pub use preprocessing::{
-    CommittedIndexBytes, IndexedInstance, IndexedInstanceRef, Preprocessed, VerifierKeyCommitment,
+    CommittedIndexBytes, IndexedInstance, IndexedInstanceRef, ProvingKey, VerifierKeyCommitment,
 };
 pub use security::{
     ArgumentSecurity, PreprocessingArgumentSecurity, PreprocessingReductionSecurity,

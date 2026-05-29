@@ -1,9 +1,16 @@
+//! Integration test: the preprocessed DSFS transcript binds BOTH the committed
+//! verifier index and the per-claim instance before the first challenge.
+//!
+//! `ChallengeEchoArgument` echoes the verifier's challenge back, so any
+//! divergence in the squeezed challenge (caused by a different committed index
+//! or a different absorbed instance) is caught by the echo check.
+
 use spongefish_dsfs as dsfs;
 
 use ia_core::{
-    ArgumentCore, CommittedIndexBytes, IndexedInstance, NonInteractiveArgument, PreparedArgument,
-    PreprocessingCore, PreprocessingInteractiveArgument, ProtocolCore, ProverChannel,
-    VerificationError, VerificationResult, VerifierChannel, VerifierKeyCommitment,
+    ArgumentCore, CommittedIndexBytes, PreprocessingCore, PreprocessingInteractiveArgument,
+    PreprocessingNonInteractiveArgument, ProtocolCore, ProverChannel, VerificationError,
+    VerificationResult, VerifierChannel, VerifierKeyCommitment,
 };
 
 #[derive(Default)]
@@ -73,47 +80,34 @@ impl PreprocessingInteractiveArgument for ChallengeEchoArgument {
     }
 }
 
-type PreparedEchoArgument = PreparedArgument<ChallengeEchoArgument>;
-type PreparedEchoDsfs = dsfs::DsfsArgument<PreparedEchoArgument, [u8; 64]>;
-
-fn prepared_plain_dsfs(
-    ix: &[u8],
-    instance: [u8; 1],
-) -> (PreparedEchoDsfs, IndexedInstance<[u8; 1]>) {
-    let prepared = PreparedArgument::prepare(ChallengeEchoArgument, &ix.to_vec());
-    let indexed_instance = prepared.indexed_instance(instance);
-    let narg =
-        dsfs::plain_non_interactive_argument::<_, [u8; 64], _>(prepared, dsfs::Keccak::default());
-    (narg, indexed_instance)
-}
-
 #[test]
-fn prepared_argument_then_plain_dsfs_absorbs_committed_index_and_instance() {
+fn preprocessed_dsfs_absorbs_committed_index_and_instance() {
     let session = [0u8; 64];
-    let witness = [0xAB];
+    let witness = [0xABu8];
 
-    let (prover, prover_instance) = prepared_plain_dsfs(&[1, 2, 3], [7]);
-    let proof = prover.prove(&session, &prover_instance, &witness);
-
-    let (verifier, verifier_instance) = prepared_plain_dsfs(&[1, 2, 3], [7]);
-    verifier
-        .verify(&session, &verifier_instance, &proof)
-        .expect("same committed index and same instance verify");
-
-    let (different_index_verifier, same_inner_instance) = prepared_plain_dsfs(&[9, 9, 9], [7]);
-    assert!(
-        different_index_verifier
-            .verify(&session, &same_inner_instance, &proof)
-            .is_err(),
-        "changing only the verifier-key commitment must change the DSFS transcript"
+    let nia = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
+        ChallengeEchoArgument,
+        dsfs::Keccak::default(),
     );
 
-    let (different_instance_verifier, different_inner_instance) =
-        prepared_plain_dsfs(&[1, 2, 3], [8]);
+    // Prove under committed index [1,2,3] at instance [7].
+    let (pk, vk) = nia.preprocess(&vec![1u8, 2, 3]);
+    let proof = nia.prove(&pk, &session, &[7u8], &witness);
+
+    // Same committed index, same instance -> verifies.
+    nia.verify(&vk, &session, &[7u8], &proof)
+        .expect("same committed index and same instance verify");
+
+    // Changing only the verifier-key commitment must change the transcript.
+    let (_pk_other, vk_other_index) = nia.preprocess(&vec![9u8, 9, 9]);
     assert!(
-        different_instance_verifier
-            .verify(&session, &different_inner_instance, &proof)
-            .is_err(),
+        nia.verify(&vk_other_index, &session, &[7u8], &proof).is_err(),
+        "changing only the committed index must change the DSFS transcript"
+    );
+
+    // Changing only the per-claim instance must change the transcript.
+    assert!(
+        nia.verify(&vk, &session, &[8u8], &proof).is_err(),
         "changing only the per-claim instance must change the DSFS transcript"
     );
 }

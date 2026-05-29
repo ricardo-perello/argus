@@ -7,9 +7,7 @@ mod macros;
 mod preprocessing;
 mod reduction;
 
-pub use adapters::{
-    PreparedArgument, PreparedReduction, TrivialIndexedArgument, TrivialIndexedReduction,
-};
+pub use adapters::{TrivialIndexedArgument, TrivialIndexedReduction};
 pub use argument::InteractiveArgument;
 pub use composition::{ChainedReduction, ReducedArgument};
 pub use preprocessing::{PreprocessingInteractiveArgument, PreprocessingInteractiveReduction};

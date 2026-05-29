@@ -672,8 +672,8 @@ macro_rules! __ia_core_parse_preprocessing_reduction_where {
 mod tests {
     use crate::{
         CommittedIndexBytes, Decoding, Encoding, InteractiveArgument, InteractiveReduction,
-        NargSerialize, PreparedArgument, PreprocessingCore, PreprocessingInteractiveArgument,
-        ProverChannel, ReducedArgument, VerificationError, VerificationResult, VerifierChannel,
+        NargSerialize, PreprocessingCore, PreprocessingInteractiveArgument, ProverChannel,
+        ReducedArgument, VerificationError, VerificationResult, VerifierChannel,
         VerifierKeyCommitment, pad_protocol_id,
     };
     use alloc::vec::Vec;
@@ -846,24 +846,17 @@ mod tests {
     }
 
     #[test]
-    fn preprocessing_argument_macro_prepares_and_rejects_mismatched_commitment() {
-        let prepared = PreparedArgument::prepare(MacroPreArg, &7);
-        let instance = prepared.indexed_instance(2);
+    fn preprocessing_argument_macro_emits_keyed_prove_verify() {
+        // The macro should emit PreprocessingCore (index) plus keyed prove/verify.
+        let body = MacroPreArg;
+        let (pk, vk) = body.index(&7u32);
         let mut prover = TestProver::default();
-        prepared.prove(&mut prover, &instance, &3);
-
+        body.prove(&mut prover, &pk, &2u32, &3u32);
         let mut verifier = TestVerifier {
             proof: &prover.proof,
         };
-        prepared
-            .verify(&mut verifier, &instance)
-            .expect("prepared macro IA verifies");
-
-        let mismatched = crate::IndexedInstance::new(CommittedIndexBytes::new(alloc::vec![9]), 2);
-        let mut verifier = TestVerifier {
-            proof: &prover.proof,
-        };
-        assert!(prepared.verify(&mut verifier, &mismatched).is_err());
+        body.verify(&mut verifier, &vk, &2u32)
+            .expect("macro preprocessing IA verifies through the channel");
     }
 
     struct MacroPreReduction;

@@ -46,7 +46,7 @@ use rand::rngs::OsRng;
 use spongefish_dsfs as dsfs;
 
 use ia_core::{
-    CommittedIndexBytes, Decoding, Deserialize, Encoding, NonInteractiveArgument, Preprocessed,
+    CommittedIndexBytes, Decoding, Deserialize, Encoding, PreprocessingNonInteractiveArgument,
     ProverChannel, VerificationError, VerificationResult, VerifierChannel, VerifierKeyCommitment,
 };
 
@@ -179,33 +179,23 @@ fn main() {
     let h = g * x; // public key
 
     // -------- preprocessing step -------------------------------------------
-    // preprocessing_non_interactive_argument(body, sponge).prepare(&(g, h))
-    // calls body.index(&(g, h)) once and stashes (pk, vk, committed_index)
-    // inside the returned PreparedDsfsArgument. Every subsequent prove/verify
-    // call reads from those.
-    let dleq = Dleq::<G>::default();
-    let unprepared_nia_dleq =
-        dsfs::preprocessing_non_interactive_argument(dleq, dsfs::Keccak::default());
-    let prepared_nia_dleq = unprepared_nia_dleq.prepare(&(g, h));
-    let _prepared_x = prepared_nia_dleq.committed_index();
-    // -------- inspect preprocessing via the Preprocessed capability --------
-    // Bound by `P: Preprocessed`, so the same helper works on any prepared
-    // wrapper — PreparedArgument (IA layer) or PreparedDsfsArgument (NARG layer).
-    fn audit<P: Preprocessed>(label: &str, p: &P)
-    where
-        P::VerifierKey: core::fmt::Debug,
-    {
-        println!("{label}:");
-        println!(
-            "  committed_index: 0x{}",
-            hex::encode(p.committed_index().as_bytes())
-        );
-        println!("  verifier_key:    {:?}", p.verifier_key());
-    }
-    audit(
-        "Preprocessed public key (via `Preprocessed` trait)",
-        &prepared_nia_dleq,
+    // preprocessing_non_interactive_argument(body, sponge) is the stateless
+    // compiled wrapper; .preprocess(&(g, h)) runs body.index(&(g, h)) once and
+    // returns (ProvingKey { key, committed_index }, verifier_key). Keys are
+    // then passed as inputs to prove/verify — the wrapper stores nothing.
+    let nia_dleq = dsfs::preprocessing_non_interactive_argument(
+        Dleq::<G>::default(),
+        dsfs::Keccak::default(),
     );
+    let (proving_key, verifier_key) = nia_dleq.preprocess(&(g, h));
+
+    // -------- inspect the preprocessed key directly ------------------------
+    println!("Preprocessed public key:");
+    println!(
+        "  committed_index: 0x{}",
+        hex::encode(proving_key.committed_index.as_bytes())
+    );
+    println!("  verifier_key:    {verifier_key:?}");
     println!();
 
     // -------- many proofs under one preprocessed key -----------------------
@@ -216,9 +206,9 @@ fn main() {
         let u = G::generator() * F::rand(&mut OsRng);
         let v = u * x;
         let instance = (u, v);
-        let proof = prepared_nia_dleq.prove(&session, &instance, &x);
-        prepared_nia_dleq
-            .verify(&session, &instance, &proof)
+        let proof = nia_dleq.prove(&proving_key, &session, &instance, &x);
+        nia_dleq
+            .verify(&verifier_key, &session, &instance, &proof)
             .expect("verify");
         println!(
             "Claim {i}: verified DLEQ pair (u, u^x) under preprocessed key ({} proof bytes)",
@@ -234,7 +224,6 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ia_core::PreparedArgument;
 
     type G = ark_curve25519::EdwardsProjective;
     type F = ark_curve25519::Fr;
@@ -247,73 +236,20 @@ mod tests {
     }
 
     #[test]
-    fn dleq_roundtrip_dsfs_then_prepare() {
-        let session = spongefish::session!("dleq test dsfs then prepare");
+    fn dleq_roundtrip() {
+        let session = spongefish::session!("dleq test");
         let (g, x, h) = keygen();
-        let prepared = dsfs::preprocessing_non_interactive_argument(
+        let nia = dsfs::preprocessing_non_interactive_argument(
             Dleq::<G>::default(),
             dsfs::Keccak::default(),
-        )
-        .prepare(&(g, h));
+        );
+        let (pk, vk) = nia.preprocess(&(g, h));
 
         let u = G::generator() * F::rand(&mut OsRng);
         let v = u * x;
-        let proof = prepared.prove(&session, &(u, v), &x);
-        prepared
-            .verify(&session, &(u, v), &proof)
+        let proof = nia.prove(&pk, &session, &(u, v), &x);
+        nia.verify(&vk, &session, &(u, v), &proof)
             .expect("verify under correct key");
-    }
-
-    #[test]
-    fn dleq_roundtrip_prepare_then_dsfs() {
-        let session = spongefish::session!("dleq test prepare then dsfs");
-        let (g, x, h) = keygen();
-
-        let prepared_dleq = PreparedArgument::prepare(Dleq::<G>::default(), &(g, h));
-
-        let u = G::generator() * F::rand(&mut OsRng);
-        let instance = (u, u * x);
-        let indexed_instance = prepared_dleq.indexed_instance(instance);
-
-        let prepared_nia_dleq =
-            dsfs::plain_non_interactive_argument(prepared_dleq, dsfs::Keccak::default());
-
-        let proof = prepared_nia_dleq.prove(&session, &indexed_instance, &x);
-        prepared_nia_dleq
-            .verify(&session, &indexed_instance, &proof)
-            .expect("prepare then DSFS proof verifies");
-    }
-
-    #[test]
-    fn dleq_prepare_then_dsfs_cross_verifies_with_dsfs_then_prepare() {
-        let session = spongefish::session!("dleq route-equivalence test");
-        let (g, x, h) = keygen();
-        let direct = dsfs::preprocessing_non_interactive_argument(
-            Dleq::<G>::default(),
-            dsfs::Keccak::default(),
-        )
-        .prepare(&(g, h));
-
-        let prepared_dleq = PreparedArgument::prepare(Dleq::<G>::default(), &(g, h));
-        assert_eq!(direct.committed_index(), prepared_dleq.committed_index());
-
-        let u = G::generator() * F::rand(&mut OsRng);
-        let instance = (u, u * x);
-        let indexed_instance = prepared_dleq.indexed_instance(instance);
-        let prepared_first = dsfs::plain_non_interactive_argument::<_, [u8; 64], _>(
-            prepared_dleq,
-            dsfs::Keccak::default(),
-        );
-
-        let prepared_first_proof = prepared_first.prove(&session, &indexed_instance, &x);
-        direct
-            .verify(&session, &instance, &prepared_first_proof)
-            .expect("DSFS-then-prepare verifies prepare-then-DSFS proof");
-
-        let direct_proof = direct.prove(&session, &instance, &x);
-        prepared_first
-            .verify(&session, &indexed_instance, &direct_proof)
-            .expect("prepare-then-DSFS verifies DSFS-then-prepare proof");
     }
 
     /// A proof produced under (g, h_alice) cannot be redirected at
@@ -325,25 +261,23 @@ mod tests {
         let (g, x_alice, h_alice) = keygen();
         let (_, _x_bob, h_bob) = keygen();
 
-        let alice = dsfs::preprocessing_non_interactive_argument(
+        let nia = dsfs::preprocessing_non_interactive_argument(
             Dleq::<G>::default(),
             dsfs::Keccak::default(),
-        )
-        .prepare(&(g, h_alice));
-        let bob = dsfs::preprocessing_non_interactive_argument(
-            Dleq::<G>::default(),
-            dsfs::Keccak::default(),
-        )
-        .prepare(&(g, h_bob));
-        assert_ne!(alice.committed_index(), bob.committed_index());
+        );
+        let (pk_alice, _vk_alice) = nia.preprocess(&(g, h_alice));
+        let (_pk_bob, vk_bob) = nia.preprocess(&(g, h_bob));
+        assert_ne!(pk_alice.committed_index, vk_bob.committed_index());
 
         // Alice produces a valid DLEQ for (u, u^x_alice).
         let u = G::generator() * F::rand(&mut OsRng);
         let v_alice = u * x_alice;
-        let proof = alice.prove(&session, &(u, v_alice), &x_alice);
+        let proof = nia.prove(&pk_alice, &session, &(u, v_alice), &x_alice);
 
-        // Bob's prepared wrapper rejects — the bound public key differs.
-        assert!(bob.verify(&session, &(u, v_alice), &proof).is_err());
+        // Verifying under Bob's key rejects — the bound public key differs.
+        assert!(nia
+            .verify(&vk_bob, &session, &(u, v_alice), &proof)
+            .is_err());
     }
 
     /// Mismatching (u, v) — i.e., v != u^x — must be rejected by the
@@ -353,32 +287,28 @@ mod tests {
     fn dleq_rejects_inconsistent_pair() {
         let session = spongefish::session!("dleq test");
         let (g, x, h) = keygen();
-        let prepared = dsfs::preprocessing_non_interactive_argument(
+        let nia = dsfs::preprocessing_non_interactive_argument(
             Dleq::<G>::default(),
             dsfs::Keccak::default(),
-        )
-        .prepare(&(g, h));
+        );
+        let (pk, vk) = nia.preprocess(&(g, h));
 
         let u = G::generator() * F::rand(&mut OsRng);
         let v_wrong = u * F::rand(&mut OsRng); // not u^x
-        let proof = prepared.prove(&session, &(u, v_wrong), &x);
-        assert!(prepared.verify(&session, &(u, v_wrong), &proof).is_err());
+        let proof = nia.prove(&pk, &session, &(u, v_wrong), &x);
+        assert!(nia.verify(&vk, &session, &(u, v_wrong), &proof).is_err());
     }
 
-    /// Generic-consumer test: `Preprocessed` lets a single function pull
-    /// preprocessing keys off any prepared wrapper.
+    /// The proving key carries the tagged committed index derived from the
+    /// verifier key at `preprocess` time.
     #[test]
-    fn preprocessed_capability_reaches_dleq_key_generically() {
-        fn vk_bytes<P: Preprocessed>(p: &P) -> Vec<u8> {
-            p.committed_index().as_bytes().to_vec()
-        }
+    fn dleq_proving_key_carries_tagged_committed_index() {
         let (g, _x, h) = keygen();
-        let prepared = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
+        let nia = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
             Dleq::<G>::default(),
             dsfs::Keccak::default(),
-        )
-        .prepare(&(g, h));
-        let bytes = vk_bytes(&prepared);
-        assert!(bytes.starts_with(b"dleq:vk:v1"));
+        );
+        let (pk, _vk) = nia.preprocess(&(g, h));
+        assert!(pk.committed_index.as_bytes().starts_with(b"dleq:vk:v1"));
     }
 }

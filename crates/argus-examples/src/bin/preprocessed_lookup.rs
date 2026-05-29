@@ -40,7 +40,7 @@ use blake3::{Hash, Hasher};
 use spongefish_dsfs as dsfs;
 
 use ia_core::{
-    CommittedIndexBytes, NonInteractiveArgument, Preprocessed, ProverChannel, VerificationError,
+    CommittedIndexBytes, PreprocessingNonInteractiveArgument, ProverChannel, VerificationError,
     VerificationResult, VerifierChannel, VerifierKeyCommitment,
 };
 
@@ -156,6 +156,7 @@ ia_core::impl_preprocessing_argument! {
         /// Per-claim instance is (i, claimed_value).
         type Instance = (u32, u32);
         type Witness = ();
+        
         type Index = Vec<u32>;
         type ProverKey = LookupProverKey;
         type VerifierKey = LookupVerifierKey;
@@ -241,35 +242,32 @@ fn main() {
     let table: Vec<u32> = (0..8u32).map(|i| 100 + i * 7).collect();
     println!("Public table: {table:?}\n");
 
-    // Preprocessing: preprocessing_non_interactive_argument(body, sponge)
-    // .prepare(&table) calls body.index(&table) once. Asymmetry visible in the
-    // returned wrapper.
-    let prepared =
-        dsfs::preprocessing_non_interactive_argument(PreprocessedLookup, dsfs::Keccak::default())
-            .prepare(&table);
+    // Preprocessing: preprocessing_non_interactive_argument(body, sponge) is the
+    // stateless compiled wrapper; .preprocess(&table) runs body.index(&table)
+    // once and returns (ProvingKey { key, committed_index }, verifier_key).
+    let nia = dsfs::preprocessing_non_interactive_argument(
+        PreprocessedLookup,
+        dsfs::Keccak::default(),
+    );
+    let (proving_key, verifier_key) = nia.preprocess(&table);
 
-    // Inspect the asymmetry via the `Preprocessed` capability.
-    fn report<P: Preprocessed>(label: &str, p: &P)
-    where
-        P::ProverKey: core::fmt::Debug,
-        P::VerifierKey: core::fmt::Debug,
-    {
-        println!("{label}:");
-        println!("  Prover key:   {:?}", p.prover_key());
-        println!("  Verifier key: {:?}", p.verifier_key());
-        println!(
-            "  Committed index: 0x{}\n",
-            hex::encode(p.committed_index().as_bytes())
-        );
-    }
-    report("Preprocessed wrapper (via `Preprocessed` trait)", &prepared);
+    // The asymmetry, straight off the keys: the prover key holds the full
+    // table + tree (O(n)); the verifier key is just root + n (O(1)).
+    println!("Preprocessed keys:");
+    println!("  Prover key:   {:?}", proving_key.key);
+    println!("  Verifier key: {verifier_key:?}");
+    println!(
+        "  Committed index: 0x{}\n",
+        hex::encode(proving_key.committed_index.as_bytes())
+    );
 
     // Open three entries. Each proof is O(log n) hashes + the leaf value —
     // the verifier never reconstructs the table.
     for i in 0u32..3 {
         let y = table[i as usize];
-        let proof = prepared.prove(&session, &(i, y), &());
-        prepared.verify(&session, &(i, y), &proof).expect("verify");
+        let proof = nia.prove(&proving_key, &session, &(i, y), &());
+        nia.verify(&verifier_key, &session, &(i, y), &proof)
+            .expect("verify");
         println!(
             "table[{i}] == {y} -> verified ({} proof bytes, vk stays {} bytes)",
             proof.as_bytes().len(),
@@ -285,7 +283,6 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ia_core::PreparedArgument;
 
     fn sample_table() -> Vec<u32> {
         (0..8u32).map(|i| 1000 + i).collect()
@@ -295,78 +292,18 @@ mod tests {
     fn lookup_roundtrip() {
         let session = spongefish::session!("preprocessed lookup test");
         let table = sample_table();
-        let prepared = dsfs::preprocessing_non_interactive_argument(
+        let nia = dsfs::preprocessing_non_interactive_argument(
             PreprocessedLookup,
             dsfs::Keccak::default(),
-        )
-        .prepare(&table);
+        );
+        let (pk, vk) = nia.preprocess(&table);
 
         for i in 0u32..table.len() as u32 {
             let y = table[i as usize];
-            let proof = prepared.prove(&session, &(i, y), &());
-            prepared
-                .verify(&session, &(i, y), &proof)
+            let proof = nia.prove(&pk, &session, &(i, y), &());
+            nia.verify(&vk, &session, &(i, y), &proof)
                 .expect("opening should verify");
         }
-    }
-
-    #[test]
-    fn lookup_roundtrip_prepare_then_dsfs() {
-        let session = spongefish::session!("preprocessed lookup prepared-argument test");
-        let table = sample_table();
-
-        let prepared_lookup = PreparedArgument::prepare(PreprocessedLookup, &table);
-
-        let i = 5u32;
-        let instance = (i, table[i as usize]);
-        let indexed_instance = prepared_lookup.indexed_instance(instance);
-
-        let prepared_nia_lookup = dsfs::plain_non_interactive_argument::<_, [u8; 64], _>(
-            prepared_lookup,
-            dsfs::Keccak::default(),
-        );
-
-        let proof = prepared_nia_lookup.prove(&session, &indexed_instance, &());
-        prepared_nia_lookup
-            .verify(&session, &indexed_instance, &proof)
-            .expect("prepare then DSFS opening verifies");
-    }
-
-    #[test]
-    fn lookup_prepare_then_dsfs_matches_dsfs_then_prepare_exactly() {
-        let session = spongefish::session!("preprocessed lookup route-equivalence test");
-        let table = sample_table();
-        let direct = dsfs::preprocessing_non_interactive_argument(
-            PreprocessedLookup,
-            dsfs::Keccak::default(),
-        )
-        .prepare(&table);
-
-        let prepared_lookup = PreparedArgument::prepare(PreprocessedLookup, &table);
-        assert_eq!(direct.committed_index(), prepared_lookup.committed_index());
-
-        let i = 5u32;
-        let instance = (i, table[i as usize]);
-        let indexed_instance = prepared_lookup.indexed_instance(instance);
-        let prepared_first = dsfs::plain_non_interactive_argument::<_, [u8; 64], _>(
-            prepared_lookup,
-            dsfs::Keccak::default(),
-        );
-
-        let direct_proof = direct.prove(&session, &instance, &());
-        let prepared_first_proof = prepared_first.prove(&session, &indexed_instance, &());
-        assert_eq!(
-            direct_proof.as_bytes(),
-            prepared_first_proof.as_bytes(),
-            "deterministic protocol should produce identical proof bytes through both prepared routes"
-        );
-
-        prepared_first
-            .verify(&session, &indexed_instance, &direct_proof)
-            .expect("prepare-then-DSFS verifies the direct prepared proof");
-        direct
-            .verify(&session, &instance, &prepared_first_proof)
-            .expect("direct prepared DSFS verifies the prepare-then-DSFS proof");
     }
 
     /// Wrong claimed value at a valid index — verifier rejects.
@@ -374,21 +311,20 @@ mod tests {
     fn lookup_rejects_wrong_value() {
         let session = spongefish::session!("preprocessed lookup test");
         let table = sample_table();
-        let prepared = dsfs::preprocessing_non_interactive_argument(
+        let nia = dsfs::preprocessing_non_interactive_argument(
             PreprocessedLookup,
             dsfs::Keccak::default(),
-        )
-        .prepare(&table);
+        );
+        let (pk, vk) = nia.preprocess(&table);
 
-        let proof = prepared.prove(&session, &(3, table[3]), &());
+        let proof = nia.prove(&pk, &session, &(3, table[3]), &());
         // Same proof bytes, but claim a different value -> reject.
         let bogus = (3u32, table[3].wrapping_add(1));
-        assert!(prepared.verify(&session, &bogus, &proof).is_err());
+        assert!(nia.verify(&vk, &session, &bogus, &proof).is_err());
     }
 
-    /// Two prepared wrappers built on different tables have different
-    /// committed indices, so a proof under table A cannot be verified
-    /// under table B even at the same (i, y).
+    /// Two indexings on different tables have different committed indices, so a
+    /// proof under table A cannot be verified under table B even at the same (i, y).
     #[test]
     fn lookup_proof_does_not_cross_tables() {
         let session = spongefish::session!("preprocessed lookup test");
@@ -396,63 +332,58 @@ mod tests {
         let mut table_b = sample_table();
         table_b[0] = table_b[0].wrapping_add(1); // perturb one entry
 
-        let prepared_a = dsfs::preprocessing_non_interactive_argument(
+        let nia = dsfs::preprocessing_non_interactive_argument(
             PreprocessedLookup,
             dsfs::Keccak::default(),
-        )
-        .prepare(&table_a);
-        let prepared_b = dsfs::preprocessing_non_interactive_argument(
-            PreprocessedLookup,
-            dsfs::Keccak::default(),
-        )
-        .prepare(&table_b);
-        assert_ne!(prepared_a.committed_index(), prepared_b.committed_index());
+        );
+        let (pk_a, _vk_a) = nia.preprocess(&table_a);
+        let (_pk_b, vk_b) = nia.preprocess(&table_b);
+        assert_ne!(pk_a.committed_index, vk_b.committed_index());
 
         // Open table_a at index 5 (unperturbed in both).
-        let proof = prepared_a.prove(&session, &(5, table_a[5]), &());
-        assert!(
-            prepared_b
-                .verify(&session, &(5, table_a[5]), &proof)
-                .is_err()
-        );
+        let proof = nia.prove(&pk_a, &session, &(5, table_a[5]), &());
+        assert!(nia
+            .verify(&vk_b, &session, &(5, table_a[5]), &proof)
+            .is_err());
     }
 
-    /// Confirms the asymmetry: prover key holds the full table; verifier
-    /// key holds 32 + 4 = 36 bytes regardless of table size.
+    /// The optional `Prover`/`Verifier` role wrappers compose `(nia, key)` and
+    /// round-trip; `Verifier` exposes only `verify`.
+    #[test]
+    fn lookup_via_role_wrappers() {
+        use ia_core::{Prover, Verifier};
+        let session = spongefish::session!("preprocessed lookup wrappers test");
+        let table = sample_table();
+        let nia = dsfs::preprocessing_non_interactive_argument(
+            PreprocessedLookup,
+            dsfs::Keccak::default(),
+        );
+        let (pk, vk) = nia.preprocess(&table);
+
+        let prover = Prover::new(&nia, &pk);
+        let verifier = Verifier::new(&nia, &vk);
+
+        let proof = prover.prove(&session, &(3, table[3]), &());
+        verifier
+            .verify(&session, &(3, table[3]), &proof)
+            .expect("role-wrapper round-trip verifies");
+    }
+
+    /// Confirms the asymmetry: the proving key holds the full table; the
+    /// verifier key holds 32 + 4 = 36 bytes regardless of table size.
     #[test]
     fn pk_grows_with_table_vk_stays_small() {
-        fn vk_bytes<P: Preprocessed>(p: &P) -> usize
-        where
-            P::VerifierKey: AsVkBytes,
-        {
-            p.verifier_key().vk_byte_len()
-        }
-
-        trait AsVkBytes {
-            fn vk_byte_len(&self) -> usize;
-        }
-        impl AsVkBytes for LookupVerifierKey {
-            fn vk_byte_len(&self) -> usize {
-                32 + 4
-            }
-        }
-
         let small = (0..2u32).collect::<Vec<_>>();
         let large = (0..1024u32).collect::<Vec<_>>();
-        let p_small = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
+        let nia = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
             PreprocessedLookup,
             dsfs::Keccak::default(),
-        )
-        .prepare(&small);
-        let p_large = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
-            PreprocessedLookup,
-            dsfs::Keccak::default(),
-        )
-        .prepare(&large);
+        );
+        let (pk_small, _vk_small) = nia.preprocess(&small);
+        let (pk_large, _vk_large) = nia.preprocess(&large);
 
-        // PK scales with the table; VK does not.
-        assert_eq!(p_small.prover_key().table.len(), 2);
-        assert_eq!(p_large.prover_key().table.len(), 1024);
-        assert_eq!(vk_bytes(&p_small), vk_bytes(&p_large));
+        // PK scales with the table; VK is a fixed 36 bytes (root + n) by construction.
+        assert_eq!(pk_small.key.table.len(), 2);
+        assert_eq!(pk_large.key.table.len(), 1024);
     }
 }

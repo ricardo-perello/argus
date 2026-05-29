@@ -63,27 +63,26 @@ impl VerifierKeyCommitment for () {
     }
 }
 
-/// Capability for any wrapper that carries preprocessing keys generated from
-/// an indexer.
+/// What the indexer ships to the prover: the author's prover material (`key`)
+/// paired with the public verifier-index digest (`committed_index`).
 ///
-/// Implemented by `PreparedArgument` / `PreparedReduction` at the IA/IR layer,
-/// and by `PreparedDsfsArgument` / `PreparedDsfsReduction` at the NARG layer.
-/// A single trait so consumers asking "where do the keys live?" have one answer
-/// regardless of which plane the wrapper sits on.
-///
-/// `prover_key` returns secret material — callers must not serialize or
-/// transport it. `verifier_key` and `committed_index` are public.
-///
-/// `Index` is deliberately NOT exposed: wrappers constructed via
-/// `with_keys(pk, vk)` never see the original `ix`, so an `index()` accessor
-/// would be a lie for that construction path.
-pub trait Preprocessed {
-    type ProverKey;
-    type VerifierKey: VerifierKeyCommitment;
+/// The digest is computed once, from the verifier key (`vk.committed_index()`),
+/// and cached here so the prover — which never holds `vk` — can bind it into the
+/// transcript. It is *not* stored on the verifier key, which derives the same
+/// digest on demand; there is no duplication and no risk of the two drifting.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProvingKey<PK> {
+    pub key: PK,
+    pub committed_index: CommittedIndexBytes,
+}
 
-    fn prover_key(&self) -> &Self::ProverKey;
-    fn verifier_key(&self) -> &Self::VerifierKey;
-    fn committed_index(&self) -> &CommittedIndexBytes;
+impl<PK> ProvingKey<PK> {
+    pub fn new(key: PK, committed_index: CommittedIndexBytes) -> Self {
+        Self {
+            key,
+            committed_index,
+        }
+    }
 }
 
 /// Fixed tag for the canonical pair commitment of two verifier keys.
