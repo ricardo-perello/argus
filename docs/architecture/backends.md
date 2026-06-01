@@ -16,15 +16,16 @@ let nir = spongefish_dsfs::plain_non_interactive_reduction(reduction, sponge);
 
 For preprocessing cores, use the symmetric preprocessing constructors:
 `preprocessing_non_interactive_argument` or
-`preprocessing_non_interactive_reduction`. They return an unprepared handle
-whose `.prepare(&ix)` method stores preprocessing keys and returns a prepared
-non-interactive argument or reduction.
+`preprocessing_non_interactive_reduction`. They return a stateless compiled
+handle that implements the preprocessing non-interactive traits. Call
+`.preprocess(&ix)` to obtain `(pk, vk)`, then pass `&pk` to `prove` and `&vk` to
+`verify`.
 
 It is responsible for:
 
 - deriving the domain separator,
 - absorbing public inputs before the first challenge,
-- absorbing committed verifier-index bytes for prepared protocols,
+- absorbing committed-index bytes for preprocessing protocols,
 - absorbing prover messages before challenges,
 - squeezing verifier challenges,
 - serializing prover messages into proof bytes,

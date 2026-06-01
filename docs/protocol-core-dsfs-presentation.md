@@ -21,9 +21,10 @@ ProtocolCore
 ```text
 PreprocessingCore
 ├── Index
-├── ProverKey
-├── VerifierKey: VerifierKeyCommitment
-└── index(ix) -> (pk, vk)
+├── ProverKey: CommittedIndex
+├── VerifierKey: CommittedIndex
+├── preprocess(ix) -> (pk, vk)
+└── preprocess_checked(ix) -> (pk, vk)
 ```
 
 The effect is deliberately OOP-ish: common identity lives at the root, common
@@ -44,7 +45,7 @@ ia_core::impl_interactive_argument! {
         type Instance = SchnorrInstance;
         type Witness = SchnorrWitness;
 
-        fn prove<P: ProverChannel>(
+        fn prove<P: ProverChannel<Unit = u8>>(
             &self,
             ch: &mut P,
             x: &Self::Instance,
@@ -53,7 +54,7 @@ ia_core::impl_interactive_argument! {
             ...
         }
 
-        fn verify<V: VerifierChannel>(
+        fn verify<V: VerifierChannel<Unit = u8>>(
             &self,
             ch: &mut V,
             x: &Self::Instance,
@@ -97,7 +98,7 @@ ia_core::impl_preprocessing_reduction! {
             ...
         }
 
-        fn prove<P: ProverChannel>(
+        fn prove<P: ProverChannel<Unit = u8>>(
             &self,
             ch: &mut P,
             pk: &Self::ProverKey,
@@ -107,7 +108,7 @@ ia_core::impl_preprocessing_reduction! {
             ...
         }
 
-        fn verify<V: VerifierChannel>(
+        fn verify<V: VerifierChannel<Unit = u8>>(
             &self,
             ch: &mut V,
             vk: &Self::VerifierKey,
@@ -147,55 +148,51 @@ let verified_target = nir.verify(&session, &source, &proof)?;
 Preprocessing argument:
 
 ```rust
-let nia = dsfs::preprocessing_non_interactive_argument(preprocessing_argument, dsfs::Keccak::default())
-    .prepare(&index);
+let nia = dsfs::preprocessing_non_interactive_argument(preprocessing_argument, dsfs::Keccak::default());
+let (pk, vk) = nia.preprocess(&index);
+let proof = nia.prove(&pk, &session, &instance, &witness);
+nia.verify(&vk, &session, &instance, &proof)?;
 ```
 
 Preprocessing reduction:
 
 ```rust
-let nir = dsfs::preprocessing_non_interactive_reduction(preprocessing_reduction, dsfs::Keccak::default())
-    .prepare(&index);
+let nir = dsfs::preprocessing_non_interactive_reduction(preprocessing_reduction, dsfs::Keccak::default());
+let (pk, vk) = nir.preprocess(&index);
+let (proof, target, target_witness) = nir.prove(&pk, &session, &source, &witness);
+let verified_target = nir.verify(&vk, &session, &source, &proof)?;
 ```
 
 The concrete wrapper names are `DsfsArgument`, `DsfsReduction`,
-`UnpreparedDsfsArgument`, `UnpreparedDsfsReduction`, `PreparedDsfsArgument`,
-and `PreparedDsfsReduction`, but user code reads as "construct a
-non-interactive argument/reduction" with the lifecycle stage spelled out in the
-constructor name.
+`PreprocessedDsfsArgument`, and `PreprocessedDsfsReduction`, but user code reads
+as "construct a non-interactive argument/reduction" with the preprocessing
+flavor spelled out in the constructor name.
 
-## 5. Prepared Objects
+## 5. Keys as Inputs
 
-Preparation stores keys:
-
-```text
-prepare(ix)
-  -> body.preprocess(ix)
-  -> stores pk, vk, vk.committed_index()
-```
-
-Prepared IA/IR adapters exist at the `ia-core` layer:
+The preprocessing DSFS wrappers are stateless:
 
 ```text
-PreparedArgument<B>: InteractiveArgument
-PreparedReduction<B>: InteractiveReduction
+preprocessing_non_interactive_argument(body, sponge)
+  -> PreprocessedDsfsArgument { body, sponge }   // no keys
+
+PreprocessedDsfsArgument::preprocess(ix)
+  -> body.preprocess_checked(ix)
+  -> (pk, vk)
 ```
 
-Prepared DSFS wrappers exist at the backend layer:
+Proving and verification receive keys explicitly:
 
 ```text
-UnpreparedDsfsArgument<B>: prepare(ix) -> PreparedDsfsArgument<B>
-UnpreparedDsfsReduction<B>: prepare(ix) -> PreparedDsfsReduction<B>
-PreparedDsfsArgument<B>: NonInteractiveArgument + Preprocessed
-PreparedDsfsReduction<B>: NonInteractiveReduction + Preprocessed
+pnia.prove (&pk, session, x, w)
+pnia.verify(&vk, session, x, proof)
 ```
 
-`Preprocessed` is the common capability for inspecting stored keys:
+The optional role wrappers are only convenience views over `(narg, key)`:
 
-```rust
-fn prover_key(&self) -> &Self::ProverKey;
-fn verifier_key(&self) -> &Self::VerifierKey;
-fn committed_index(&self) -> &CommittedIndexBytes;
+```text
+Prover::new(&pnia, &pk)      // exposes prove
+Verifier::new(&pnia, &vk)    // exposes verify
 ```
 
 ## 6. Transcript Binding
@@ -207,11 +204,11 @@ DomainSeparator::derive(protocol_id, sponge_info, session)
     .instance(instance)
 ```
 
-Prepared DSFS absorbs:
+Preprocessing DSFS absorbs:
 
 ```text
 DomainSeparator::derive(protocol_id, sponge_info, session)
-    .instance(IndexedInstanceRef { committed_index, instance })
+    .instance(IndexedInstanceRef { committed_index: key.committed_index(), instance })
 ```
 
 Then execution uses the bare instance:
@@ -287,8 +284,8 @@ WarpWitness      per-claim witnesses
 `WarpReduction` implements `PreprocessingInteractiveReduction`.
 `WarpDecider` implements `PreprocessingInteractiveArgument`.
 `FullWarp` is itself a preprocessing argument with a single
-`Index = WarpIndex`, so callers prepare it with `prepare(&ix)`, not
-`prepare(&(ix, ix))`.
+`Index = WarpIndex`, so callers run `preprocess(&ix)`, not
+`preprocess(&(ix, ix))`.
 
 This removes the old reach-through where prover code read `instance.pk` and the
 verifier reconstructed `vk` from `instance.pk`, and it removes the temporary
@@ -301,6 +298,7 @@ tuple-index composition workaround.
 - Protocol code still uses only the channel API.
 - Preprocessing is key generation plus keyed execution, not a standalone
   `Indexer` bolted onto plain protocols.
-- Prepared wrappers bind `vk.committed_index()` before the first challenge.
-- `with_keys(pk, vk)` derives the cached commitment from `vk`, preventing
-  commitment/key desynchronization.
+- Preprocessing wrappers bind `pk.committed_index()` on the prover side and
+  `vk.committed_index()` on the verifier side before the first challenge.
+- `preprocess_checked` debug-asserts that keys produced from the same index have
+  matching committed-index bytes.

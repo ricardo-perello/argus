@@ -135,32 +135,39 @@ let warp_index = WarpIndex::new(
 );
 
 let full = FullWarp::<Fp, R1CS<Fp>, RS, MT>::default();
-let prepared = spongefish_dsfs::preprocessing_non_interactive_argument(full, spongefish_dsfs::Keccak::default())
-    .prepare(&warp_index);
+let narg = spongefish_dsfs::preprocessing_non_interactive_argument(
+    full,
+    spongefish_dsfs::Keccak::default(),
+);
+let (pk, vk) = narg.preprocess(&warp_index);
 
-let proof = prepared.prove(&session, &instance, &witness);
-prepared.verify(&session, &instance, &proof)?;
+let proof = narg.prove(&pk, &session, &instance, &witness);
+narg.verify(&vk, &session, &instance, &proof)?;
 ```
 
 The reduction can also be used standalone for IOR-level verification:
 
 ```rust
 let reduction = WarpReduction::<Fp, R1CS<Fp>, RS, MT>::new();
-let prepared = spongefish_dsfs::preprocessing_non_interactive_reduction(reduction, spongefish_dsfs::Keccak::default())
-    .prepare(&warp_index);
+let narg = spongefish_dsfs::preprocessing_non_interactive_reduction(
+    reduction,
+    spongefish_dsfs::Keccak::default(),
+);
+let (pk, vk) = narg.preprocess(&warp_index);
 
-let (proof, target, target_witness) = prepared.prove(&session, &instance, &witness);
-let verified_target = prepared.verify(&session, &instance, &proof)?;
+let (proof, target, target_witness) = narg.prove(&pk, &session, &instance, &witness);
+let verified_target = narg.verify(&vk, &session, &instance, &proof)?;
 // target.acc_instance is the new AccumulatorInstances
 ```
 
 ### Index commitment and instance separation
 
-The old standalone WARP code absorbed static relation material during
-`index(...)`. In Argus, protocol code cannot touch the transcript, so that setup
-binding is represented by `WarpVerifierKey::committed_index()`.
+The old standalone WARP code absorbed static relation material during setup. In
+Argus, protocol code cannot touch the transcript, so that setup binding is
+represented by `WarpVerifierKey::committed_index()` and
+`WarpProverKey::committed_index()`.
 
-`WarpIndex` contains the static relation/config/code/Merkle data. Indexing
+`WarpIndex` contains the static relation/config/code/Merkle data. Preprocessing
 derives:
 
 - `WarpProverKey`: prover-side static material.
@@ -169,7 +176,7 @@ derives:
 The verifier-key commitment binds dimensions, WARP configuration, code material,
 Merkle hash parameters, and the R1CS matrices with explicit tags and
 length-delimited fields. `WarpInstance` contains only per-claim instances and
-accumulator instances. Prepared DSFS absorbs:
+accumulator instances. Preprocessing DSFS absorbs:
 
 ```text
 IndexedInstanceRef {
@@ -298,16 +305,16 @@ Eleven integration tests in `tests/warp_test.rs`:
 - `warp_commitment_changes_when_merkle_params_change` -- checks that Merkle hash parameters are bound.
 - `proof_rejects_with_wrong_verifier_key_same_dimensions` -- proves under one static relation and verifies under another relation with the same dimensions; verification rejects.
 - `warp_instance_encoding_excludes_static_index_material` -- checks that the instance encoding stays per-claim and does not carry static index data.
-- `warp_ir_dsfs_prove_verify` -- uses `preprocessing_non_interactive_reduction(...).prepare(&ix)` with `WarpReduction`.
+- `warp_ir_dsfs_prove_verify` -- uses `preprocessing_non_interactive_reduction(...).preprocess(&ix)` with `WarpReduction`, then passes `pk`/`vk` as inputs.
 - `full_warp_uses_single_index` -- compile-time check that `FullWarp::Index = WarpIndex`, not `(WarpIndex, WarpIndex)`.
-- `full_warp_dsfs_roundtrip` -- uses `preprocessing_non_interactive_argument(...).prepare(&ix)` with `FullWarp`.
+- `full_warp_dsfs_roundtrip` -- uses `preprocessing_non_interactive_argument(...).preprocess(&ix)` with `FullWarp`, then passes `pk`/`vk` as inputs.
 
 All tests use the BLS12-381 scalar field with a Poseidon hash-chain R1CS relation, Reed-Solomon encoding, and Blake3 Merkle trees.
 
 ## Cross-crate boundary
 
 WARP v2 does not change DSFS transcript ordering. It relies on the existing
-prepared DSFS path: `preprocessing_non_interactive_argument(...).prepare(&ix)`
-and `preprocessing_non_interactive_reduction(...).prepare(&ix)` absorb
-`vk.committed_index()` and the encoded `WarpInstance` before the first
-challenge.
+preprocessing DSFS path: `preprocessing_non_interactive_argument(...)` and
+`preprocessing_non_interactive_reduction(...)` derive committed-index bytes from
+the supplied key and absorb those bytes plus the encoded `WarpInstance` before
+the first challenge.

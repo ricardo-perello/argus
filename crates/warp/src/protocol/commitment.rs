@@ -10,7 +10,7 @@ use crate::relations::BundledPESAT;
 
 /// Tag prefixed to the canonical bytes returned by
 /// `WarpVerifierKey::committed_index`. Distinct from any other Argus tag so
-/// prepared DSFS cannot confuse a WARP verifier index with another
+/// preprocessing DSFS cannot confuse a WARP verifier index with another
 /// preprocessing protocol's commitment.
 const WARP_VK_COMMIT_TAG: &[u8] = b"argus:warp:vk:v1";
 const WARP_VK_COMMIT_MATERIAL_TAG: &[u8] = b"argus:warp:vk-material:v1";

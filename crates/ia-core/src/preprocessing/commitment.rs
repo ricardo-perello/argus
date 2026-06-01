@@ -53,7 +53,7 @@ impl Encoding<[u8]> for CommittedIndexBytes {
 /// non-interactive object derives the digest on the fly (`pk.committed_index()`
 /// on the prover side, `vk.committed_index()` on the verifier side) rather than
 /// receiving a precomputed one. The two implementations must return identical
-/// bytes for keys produced by the same `index(ix)` call, or prover and verifier
+/// bytes for keys produced by the same `preprocess(ix)` call, or prover and verifier
 /// transcripts diverge and `verify` fails.
 ///
 /// Implementors may return the full key bytes, a hash, or a small tuple of

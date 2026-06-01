@@ -122,7 +122,7 @@ impl<
 // -----------------------------------------------------------------------
 // Indexed-relation split: WarpIndex / WarpProverKey / WarpVerifierKey
 //
-// `WarpIndex` is the static problem description. `WarpReduction::index`
+// `WarpIndex` is the static problem description. `WarpReduction::preprocess`
 // derives a (prover key, verifier key) pair from it. The verifier key carries
 // an internally-derived commitment so its material and commitment cannot be
 // provided independently.
@@ -233,7 +233,7 @@ where
 {
     fn encode(&self) -> impl AsRef<[u8]> {
         // Dimensions (M, N, k) used to ride along here; they now live in the
-        // committed verifier index and are absorbed by the prepared DSFS path
+        // committed verifier index and are absorbed by the preprocessing DSFS path
         // via `WarpVerifierKey::committed_index`.
         let mut buf = Vec::new();
         for inst in &self.instances {

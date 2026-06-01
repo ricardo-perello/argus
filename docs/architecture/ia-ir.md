@@ -15,7 +15,7 @@ ProtocolCore
 ```
 
 `PreprocessingCore` is a sibling capability used by preprocessing leaves. It carries
-`Index`, `ProverKey`, `VerifierKey`, and the deterministic `index(ix)` method.
+`Index`, `ProverKey`, `VerifierKey`, and the deterministic `preprocess(ix)` method.
 
 ## Authoring Surface
 
@@ -31,7 +31,7 @@ ia_core::impl_interactive_argument! {
         type Instance = SchnorrInstance;
         type Witness = SchnorrWitness;
 
-        fn prove<P: ProverChannel>(
+        fn prove<P: ProverChannel<Unit = u8>>(
             &self,
             ch: &mut P,
             instance: &Self::Instance,
@@ -40,7 +40,7 @@ ia_core::impl_interactive_argument! {
             /* channel-only prover logic */
         }
 
-        fn verify<V: VerifierChannel>(
+        fn verify<V: VerifierChannel<Unit = u8>>(
             &self,
             ch: &mut V,
             instance: &Self::Instance,
@@ -54,7 +54,7 @@ ia_core::impl_interactive_argument! {
 
 For preprocessing arguments and reductions, use
 `impl_preprocessing_argument!` or `impl_preprocessing_reduction!`; those blocks
-also include `Index`, `ProverKey`, `VerifierKey`, and `index(ix)`.
+also include `Index`, `ProverKey`, `VerifierKey`, and `preprocess(ix)`.
 
 The macros expand to the core tree below. The split traits are real API, not a
 macro illusion, so backend and composition code can reason about capabilities
@@ -95,10 +95,14 @@ Preprocessing cores add preprocessing:
 ```rust
 pub trait PreprocessingCore: ProtocolCore {
     type Index;
-    type ProverKey;
-    type VerifierKey: VerifierKeyCommitment;
+    type ProverKey: CommittedIndex;
+    type VerifierKey: CommittedIndex;
 
     fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey);
+
+    fn preprocess_checked(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+        /* calls preprocess, then debug-asserts matching committed_index() bytes */
+    }
 }
 ```
 
@@ -109,14 +113,14 @@ identity and associated types come from the core traits.
 
 ```rust
 pub trait InteractiveArgument: ArgumentCore {
-    fn prove<P: ProverChannel>(
+    fn prove<P: ProverChannel<Unit = u8>>(
         &self,
         ch: &mut P,
         instance: &Self::Instance,
         witness: &Self::Witness,
     );
 
-    fn verify<V: VerifierChannel>(
+    fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,
         instance: &Self::Instance,
@@ -126,14 +130,14 @@ pub trait InteractiveArgument: ArgumentCore {
 
 ```rust
 pub trait InteractiveReduction: ReductionCore {
-    fn prove<P: ProverChannel>(
+    fn prove<P: ProverChannel<Unit = u8>>(
         &self,
         ch: &mut P,
         instance: &Self::SourceInstance,
         witness: &Self::SourceWitness,
     ) -> (Self::TargetInstance, Self::TargetWitness);
 
-    fn verify<V: VerifierChannel>(
+    fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,
         instance: &Self::SourceInstance,
@@ -146,7 +150,7 @@ Their execution methods receive keys explicitly:
 
 ```rust
 pub trait PreprocessingInteractiveArgument: ArgumentCore + PreprocessingCore {
-    fn prove<P: ProverChannel>(
+    fn prove<P: ProverChannel<Unit = u8>>(
         &self,
         ch: &mut P,
         pk: &Self::ProverKey,
@@ -154,7 +158,7 @@ pub trait PreprocessingInteractiveArgument: ArgumentCore + PreprocessingCore {
         witness: &Self::Witness,
     );
 
-    fn verify<V: VerifierChannel>(
+    fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,
         vk: &Self::VerifierKey,
@@ -165,31 +169,20 @@ pub trait PreprocessingInteractiveArgument: ArgumentCore + PreprocessingCore {
 
 `PreprocessingInteractiveReduction` is the same idea for reductions.
 
-## Prepared Adapters
+## Preprocessing Keys as Inputs
 
-Preprocessing cores are not executable as plain IA/IR until keys exist.
+Preprocessing cores are executable only with keys. The same body exposes:
 
 ```text
-PreprocessingInteractiveArgument --prepare(ix)--> PreparedArgument
-PreprocessingInteractiveReduction --prepare(ix)--> PreparedReduction
+preprocess(ix) -> (ProverKey, VerifierKey)
+prove(ch, &ProverKey, instance, witness)
+verify(ch, &VerifierKey, instance)
 ```
 
-`PreparedArgument<B>` stores private `pk`, public `vk`, and
-`vk.committed_index()`. It implements `InteractiveArgument` with:
-
-```rust
-type Instance = IndexedInstance<B::Instance>;
-type Witness = B::Witness;
-```
-
-`PreparedReduction<B>` similarly implements `InteractiveReduction` with:
-
-```rust
-type SourceInstance = IndexedInstance<B::SourceInstance>;
-```
-
-Both prepared adapters reject an `IndexedInstance` whose committed index does
-not match the stored verifier key.
+Both key types implement `CommittedIndex`. The compiled backend derives
+`pk.committed_index()` on the prover side and `vk.committed_index()` on the
+verifier side. `preprocess_checked(&ix)` catches mismatched key commitments in
+debug/test builds while both keys are in hand.
 
 ## DSFS Constructors
 
@@ -203,16 +196,21 @@ let nir = dsfs::plain_non_interactive_reduction(body, dsfs::Keccak::default());
 For plain bodies, the returned wrapper immediately implements
 `NonInteractiveArgument` or `NonInteractiveReduction`.
 
-For preprocessing cores, call `.prepare(&ix)` first:
+For preprocessing cores, the returned wrapper is stateless and implements
+`PreprocessingNonInteractiveArgument` or `PreprocessingNonInteractiveReduction`.
+Call `.preprocess(&ix)` to obtain keys, then pass the relevant key into
+`prove` or `verify`:
 
 ```rust
-let nia = dsfs::preprocessing_non_interactive_argument(preprocessing_protocol, dsfs::Keccak::default())
-    .prepare(&ix);
+let nia = dsfs::preprocessing_non_interactive_argument(preprocessing_protocol, dsfs::Keccak::default());
+let (pk, vk) = nia.preprocess(&ix);
+let proof = nia.prove(&pk, &session, &instance, &witness);
+nia.verify(&vk, &session, &instance, &proof)?;
 ```
 
-The prepared DSFS wrappers accept bare per-claim instances. Internally DSFS
-absorbs `IndexedInstanceRef { committed_index, instance }` before the first
-challenge, then calls keyed protocol execution with the bare instance.
+Internally DSFS absorbs `IndexedInstanceRef { committed_index, instance }`
+before the first challenge, then calls keyed protocol execution with the bare
+instance.
 
 ## Composition
 

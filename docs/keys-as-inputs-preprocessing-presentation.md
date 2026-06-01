@@ -304,7 +304,7 @@ let proof    = pnia.prove (&pk, &session, &(u, v), &x);
 pnia.verify(&vk, &session, &(u, v), &proof)?;
 ```
 
-The whole API difference: one extra `index` step and one key argument.
+The whole API difference: one extra preprocessing step and one key argument.
 
 ### 5.6 Two- and three-machine deployment
 
@@ -333,14 +333,14 @@ interactive runs; the non-interactive types now match it.
 ### `ia-core` (Argus / `crates/ia-core`)
 
 
-| change                                                                                                                                      | location                                                   | kind          |
-| ------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ------------- |
-| add `ProvingKey<PK> { key, committed_index }`                                                                                               | `preprocessing/commitment.rs`                              | additive      |
-| remove `Preprocessed` trait (stored-key accessors)                                                                                          | `preprocessing/commitment.rs`                              | removal       |
-| reshape `PreprocessingNonInteractiveArgument`/`Reduction` from markers into real traits with `preprocess` + keys-as-inputs `prove`/`verify` | `noninteractive/preprocessing.rs`                          | trait reshape |
-| add `Prover`/`Verifier` (+ reduction) wrapper structs                                                                                       | `noninteractive/roles.rs` (new)                            | additive      |
-| delete path-2 `PreparedArgument`/`PreparedReduction` adapters                                                                               | `interactive/adapters/preprocessing_to_plain.rs` (deleted) | removal       |
-| update `lib.rs` exports (drop `Preprocessed`/`PreparedArgument`, add `ProvingKey`/`Prover`/`Verifier`)                                      | `lib.rs`                                                   | API           |
+| change                                                                                                                                                  | location                          | kind          |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- | ------------- |
+| rename the setup action to `PreprocessingCore::preprocess` and add `preprocess_checked` for key-commitment consistency checks                           | `core.rs`                         | API           |
+| bound both `PreprocessingCore::ProverKey` and `PreprocessingCore::VerifierKey` by `CommittedIndex`                                                       | `core.rs`, `preprocessing/`       | API           |
+| define `PreprocessingNonInteractiveArgument`/`Reduction` as keys-as-inputs traits: compiled objects are stateless, `prove` takes `&ProverKey`, `verify` takes `&VerifierKey` | `noninteractive/preprocessing.rs` | trait reshape |
+| add `Prover`/`Verifier` (+ reduction) convenience wrapper structs over `(narg, key)`                                                                     | `noninteractive/roles.rs`         | additive      |
+| keep mixed plain/preprocessing composition explicit through `TrivialIndexedArgument` / `TrivialIndexedReduction`                                         | `interactive/adapters/`           | additive      |
+| update exports around `CommittedIndex`, role wrappers, and preprocessing NARG traits                                                                     | `lib.rs`                          | API           |
 
 
 ### `spongefish-dsfs`
@@ -349,7 +349,7 @@ interactive runs; the non-interactive types now match it.
 | change                                                                                                                                                                                                                                  | location                | kind       |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- | ---------- |
 | rename `UnpreparedDsfs{Argument,Reduction}` → `PreprocessedDsfs{Argument,Reduction}` (still the stateless `{ia, sponge}` object)                                                                                                        | `compile.rs`            | rename     |
-| implement `PreprocessingNonInteractiveArgument`/`Reduction` for the renamed types: `preprocess` runs `body.preprocess(ix)` + bakes `vk.committed_index()` into the proving key; `prove`/`verify` delegate to the runners with passed-in keys | `compile.rs`            | trait impl |
+| implement `PreprocessingNonInteractiveArgument`/`Reduction` for the renamed types: `preprocess` runs `body.preprocess_checked(ix)`; `prove`/`verify` derive committed-index bytes from the passed-in key and delegate to the runners | `compile.rs`            | trait impl |
 | remove `.prepare(&ix)` / `.with_keys(pk, vk)` methods                                                                                                                                                                                   | `compile.rs`            | removal    |
 | delete the key-storing `PreparedDsfs{Argument,Reduction}` wrappers                                                                                                                                                                      | `prepared.rs` (deleted) | removal    |
 | move the four transcript runners **verbatim** into `runners.rs` (now `pub(crate)`)                                                                                                                                                      | `runners.rs` (new)      | move       |
@@ -362,13 +362,13 @@ interactive runs; the non-interactive types now match it.
 
 On top of the keys-as-inputs PR above:
 
-- **`ia-core`**: delete `ProvingKey<PK>`; drop `preprocess()` from the PNIA traits (only
+- **`ia-core`**: no `ProvingKey<PK>` wrapper; no setup method on the PNIA traits (only
   `PreprocessingCore::preprocess` remains); bound `PreprocessingCore::ProverKey: CommittedIndex`;
   add the provided `PreprocessingCore::preprocess_checked` (`debug_assert`s `pk`/`vk` committed
   indices match); rename `VerifierKeyCommitment` → `CommittedIndex`; `Prover`/`ProverReduction` hold
   `&N::ProverKey` instead of `&ProvingKey<…>`; `ProverChannel`/`VerifierChannel` take an
   associated `type Unit` instead of the generic `<U = u8>`.
-- **`spongefish-dsfs`**: the wrappers' `PreprocessingCore::preprocess` runs the body through
+- **`spongefish-dsfs`**: each wrapper's `PreprocessingCore::preprocess` runs the body through
   `preprocess_checked`; `prove` derives `committed_index` from
   `prover_key.committed_index()`; channel impls gain `type Unit = DS::U`.
 - **Protocols / examples / WARP**: every `ProverKey` now implements `CommittedIndex`
@@ -431,14 +431,14 @@ golden-vector parity (the cases that already pass) still passes.
 ## 9. Decisions and Deviations from the Plan
 
 - **No PNIA-level setup method.** An earlier cut added `preprocess()` on the PNIA traits
-to wrap `index` + bake the digest into a `ProvingKey`. The 2026-06-01 feedback dropped
+to wrap setup + bake the digest into a `ProvingKey`. The 2026-06-01 feedback dropped
 both: the prover key implements `CommittedIndex` itself, so `PreprocessingCore::preprocess` is
 the only setup step and `prove` takes the bare `&ProverKey`.
 - **`CommittedIndex` on both keys.** The committed-index trait is implemented by the prover
 key *and* the verifier key; consistency (`pk.committed_index() == vk.committed_index()`) is
 the author's obligation, kept honest by routing both through one helper. It is also
 machine-checked: `PreprocessingCore::preprocess_checked` (a provided method the DSFS backend
-runs the indexer through) `debug_assert`s the two match, so a mismatch panics at preprocessing time
+runs setup through) `debug_assert`s the two match, so a mismatch panics at preprocessing time
 in debug/test builds instead of failing verification opaquely.
 - **Channel alphabet is an associated type.** `trait ProverChannel { type Unit; … }`; a
 channel has exactly one alphabet. Byte-oriented protocols pin `Unit = u8` at the bound.

@@ -24,9 +24,9 @@ ProtocolCore
 `PreprocessingCore` is the preprocessing capability:
 
 - `Index`
-- `ProverKey`
-- `VerifierKey: VerifierKeyCommitment`
-- `index(ix) -> (pk, vk)`
+- `ProverKey: CommittedIndex`
+- `VerifierKey: CommittedIndex`
+- `preprocess(ix) -> (pk, vk)`
 
 Plain execution traits only contain channel logic. Preprocessing execution traits
 receive `pk` or `vk` explicitly.
@@ -45,7 +45,7 @@ ia_core::impl_interactive_argument! {
         type Instance = SchnorrInstance;
         type Witness = SchnorrWitness;
 
-        fn prove<P: ProverChannel>(
+        fn prove<P: ProverChannel<Unit = u8>>(
             &self,
             ch: &mut P,
             instance: &Self::Instance,
@@ -54,7 +54,7 @@ ia_core::impl_interactive_argument! {
             /* channel-only protocol logic */
         }
 
-        fn verify<V: VerifierChannel>(
+        fn verify<V: VerifierChannel<Unit = u8>>(
             &self,
             ch: &mut V,
             instance: &Self::Instance,
@@ -93,21 +93,27 @@ part of the API.
 - `ProverChannel`: prover-side channel interface.
 - `VerifierChannel`: verifier-side channel interface.
 
-## Prepared Preprocessing Protocols
+## Preprocessing Keys as Inputs
 
-`PreparedArgument<B>` and `PreparedReduction<B>` store keys produced by
-`B::index(ix)`. They implement ordinary `InteractiveArgument` /
-`InteractiveReduction` by pairing the per-claim instance with the committed
-verifier index:
+Preprocessing protocols stay keyed all the way through the interactive and
+non-interactive APIs. `PreprocessingCore::preprocess(&ix)` deterministically
+derives a prover key and verifier key:
 
 ```rust
-let prepared = PreparedArgument::prepare(body, &ix);
-let indexed_instance = prepared.indexed_instance(instance);
+let (pk, vk) = body.preprocess(&ix);
 ```
 
-The commitment comes from `vk.committed_index()`. `with_keys(body, pk, vk)`
-derives the same commitment from `vk`; callers never provide a separate
-commitment.
+Both key types implement `CommittedIndex`, so a backend can bind the same public
+committed index from whichever key it receives:
+
+```rust
+let prover_commit = pk.committed_index();
+let verifier_commit = vk.committed_index();
+assert_eq!(prover_commit, verifier_commit);
+```
+
+`preprocess_checked(&ix)` is the provided helper used by compiled backends; it
+debug-asserts that the two keys agree on `committed_index()`.
 
 ## Indexed Public Input
 
@@ -119,8 +125,9 @@ tag || committed_index.encode()
     || u64_le(len(instance.encode())) || instance.encode()
 ```
 
-DSFS uses `IndexedInstanceRef` internally so prepared non-interactive wrappers
-can accept bare instances without cloning them.
+DSFS uses `IndexedInstanceRef` internally so stateless preprocessing
+non-interactive wrappers can accept bare instances without cloning them while
+absorbing `committed_index || instance` before the first challenge.
 
 ## Proof Vocabulary
 
@@ -155,7 +162,6 @@ src/
       plain.rs
       preprocessing.rs
     adapters/
-      preprocessing_to_plain.rs
       plain_to_preprocessing.rs
   noninteractive/
     argument.rs

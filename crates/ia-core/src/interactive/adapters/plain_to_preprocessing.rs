@@ -11,8 +11,8 @@ use crate::{
 ///
 /// Intended for the *inner* slot of a heterogeneous preprocessing composition so that
 /// a plain protocol can sit beside a real indexed component. Wrapping a plain
-/// protocol with this adapter and pushing it through prepared DSFS at the top
-/// level will NOT produce the same bytes as the plain DSFS path — the prepared
+/// protocol with this adapter and pushing it through preprocessing DSFS at the top
+/// level will NOT produce the same bytes as the plain DSFS path — the preprocessing
 /// transcript absorbs `IndexedInstance { committed_index: empty, instance: x }`
 /// instead of the bare `x`. Use the plain DSFS path for top-level plain
 /// protocols.

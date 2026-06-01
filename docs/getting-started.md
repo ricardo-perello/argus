@@ -56,7 +56,7 @@ ia_core::impl_interactive_argument! {
         type Instance = MyInstance;
         type Witness = MyWitness;
 
-        fn prove<P: ProverChannel>(
+        fn prove<P: ProverChannel<Unit = u8>>(
             &self,
             ch: &mut P,
             instance: &Self::Instance,
@@ -65,7 +65,7 @@ ia_core::impl_interactive_argument! {
             /* send prover messages, read verifier challenges */
         }
 
-        fn verify<V: VerifierChannel>(
+        fn verify<V: VerifierChannel<Unit = u8>>(
             &self,
             ch: &mut V,
             instance: &Self::Instance,
@@ -90,11 +90,14 @@ nia.verify(&session, &instance, &proof)?;
 
 For preprocessed protocols, use `ia_core::impl_preprocessing_argument!` or
 `ia_core::impl_preprocessing_reduction!`. The block adds `Index`, `ProverKey`,
-`VerifierKey`, and `index(ix) -> (pk, vk)`, then prepare the DSFS wrapper:
+`VerifierKey`, and `preprocess(ix) -> (pk, vk)`. The DSFS wrapper is stateless;
+run preprocessing once, then pass keys into proving and verification:
 
 ```rust
-let nia = spongefish_dsfs::preprocessing_non_interactive_argument(preprocessing_protocol, sponge)
-    .prepare(&index);
+let nia = spongefish_dsfs::preprocessing_non_interactive_argument(preprocessing_protocol, sponge);
+let (pk, vk) = nia.preprocess(&index);
+let proof = nia.prove(&pk, &session, &instance, &witness);
+nia.verify(&vk, &session, &instance, &proof)?;
 ```
 
 Protocol code must never instantiate sponges or perform Fiat-Shamir logic.

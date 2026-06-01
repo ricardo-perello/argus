@@ -25,7 +25,7 @@
 - [spongefish::dsfs](api/spongefish-dsfs.md)
 - [live-channel](api/live-channel.md)
 
-# Active Design Plans
+# Current Design Notes
 
 - [Protocol Core Tree and DSFS Constructors](protocol-core-dsfs-presentation.md)
 - [Keys-as-Inputs Preprocessing NARG](keys-as-inputs-preprocessing-presentation.md)

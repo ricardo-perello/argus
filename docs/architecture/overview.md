@@ -45,8 +45,9 @@ This split is what lets a protocol such as Schnorr, sumcheck, or WARP be written
 once and then used non-interactively or interactively.
 
 Preprocessed protocols use the same backend boundary. The protocol core exposes
-an indexer and keyed execution; DSFS stores the keys, absorbs the committed
-verifier index as public input, and then runs the same channel program.
+preprocessing and keyed execution; DSFS keeps the compiled wrapper stateless,
+absorbs committed-index bytes as public input, and then runs the same channel
+program with the caller-supplied prover or verifier key.
 
 ## Security Layer
 

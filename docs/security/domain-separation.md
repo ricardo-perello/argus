@@ -52,14 +52,16 @@ using the `DS` duplex-sponge type parameter:
 
 and attach the duplex sponge or `std_prover` / `std_verifier` as documented in [`../history/backends/dsfs-v2.md`](../history/backends/dsfs-v2.md).
 
-Prepared preprocessing DSFS uses the same derivation, but the public input is:
+Preprocessing DSFS uses the same derivation, but the public input is:
 
 ```text
-IndexedInstanceRef { committed_index: vk.committed_index(), instance }
+IndexedInstanceRef { committed_index: key.committed_index(), instance }
 ```
 
-This binds the committed verifier index and the per-claim instance before the
-first challenge while still passing the bare instance to keyed protocol code.
+The prover side derives `committed_index` from `pk`; the verifier side derives
+it from `vk`. This binds the committed index and the per-claim instance before
+the first challenge while still passing the bare instance to keyed protocol
+code.
 
 Transcript adapters (`TranscriptSponge` in `spongefish::dsfs`) use the same derivation for both Keccak and `StdHash` so σ-bridge and DSFS agree when both use **`StdHash`** with the same protocol and session fields.
 

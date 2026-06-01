@@ -62,14 +62,14 @@ the protocol.
 - **`spongefish::dsfs`**: a **backend** that compiles IA/IR into NARGs using DSFS.
   - `plain_non_interactive_argument(body, sponge)` constructs a plain `NonInteractiveArgument`
   - `plain_non_interactive_reduction(body, sponge)` constructs a plain `NonInteractiveReduction`
-  - `preprocessing_non_interactive_argument(body, sponge).prepare(&ix)` constructs a prepared preprocessing NARG
-  - `preprocessing_non_interactive_reduction(body, sponge).prepare(&ix)` constructs a prepared preprocessing reduction NARG
+  - `preprocessing_non_interactive_argument(body, sponge)` constructs a stateless preprocessing NARG wrapper; call `.preprocess(&ix)` to obtain `(pk, vk)`, then pass `&pk` to `prove` and `&vk` to `verify`
+  - `preprocessing_non_interactive_reduction(body, sponge)` does the same for preprocessing reductions
   - DSFS security bound evaluation (Theorems 1 & 2 style bounds)
 - **`crates/live-channel`**: a **backend** that runs IA/IR interactively (prover/verifier in threads via `mpsc`).
 - **`crates/warp`**: a WARP (ePrint 2025/753) implementation expressed as:
-  - `WARPReduction` (a `PreprocessingInteractiveReduction`)
-  - `WARPDeciderIA` (a `PreprocessingInteractiveArgument`)
-  - `FullWARP = ReducedArgument<WARPReduction, WARPDeciderIA>`
+  - `WarpReduction` (a `PreprocessingInteractiveReduction`)
+  - `WarpDecider` (a `PreprocessingInteractiveArgument`)
+  - `FullWarp` (a single-index preprocessing argument built from the reduction and decider)
 - **`crates/argus-examples`**: runnable examples (e.g. Schnorr).
 - **`crates/ibcs`**: WIP — will implement the IOP-to-IA compiler (BCS[IOP, MT] = DSFS[IBCS[IOP, MT]]).
 
@@ -151,8 +151,11 @@ At a high level:
 4. Compile it non-interactively with `spongefish_dsfs::plain_non_interactive_argument(body, sponge)` or `spongefish_dsfs::plain_non_interactive_reduction(body, sponge)`.
 
 For preprocessing protocols, use
-`spongefish_dsfs::preprocessing_non_interactive_argument(body, sponge).prepare(&ix)`
-or `spongefish_dsfs::preprocessing_non_interactive_reduction(body, sponge).prepare(&ix)`.
+`spongefish_dsfs::preprocessing_non_interactive_argument(body, sponge)` or
+`spongefish_dsfs::preprocessing_non_interactive_reduction(body, sponge)`, then
+run `.preprocess(&ix)` once to obtain `(prover_key, verifier_key)`. The compiled
+object stores no keys; `prove` takes `&ProverKey`, and `verify` takes
+`&VerifierKey`.
 
 The macros expand to the explicit inheritance tree underneath:
 `ProtocolCore` plus `ArgumentCore`/`ReductionCore`, then the executable
@@ -161,8 +164,7 @@ are clearer that way.
 
 For a preprocessed protocol, use `ia_core::impl_preprocessing_argument!` or
 `ia_core::impl_preprocessing_reduction!`. Those blocks include `Index`,
-`ProverKey`, `VerifierKey`, and `index(ix) -> (pk, vk)`, then DSFS calls
-`.prepare(&ix)` before proving/verifying.
+`ProverKey`, `VerifierKey`, and `preprocess(ix) -> (pk, vk)`.
 
 Protocol code should only ever call:
 
