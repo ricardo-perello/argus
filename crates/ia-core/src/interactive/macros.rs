@@ -674,7 +674,7 @@ mod tests {
         CommittedIndexBytes, Decoding, Encoding, InteractiveArgument, InteractiveReduction,
         NargSerialize, PreprocessingCore, PreprocessingInteractiveArgument, ProverChannel,
         ReducedArgument, VerificationError, VerificationResult, VerifierChannel,
-        VerifierKeyCommitment, pad_protocol_id,
+        CommittedIndex, pad_protocol_id,
     };
     use alloc::vec::Vec;
     use core::marker::PhantomData;
@@ -685,6 +685,8 @@ mod tests {
     }
 
     impl ProverChannel for TestProver {
+        type Unit = u8;
+
         fn send_prover_message<PM: Encoding<[u8]> + NargSerialize>(&mut self, msg: &PM) {
             msg.serialize_into_narg(&mut self.proof);
         }
@@ -699,6 +701,8 @@ mod tests {
     }
 
     impl VerifierChannel for TestVerifier<'_> {
+        type Unit = u8;
+
         fn read_prover_message<PM: Encoding<[u8]> + crate::Deserialize>(
             &mut self,
         ) -> VerificationResult<PM> {
@@ -722,7 +726,7 @@ mod tests {
             type Witness = u32;
 
             #[allow(non_snake_case)]
-            fn prove<P: ProverChannel>(
+            fn prove<P: ProverChannel<Unit = u8>>(
                 &self,
                 ch: &mut P,
                 x: &Self::Instance,
@@ -732,7 +736,7 @@ mod tests {
                 ch.send_prover_message(&M);
             }
 
-            fn verify<V: VerifierChannel>(
+            fn verify<V: VerifierChannel<Unit = u8>>(
                 &self,
                 ch: &mut V,
                 x: &Self::Instance,
@@ -768,7 +772,7 @@ mod tests {
             type SourceWitness = u8;
             type TargetWitness = u8;
 
-            fn prove<P: ProverChannel>(
+            fn prove<P: ProverChannel<Unit = u8>>(
                 &self,
                 _ch: &mut P,
                 instance: &Self::SourceInstance,
@@ -777,7 +781,7 @@ mod tests {
                 (instance + 1, witness + 1)
             }
 
-            fn verify<V: VerifierChannel>(
+            fn verify<V: VerifierChannel<Unit = u8>>(
                 &self,
                 _ch: &mut V,
                 instance: &Self::SourceInstance,
@@ -799,7 +803,7 @@ mod tests {
     #[derive(Clone, PartialEq, Eq)]
     struct Vk(u32);
 
-    impl VerifierKeyCommitment for Vk {
+    impl CommittedIndex for Vk {
         fn committed_index(&self) -> CommittedIndexBytes {
             CommittedIndexBytes::new(alloc::vec![self.0 as u8])
         }
@@ -816,24 +820,24 @@ mod tests {
             type Instance = u32;
             type Witness = u32;
             type Index = u32;
-            type ProverKey = u32;
+            type ProverKey = Vk;
             type VerifierKey = Vk;
 
             fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
-                (*ix, Vk(*ix))
+                (Vk(*ix), Vk(*ix))
             }
 
-            fn prove<P: ProverChannel>(
+            fn prove<P: ProverChannel<Unit = u8>>(
                 &self,
                 ch: &mut P,
                 pk: &Self::ProverKey,
                 instance: &Self::Instance,
                 witness: &Self::Witness,
             ) {
-                ch.send_prover_message(&(*pk + *instance + *witness));
+                ch.send_prover_message(&(pk.0 + *instance + *witness));
             }
 
-            fn verify<V: VerifierChannel>(
+            fn verify<V: VerifierChannel<Unit = u8>>(
                 &self,
                 ch: &mut V,
                 vk: &Self::VerifierKey,
@@ -872,24 +876,24 @@ mod tests {
             type SourceWitness = u32;
             type TargetWitness = u32;
             type Index = u32;
-            type ProverKey = u32;
+            type ProverKey = Vk;
             type VerifierKey = Vk;
 
             fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
-                (*ix, Vk(*ix))
+                (Vk(*ix), Vk(*ix))
             }
 
-            fn prove<P: ProverChannel>(
+            fn prove<P: ProverChannel<Unit = u8>>(
                 &self,
                 _ch: &mut P,
                 pk: &Self::ProverKey,
                 instance: &Self::SourceInstance,
                 witness: &Self::SourceWitness,
             ) -> (Self::TargetInstance, Self::TargetWitness) {
-                (instance + pk, witness + pk)
+                (instance + pk.0, witness + pk.0)
             }
 
-            fn verify<V: VerifierChannel>(
+            fn verify<V: VerifierChannel<Unit = u8>>(
                 &self,
                 _ch: &mut V,
                 vk: &Self::VerifierKey,
@@ -931,7 +935,7 @@ mod tests {
             type Instance = u8;
             type Witness = u8;
 
-            fn prove<P: ProverChannel>(
+            fn prove<P: ProverChannel<Unit = u8>>(
                 &self,
                 _ch: &mut P,
                 _instance: &Self::Instance,
@@ -940,7 +944,7 @@ mod tests {
                 let _ = N;
             }
 
-            fn verify<V: VerifierChannel>(
+            fn verify<V: VerifierChannel<Unit = u8>>(
                 &self,
                 _ch: &mut V,
                 _instance: &Self::Instance,

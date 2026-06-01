@@ -40,8 +40,8 @@ use blake3::{Hash, Hasher};
 use spongefish_dsfs as dsfs;
 
 use ia_core::{
-    CommittedIndexBytes, PreprocessingNonInteractiveArgument, ProverChannel, VerificationError,
-    VerificationResult, VerifierChannel, VerifierKeyCommitment,
+    CommittedIndex, CommittedIndexBytes, PreprocessingCore, PreprocessingNonInteractiveArgument,
+    ProverChannel, VerificationError, VerificationResult, VerifierChannel,
 };
 
 // ---------------------------------------------------------------------------
@@ -130,13 +130,28 @@ struct LookupVerifierKey {
     n: u32,
 }
 
-impl VerifierKeyCommitment for LookupVerifierKey {
+/// Canonical committed-index bytes for the lookup table. Shared by the prover
+/// key and the verifier key so the two can never disagree on the digest the
+/// transcript binds (`pk.committed_index() == vk.committed_index()`).
+fn lookup_committed_index(root: &[u8; 32], n: u32) -> CommittedIndexBytes {
+    let mut out = Vec::with_capacity(b"preprocessed-lookup:vk:v1".len() + 32 + 4);
+    out.extend_from_slice(b"preprocessed-lookup:vk:v1");
+    out.extend_from_slice(root);
+    out.extend_from_slice(&n.to_le_bytes());
+    CommittedIndexBytes::new(out)
+}
+
+impl CommittedIndex for LookupVerifierKey {
     fn committed_index(&self) -> CommittedIndexBytes {
-        let mut out = Vec::with_capacity(b"preprocessed-lookup:vk:v1".len() + 32 + 4);
-        out.extend_from_slice(b"preprocessed-lookup:vk:v1");
-        out.extend_from_slice(&self.root);
-        out.extend_from_slice(&self.n.to_le_bytes());
-        CommittedIndexBytes::new(out)
+        lookup_committed_index(&self.root, self.n)
+    }
+}
+
+impl CommittedIndex for LookupProverKey {
+    fn committed_index(&self) -> CommittedIndexBytes {
+        let root = *self.tree.root().as_bytes();
+        let n = u32::try_from(self.table.len()).expect("table size fits in u32");
+        lookup_committed_index(&root, n)
     }
 }
 
@@ -175,7 +190,7 @@ ia_core::impl_preprocessing_argument! {
             (pk, vk)
         }
 
-        fn prove<P: ProverChannel>(
+        fn prove<P: ProverChannel<Unit = u8>>(
             &self,
             ch: &mut P,
             pk: &LookupProverKey,
@@ -195,7 +210,7 @@ ia_core::impl_preprocessing_argument! {
             }
         }
 
-        fn verify<V: VerifierChannel>(
+        fn verify<V: VerifierChannel<Unit = u8>>(
             &self,
             ch: &mut V,
             vk: &LookupVerifierKey,
@@ -243,22 +258,22 @@ fn main() {
     println!("Public table: {table:?}\n");
 
     // Preprocessing: preprocessing_non_interactive_argument(body, sponge) is the
-    // stateless compiled wrapper; .preprocess(&table) runs body.index(&table)
-    // once and returns (ProvingKey { key, committed_index }, verifier_key).
+    // stateless compiled wrapper; .index(&table) runs body.index(&table)
+    // once and returns the bare (prover_key, verifier_key).
     let nia = dsfs::preprocessing_non_interactive_argument(
         PreprocessedLookup,
         dsfs::Keccak::default(),
     );
-    let (proving_key, verifier_key) = nia.preprocess(&table);
+    let (proving_key, verifier_key) = nia.index(&table);
 
     // The asymmetry, straight off the keys: the prover key holds the full
     // table + tree (O(n)); the verifier key is just root + n (O(1)).
     println!("Preprocessed keys:");
-    println!("  Prover key:   {:?}", proving_key.key);
+    println!("  Prover key:   {:?}", proving_key);
     println!("  Verifier key: {verifier_key:?}");
     println!(
         "  Committed index: 0x{}\n",
-        hex::encode(proving_key.committed_index.as_bytes())
+        hex::encode(proving_key.committed_index().as_bytes())
     );
 
     // Open three entries. Each proof is O(log n) hashes + the leaf value —
@@ -296,7 +311,7 @@ mod tests {
             PreprocessedLookup,
             dsfs::Keccak::default(),
         );
-        let (pk, vk) = nia.preprocess(&table);
+        let (pk, vk) = nia.index(&table);
 
         for i in 0u32..table.len() as u32 {
             let y = table[i as usize];
@@ -315,7 +330,7 @@ mod tests {
             PreprocessedLookup,
             dsfs::Keccak::default(),
         );
-        let (pk, vk) = nia.preprocess(&table);
+        let (pk, vk) = nia.index(&table);
 
         let proof = nia.prove(&pk, &session, &(3, table[3]), &());
         // Same proof bytes, but claim a different value -> reject.
@@ -336,9 +351,9 @@ mod tests {
             PreprocessedLookup,
             dsfs::Keccak::default(),
         );
-        let (pk_a, _vk_a) = nia.preprocess(&table_a);
-        let (_pk_b, vk_b) = nia.preprocess(&table_b);
-        assert_ne!(pk_a.committed_index, vk_b.committed_index());
+        let (pk_a, _vk_a) = nia.index(&table_a);
+        let (_pk_b, vk_b) = nia.index(&table_b);
+        assert_ne!(pk_a.committed_index(), vk_b.committed_index());
 
         // Open table_a at index 5 (unperturbed in both).
         let proof = nia.prove(&pk_a, &session, &(5, table_a[5]), &());
@@ -358,7 +373,7 @@ mod tests {
             PreprocessedLookup,
             dsfs::Keccak::default(),
         );
-        let (pk, vk) = nia.preprocess(&table);
+        let (pk, vk) = nia.index(&table);
 
         let prover = Prover::new(&nia, &pk);
         let verifier = Verifier::new(&nia, &vk);
@@ -379,11 +394,11 @@ mod tests {
             PreprocessedLookup,
             dsfs::Keccak::default(),
         );
-        let (pk_small, _vk_small) = nia.preprocess(&small);
-        let (pk_large, _vk_large) = nia.preprocess(&large);
+        let (pk_small, _vk_small) = nia.index(&small);
+        let (pk_large, _vk_large) = nia.index(&large);
 
         // PK scales with the table; VK is a fixed 36 bytes (root + n) by construction.
-        assert_eq!(pk_small.key.table.len(), 2);
-        assert_eq!(pk_large.key.table.len(), 1024);
+        assert_eq!(pk_small.table.len(), 2);
+        assert_eq!(pk_large.table.len(), 1024);
     }
 }

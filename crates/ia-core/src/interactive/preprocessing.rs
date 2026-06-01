@@ -17,7 +17,7 @@ use crate::{
 /// implements this trait directly. To use a plain protocol in the *inner* slot
 /// of a preprocessing composition, wrap it in [`crate::TrivialIndexedArgument`].
 pub trait PreprocessingInteractiveArgument: ArgumentCore + PreprocessingCore {
-    fn prove<P: ProverChannel>(
+    fn prove<P: ProverChannel<Unit = u8>>(
         &self,
         ch: &mut P,
         pk: &Self::ProverKey,
@@ -25,7 +25,7 @@ pub trait PreprocessingInteractiveArgument: ArgumentCore + PreprocessingCore {
         witness: &Self::Witness,
     );
 
-    fn verify<V: VerifierChannel>(
+    fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,
         vk: &Self::VerifierKey,
@@ -39,7 +39,7 @@ pub trait PreprocessingInteractiveArgument: ArgumentCore + PreprocessingCore {
 /// shape: prove returns a target instance/witness pair; verify returns the
 /// target instance.
 pub trait PreprocessingInteractiveReduction: ReductionCore + PreprocessingCore {
-    fn prove<P: ProverChannel>(
+    fn prove<P: ProverChannel<Unit = u8>>(
         &self,
         ch: &mut P,
         pk: &Self::ProverKey,
@@ -47,7 +47,7 @@ pub trait PreprocessingInteractiveReduction: ReductionCore + PreprocessingCore {
         witness: &Self::SourceWitness,
     ) -> (Self::TargetInstance, Self::TargetWitness);
 
-    fn verify<V: VerifierChannel>(
+    fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,
         vk: &Self::VerifierKey,
@@ -66,7 +66,7 @@ mod tests {
     use crate::{
         CommittedIndexBytes, Decoding, Deserialize, Encoding, IndexedInstance, IndexedInstanceRef,
         InteractiveArgument, NargSerialize, ProtocolCore, ReducedArgument, TrivialIndexedArgument,
-        VerificationError, VerifierKeyCommitment, pad_protocol_id,
+        VerificationError, CommittedIndex, pad_protocol_id,
     };
     use alloc::vec;
     use alloc::vec::Vec;
@@ -134,7 +134,7 @@ mod tests {
     #[derive(Clone)]
     struct ByteVk(Vec<u8>);
 
-    impl VerifierKeyCommitment for ByteVk {
+    impl CommittedIndex for ByteVk {
         fn committed_index(&self) -> CommittedIndexBytes {
             CommittedIndexBytes::new(self.0.clone())
         }
@@ -179,8 +179,8 @@ mod tests {
     }
 
     impl InteractiveArgument for PlainOk {
-        fn prove<P: ProverChannel>(&self, _: &mut P, _: &(), _: &()) {}
-        fn verify<V: VerifierChannel>(&self, _: &mut V, _: &()) -> VerificationResult<()> {
+        fn prove<P: ProverChannel<Unit = u8>>(&self, _: &mut P, _: &(), _: &()) {}
+        fn verify<V: VerifierChannel<Unit = u8>>(&self, _: &mut V, _: &()) -> VerificationResult<()> {
             Ok(())
         }
     }
@@ -192,6 +192,49 @@ mod tests {
         assert!(vk.committed_index().is_empty());
     }
 
+    // ---- index_checked guard ----
+
+    /// A buggy indexer: the prover key and verifier key disagree on their
+    /// committed index. The compiled prover/verifier would derive divergent
+    /// transcripts; `index_checked` must catch this at index time.
+    struct MismatchedKeys;
+
+    impl ProtocolCore for MismatchedKeys {
+        fn protocol_id(&self) -> impl AsRef<[u8]> {
+            pad_protocol_id(b"mismatched-keys")
+        }
+    }
+
+    impl ArgumentCore for MismatchedKeys {
+        type Instance = ();
+        type Witness = ();
+    }
+
+    impl PreprocessingCore for MismatchedKeys {
+        type Index = ();
+        type ProverKey = ByteVk;
+        type VerifierKey = ByteVk;
+
+        fn index(&self, _: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+            (ByteVk(vec![1]), ByteVk(vec![2]))
+        }
+    }
+
+    #[test]
+    fn index_checked_accepts_agreeing_keys() {
+        // EqualsKey returns `((), EqualsKeyVk(ix))`; () and the vk agree (() is
+        // empty, but here both keys are the same byte) — use AddPk which returns
+        // two equal AddPkVk values.
+        let (pk, vk) = AddPk.index_checked(&7u8);
+        assert_eq!(pk.committed_index(), vk.committed_index());
+    }
+
+    #[test]
+    #[should_panic(expected = "mismatched committed_index")]
+    fn index_checked_panics_on_mismatched_committed_index() {
+        let _ = MismatchedKeys.index_checked(&());
+    }
+
     // ---- Preprocessing composition tests ----
 
     /// Preprocessing reduction: source instance is a `u8`, target is the same byte
@@ -199,10 +242,10 @@ mod tests {
     /// is exposed as the committed index.
     struct AddPk;
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug, PartialEq, Eq)]
     struct AddPkVk(u8);
 
-    impl VerifierKeyCommitment for AddPkVk {
+    impl CommittedIndex for AddPkVk {
         fn committed_index(&self) -> CommittedIndexBytes {
             CommittedIndexBytes::new(vec![self.0])
         }
@@ -223,26 +266,26 @@ mod tests {
 
     impl PreprocessingCore for AddPk {
         type Index = u8;
-        type ProverKey = u8;
+        type ProverKey = AddPkVk;
         type VerifierKey = AddPkVk;
 
         fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
-            (*ix, AddPkVk(*ix))
+            (AddPkVk(*ix), AddPkVk(*ix))
         }
     }
 
     impl PreprocessingInteractiveReduction for AddPk {
-        fn prove<P: ProverChannel>(
+        fn prove<P: ProverChannel<Unit = u8>>(
             &self,
             _: &mut P,
             pk: &Self::ProverKey,
             instance: &Self::SourceInstance,
             _: &Self::SourceWitness,
         ) -> (Self::TargetInstance, Self::TargetWitness) {
-            (instance.wrapping_add(*pk), ())
+            (instance.wrapping_add(pk.0), ())
         }
 
-        fn verify<V: VerifierChannel>(
+        fn verify<V: VerifierChannel<Unit = u8>>(
             &self,
             _: &mut V,
             vk: &Self::VerifierKey,
@@ -259,7 +302,7 @@ mod tests {
     #[derive(Clone)]
     struct EqualsKeyVk(u8);
 
-    impl VerifierKeyCommitment for EqualsKeyVk {
+    impl CommittedIndex for EqualsKeyVk {
         fn committed_index(&self) -> CommittedIndexBytes {
             CommittedIndexBytes::new(vec![self.0])
         }
@@ -287,7 +330,7 @@ mod tests {
     }
 
     impl PreprocessingInteractiveArgument for EqualsKey {
-        fn prove<P: ProverChannel>(
+        fn prove<P: ProverChannel<Unit = u8>>(
             &self,
             _: &mut P,
             _: &Self::ProverKey,
@@ -296,7 +339,7 @@ mod tests {
         ) {
         }
 
-        fn verify<V: VerifierChannel>(
+        fn verify<V: VerifierChannel<Unit = u8>>(
             &self,
             _: &mut V,
             vk: &Self::VerifierKey,
@@ -316,7 +359,7 @@ mod tests {
         // index pair: first adds 3, second adds 4.
         let ix = (3u8, 4u8);
         let (pk, vk) = composed.index(&ix);
-        assert_eq!(pk, (3, 4));
+        assert_eq!(pk, (AddPkVk(3), AddPkVk(4)));
         // Composed VK commitment must be canonical pair (just check that it
         // exists and starts with the pair tag).
         assert!(vk.committed_index().as_bytes().starts_with(VK_PAIR_TAG));
@@ -337,7 +380,7 @@ mod tests {
         let composed = ReducedArgument::new(AddPk, EqualsKey);
         let ix = (5u8, 17u8);
         let (pk, vk) = composed.index(&ix);
-        assert_eq!(pk, (5, ()));
+        assert_eq!(pk, (AddPkVk(5), ()));
 
         // Source instance 12, plus pk=5, equals 17, which matches argument vk.
         let recorder = RefCell::new(Vec::new());
@@ -356,6 +399,8 @@ mod tests {
     // channel, so a trivial pair is enough.
     struct NullProverChannel<'a>(&'a RefCell<Vec<u8>>);
     impl ProverChannel for NullProverChannel<'_> {
+        type Unit = u8;
+
         fn send_prover_message<PM: Encoding<[u8]> + NargSerialize>(&mut self, msg: &PM) {
             msg.serialize_into_narg(&mut self.0.borrow_mut());
         }
@@ -366,6 +411,8 @@ mod tests {
 
     struct NullVerifierChannel;
     impl VerifierChannel for NullVerifierChannel {
+        type Unit = u8;
+
         fn read_prover_message<PM: Encoding<[u8]> + Deserialize>(
             &mut self,
         ) -> VerificationResult<PM> {

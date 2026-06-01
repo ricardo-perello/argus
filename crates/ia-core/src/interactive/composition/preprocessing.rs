@@ -34,7 +34,7 @@ where
             SourceWitness = First::TargetWitness,
         >,
 {
-    fn prove<P: ProverChannel>(
+    fn prove<P: ProverChannel<Unit = u8>>(
         &self,
         ch: &mut P,
         pk: &Self::ProverKey,
@@ -45,7 +45,7 @@ where
         self.second.prove(ch, &pk.1, &x2, &w2)
     }
 
-    fn verify<V: VerifierChannel>(
+    fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,
         vk: &Self::VerifierKey,
@@ -77,7 +77,7 @@ where
     R: PreprocessingInteractiveReduction,
     A: PreprocessingInteractiveArgument<Instance = R::TargetInstance, Witness = R::TargetWitness>,
 {
-    fn prove<P: ProverChannel>(
+    fn prove<P: ProverChannel<Unit = u8>>(
         &self,
         ch: &mut P,
         pk: &Self::ProverKey,
@@ -88,7 +88,7 @@ where
         self.argument.prove(ch, &pk.1, &x2, &w2);
     }
 
-    fn verify<V: VerifierChannel>(
+    fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,
         vk: &Self::VerifierKey,

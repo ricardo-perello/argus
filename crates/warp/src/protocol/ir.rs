@@ -12,7 +12,7 @@ use ia_core::{
     ArgumentCore, CommittedIndexBytes, PreprocessingArgumentSecurity, PreprocessingCore,
     PreprocessingInteractiveArgument, PreprocessingInteractiveReduction,
     PreprocessingReductionSecurity, ProtocolCore, ProverChannel, SecurityErrorBound,
-    SecurityProfile, VerificationResult, VerifierChannel, VerifierKeyCommitment,
+    SecurityProfile, VerificationResult, VerifierChannel, CommittedIndex,
 };
 
 use crate::protocol::commitment::committed_index_for;
@@ -81,7 +81,7 @@ where
     }
 }
 
-impl<F, P, C, MT> VerifierKeyCommitment for WarpVerifierKey<F, P, C, MT>
+impl<F, P, C, MT> CommittedIndex for WarpVerifierKey<F, P, C, MT>
 where
     F: Field,
     P: BundledPESAT<F>,
@@ -90,6 +90,26 @@ where
 {
     fn committed_index(&self) -> CommittedIndexBytes {
         self.commitment.clone()
+    }
+}
+
+// The prover key recomputes the same commitment from its `material` +
+// `dimensions` (the verifier key caches it). Both go through
+// `committed_index_for`, so `pk.committed_index() == vk.committed_index()` by
+// construction — the compiled PNIA derives the transcript digest from whichever
+// key it is handed.
+impl<F, P, C, MT> CommittedIndex for WarpProverKey<F, P, C, MT>
+where
+    F: Field,
+    P: BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
+    C: LinearCode<F> + Clone + CanonicalSerialize,
+    MT: Config<Leaf = [F]>,
+    <MT::LeafHash as ark_crypto_primitives::crh::CRHScheme>::Parameters: CanonicalSerialize,
+    <MT::TwoToOneHash as ark_crypto_primitives::crh::TwoToOneCRHScheme>::Parameters:
+        CanonicalSerialize,
+{
+    fn committed_index(&self) -> CommittedIndexBytes {
+        committed_index_for(&self.material, self.dimensions)
     }
 }
 
@@ -183,7 +203,7 @@ where
         )
     }
 
-    fn prove<Ch: ProverChannel>(
+    fn prove<Ch: ProverChannel<Unit = u8>>(
         &self,
         ch: &mut Ch,
         pk: &Self::ProverKey,
@@ -206,7 +226,7 @@ where
         (target_instance, acc_witness)
     }
 
-    fn verify<Ch: VerifierChannel>(
+    fn verify<Ch: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut Ch,
         vk: &Self::VerifierKey,
@@ -436,7 +456,7 @@ where
         ((), verifier_key(material, dimensions))
     }
 
-    fn prove<Ch: ProverChannel>(
+    fn prove<Ch: ProverChannel<Unit = u8>>(
         &self,
         ch: &mut Ch,
         _: &Self::ProverKey,
@@ -452,7 +472,7 @@ where
         }
     }
 
-    fn verify<Ch: VerifierChannel>(
+    fn verify<Ch: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut Ch,
         vk: &Self::VerifierKey,
@@ -660,7 +680,7 @@ where
     <MT::TwoToOneHash as ark_crypto_primitives::crh::TwoToOneCRHScheme>::Parameters:
         CanonicalSerialize,
 {
-    fn prove<Ch: ProverChannel>(
+    fn prove<Ch: ProverChannel<Unit = u8>>(
         &self,
         ch: &mut Ch,
         pk: &Self::ProverKey,
@@ -672,7 +692,7 @@ where
             .prove(ch, &(), &target_instance, &target_witness);
     }
 
-    fn verify<Ch: VerifierChannel>(
+    fn verify<Ch: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut Ch,
         vk: &Self::VerifierKey,

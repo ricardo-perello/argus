@@ -47,51 +47,36 @@ impl Encoding<[u8]> for CommittedIndexBytes {
 }
 
 /// Public bytes that DSFS (or any other backend) absorbs before the first
-/// challenge to bind the preprocessed verifier index.
+/// challenge to bind the preprocessed index.
 ///
-/// Implementors may return the full verifier key bytes, a hash, or a small
-/// tuple of root/digest commitments — whatever is appropriate for the soundness
-/// argument of the surrounding protocol. The only invariants are that the
-/// returned bytes are deterministic and canonical for a given verifier key.
-pub trait VerifierKeyCommitment {
+/// Implemented by *both* the prover key and the verifier key: the compiled
+/// non-interactive object derives the digest on the fly (`pk.committed_index()`
+/// on the prover side, `vk.committed_index()` on the verifier side) rather than
+/// receiving a precomputed one. The two implementations must return identical
+/// bytes for keys produced by the same `index(ix)` call, or prover and verifier
+/// transcripts diverge and `verify` fails.
+///
+/// Implementors may return the full key bytes, a hash, or a small tuple of
+/// root/digest commitments — whatever is appropriate for the soundness argument
+/// of the surrounding protocol. The only invariants are that the returned bytes
+/// are deterministic and canonical for a given key.
+pub trait CommittedIndex {
     fn committed_index(&self) -> CommittedIndexBytes;
 }
 
-impl VerifierKeyCommitment for () {
+impl CommittedIndex for () {
     fn committed_index(&self) -> CommittedIndexBytes {
         CommittedIndexBytes::empty()
     }
 }
 
-/// What the indexer ships to the prover: the author's prover material (`key`)
-/// paired with the public verifier-index digest (`committed_index`).
-///
-/// The digest is computed once, from the verifier key (`vk.committed_index()`),
-/// and cached here so the prover — which never holds `vk` — can bind it into the
-/// transcript. It is *not* stored on the verifier key, which derives the same
-/// digest on demand; there is no duplication and no risk of the two drifting.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ProvingKey<PK> {
-    pub key: PK,
-    pub committed_index: CommittedIndexBytes,
-}
-
-impl<PK> ProvingKey<PK> {
-    pub fn new(key: PK, committed_index: CommittedIndexBytes) -> Self {
-        Self {
-            key,
-            committed_index,
-        }
-    }
-}
-
-/// Fixed tag for the canonical pair commitment of two verifier keys.
+/// Fixed tag for the canonical pair commitment of two keys.
 pub(crate) const VK_PAIR_TAG: &[u8] = b"argus:vk-pair:v1";
 
-impl<V1, V2> VerifierKeyCommitment for (V1, V2)
+impl<V1, V2> CommittedIndex for (V1, V2)
 where
-    V1: VerifierKeyCommitment,
-    V2: VerifierKeyCommitment,
+    V1: CommittedIndex,
+    V2: CommittedIndex,
 {
     fn committed_index(&self) -> CommittedIndexBytes {
         let c1 = self.0.committed_index();

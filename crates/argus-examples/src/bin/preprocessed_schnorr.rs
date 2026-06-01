@@ -12,9 +12,9 @@
 //!
 //! ┌──────────────────── 1. Author trait ───────────────────────────────┐
 //! │  PreprocessingInteractiveArgument *declares*:                            │
-//! │    type Index       = G        (static problem description)        │
-//! │    type ProverKey   = G        (what the prover holds after index) │
-//! │    type VerifierKey = `SchnorrVerifierKey<G>` (verifier-side key)  │
+//! │    type Index       = G              (static problem description)  │
+//! │    type ProverKey   = `SchnorrKey<G>`  (prover-side key)           │
+//! │    type VerifierKey = `SchnorrKey<G>`  (verifier-side key)         │
 //! │    type Instance    = G        (per-claim public key pk = x*G)     │
 //! │    type Witness     = scalar x                                     │
 //! │    fn index(&Index) -> (ProverKey, VerifierKey)                    │
@@ -26,10 +26,10 @@
 //! │  -> PreprocessedDsfsArgument { ia, sponge }   (holds NO keys)      │
 //! └────────────────────────────────────────────────────────────────────┘
 //! ┌──────────────────── 3. Indexer + keys-as-inputs ───────────────────┐
-//! │  pnia.preprocess(&g) -> (ProvingKey { key, committed_index }, vk)  │
-//! │  pnia.prove(&proving_key, session, x, w) / pnia.verify(&vk, ...)   │
-//! │  Keys are inputs; the verifier holds only vk, the prover only the  │
-//! │  proving key (which carries the committed index).                  │
+//! │  pnia.index(&g) -> (prover_key, verifier_key)                      │
+//! │  pnia.prove(&prover_key, session, x, w) / pnia.verify(&vk, ...)    │
+//! │  Keys are inputs; the verifier holds only vk, the prover only pk.  │
+//! │  Each key derives the committed index on demand.                   │
 //! └────────────────────────────────────────────────────────────────────┘
 //!
 //! Run:  cargo run -p argus-examples --bin preprocessed_schnorr
@@ -41,8 +41,9 @@ use rand::rngs::OsRng;
 use spongefish_dsfs as dsfs;
 
 use ia_core::{
-    CommittedIndexBytes, Decoding, Deserialize, Encoding, PreprocessingNonInteractiveArgument,
-    ProverChannel, VerificationError, VerificationResult, VerifierChannel, VerifierKeyCommitment,
+    CommittedIndex, CommittedIndexBytes, Decoding, Deserialize, Encoding, PreprocessingCore,
+    PreprocessingNonInteractiveArgument, ProverChannel, VerificationError, VerificationResult,
+    VerifierChannel,
 };
 
 // ---------------------------------------------------------------------------
@@ -50,13 +51,13 @@ use ia_core::{
 // ---------------------------------------------------------------------------
 
 /// Verifier key — wraps the generator G so we have a place to implement
-/// `VerifierKeyCommitment`. The prepared transcript absorbs whatever
+/// `CommittedIndex`. The prepared transcript absorbs whatever
 /// `committed_index()` returns before the first challenge, so this is what
 /// binds every proof to *this* specific generator.
 #[derive(Clone, Debug)]
-struct SchnorrVerifierKey<G: CurveGroup>(G);
+struct SchnorrKey<G: CurveGroup>(G);
 
-impl<G: CurveGroup + Encoding> VerifierKeyCommitment for SchnorrVerifierKey<G> {
+impl<G: CurveGroup + Encoding> CommittedIndex for SchnorrKey<G> {
     fn committed_index(&self) -> CommittedIndexBytes {
         // Tag the bytes so this commitment cannot be confused with any other
         // verifier-key encoding in the system.
@@ -92,19 +93,19 @@ ia_core::impl_preprocessing_argument! {
         type Instance = G;
         type Witness = G::ScalarField;
         type Index = G;
-        type ProverKey = G;
-        type VerifierKey = SchnorrVerifierKey<G>;
+        type ProverKey = SchnorrKey<G>;
+        type VerifierKey = SchnorrKey<G>;
 
-        /// Deterministic indexer. Both prover and verifier end up holding G,
-        /// but the verifier wraps it in `SchnorrVerifierKey` so a canonical
-        /// commitment can be derived for the transcript.
+        /// Deterministic indexer. Both prover and verifier hold the same
+        /// generator wrapped in `SchnorrKey` so each can derive the identical
+        /// canonical commitment for the transcript.
         fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
-            (*ix, SchnorrVerifierKey(*ix))
+            (SchnorrKey(*ix), SchnorrKey(*ix))
         }
 
         #[allow(non_snake_case)]
-        fn prove<P: ProverChannel>(&self, ch: &mut P, pk: &G, _instance: &G, witness: &G::ScalarField) {
-            let G_gen = *pk;
+        fn prove<P: ProverChannel<Unit = u8>>(&self, ch: &mut P, pk: &SchnorrKey<G>, _instance: &G, witness: &G::ScalarField) {
+            let G_gen = pk.0;
             let k = G::ScalarField::rand(&mut OsRng);
             let K = G_gen * k;
             ch.send_prover_message(&K);
@@ -114,10 +115,10 @@ ia_core::impl_preprocessing_argument! {
         }
 
         #[allow(non_snake_case)]
-        fn verify<V: VerifierChannel>(
+        fn verify<V: VerifierChannel<Unit = u8>>(
             &self,
             ch: &mut V,
-            vk: &SchnorrVerifierKey<G>,
+            vk: &SchnorrKey<G>,
             instance: &G,
         ) -> VerificationResult<()> {
             let G_gen = vk.0;
@@ -147,27 +148,27 @@ fn main() {
 
     // 1. Compile the stateless wrapper, then run the indexer.
     //    `preprocessing_non_interactive_argument(body, sponge)` holds no keys;
-    //    `.preprocess(&generator)` calls `body.index(&generator)`, bakes
-    //    `vk.committed_index()` into the proving key, and returns
-    //    `(ProvingKey { key, committed_index }, verifier_key)`.
+    //    `.index(&generator)` calls `body.index(&generator)` and returns the
+    //    bare `(prover_key, verifier_key)`. Each key derives its committed
+    //    index on demand (`pk.committed_index() == vk.committed_index()`).
     let generator = G::generator();
     let pnia = dsfs::preprocessing_non_interactive_argument(
         PreprocessedSchnorr::<G>::default(),
         dsfs::Keccak::default(),
     );
-    let (proving_key, verifier_key) = pnia.preprocess(&generator);
+    let (proving_key, verifier_key) = pnia.index(&generator);
 
     // 2. Inspect the asymmetry directly from the keys — no capability trait
     //    needed, since `preprocess` hands you the keys as values.
     println!("Preprocessed inspection:");
     println!(
         "  committed_index: 0x{}",
-        hex::encode(proving_key.committed_index.as_bytes())
+        hex::encode(proving_key.committed_index().as_bytes())
     );
     println!("  verifier_key:    {:?}", verifier_key);
     // prover_key is secret material in production protocols; here pk == vk ==
     // generator, so it's harmless to print.
-    println!("  prover_key:      {:?}\n", proving_key.key);
+    println!("  prover_key:      {:?}\n", proving_key.0);
 
     // 3. Many claims, one preprocessed setup. Per-claim instance is just the
     //    public key — the generator no longer rides along. The prover passes
@@ -204,7 +205,7 @@ mod tests {
             PreprocessedSchnorr::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let (proving_key, verifier_key) = pnia.preprocess(&g);
+        let (proving_key, verifier_key) = pnia.index(&g);
 
         let sk = F::rand(&mut OsRng);
         let pk = g * sk;
@@ -227,11 +228,11 @@ mod tests {
             PreprocessedSchnorr::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let (pk_g1, _vk_g1) = pnia.preprocess(&g1);
-        let (_pk_g2, vk_g2) = pnia.preprocess(&g2);
+        let (pk_g1, _vk_g1) = pnia.index(&g1);
+        let (_pk_g2, vk_g2) = pnia.index(&g2);
 
         // Sanity: different generators produce different committed indices.
-        assert_ne!(pk_g1.committed_index, vk_g2.committed_index());
+        assert_ne!(pk_g1.committed_index(), vk_g2.committed_index());
 
         let sk = F::rand(&mut OsRng);
         let pk_under_g1 = g1 * sk;
@@ -252,9 +253,9 @@ mod tests {
             PreprocessedSchnorr::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let (proving_key, _vk) = pnia.preprocess(&g);
+        let (proving_key, _vk) = pnia.index(&g);
         assert!(proving_key
-            .committed_index
+            .committed_index()
             .as_bytes()
             .starts_with(b"preprocessed-schnorr:vk:v1"));
     }

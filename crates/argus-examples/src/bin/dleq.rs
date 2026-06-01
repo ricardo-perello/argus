@@ -23,7 +23,7 @@
 //!   Index       = (g, h)       — long-term public key, the preprocessing
 //!                                 input. ProverKey and VerifierKey both
 //!                                 hold this pair; VK commits to it via
-//!                                 `VerifierKeyCommitment`.
+//!                                 `CommittedIndex`.
 //!   ProverKey   = DleqKey { g, h }
 //!   VerifierKey = DleqKey { g, h }
 //!   Instance    = (u, v)       — per-claim DLEQ challenge pair
@@ -46,8 +46,9 @@ use rand::rngs::OsRng;
 use spongefish_dsfs as dsfs;
 
 use ia_core::{
-    CommittedIndexBytes, Decoding, Deserialize, Encoding, PreprocessingNonInteractiveArgument,
-    ProverChannel, VerificationError, VerificationResult, VerifierChannel, VerifierKeyCommitment,
+    CommittedIndex, CommittedIndexBytes, Decoding, Deserialize, Encoding, PreprocessingCore,
+    PreprocessingNonInteractiveArgument, ProverChannel, VerificationError, VerificationResult,
+    VerifierChannel,
 };
 
 // ---------------------------------------------------------------------------
@@ -55,7 +56,7 @@ use ia_core::{
 // ---------------------------------------------------------------------------
 
 /// The DLEQ preprocessing key — the long-term (g, h) pair. Held by both
-/// prover and verifier; the verifier-side copy is what `VerifierKeyCommitment`
+/// prover and verifier; the verifier-side copy is what `CommittedIndex`
 /// hashes into transcript bytes.
 #[derive(Clone, Debug)]
 struct DleqKey<G: CurveGroup> {
@@ -63,7 +64,7 @@ struct DleqKey<G: CurveGroup> {
     h: G,
 }
 
-impl<G: CurveGroup + Encoding> VerifierKeyCommitment for DleqKey<G> {
+impl<G: CurveGroup + Encoding> CommittedIndex for DleqKey<G> {
     fn committed_index(&self) -> CommittedIndexBytes {
         // Tag + (g || h). Tag namespaces the bytes so this commitment can
         // never be confused with some other verifier-key encoding.
@@ -108,7 +109,7 @@ ia_core::impl_preprocessing_argument! {
 
         /// Deterministic indexer: both keys are the same (g, h) pair. The
         /// verifier-side key exposes a canonical commitment via
-        /// `VerifierKeyCommitment`; the prover-side key is the same data but
+        /// `CommittedIndex`; the prover-side key is the same data but
         /// without the trait obligation.
         fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
             let key = DleqKey { g: ix.0, h: ix.1 };
@@ -116,7 +117,7 @@ ia_core::impl_preprocessing_argument! {
         }
 
         #[allow(non_snake_case)]
-        fn prove<P: ProverChannel>(
+        fn prove<P: ProverChannel<Unit = u8>>(
             &self,
             ch: &mut P,
             pk: &DleqKey<G>,
@@ -139,7 +140,7 @@ ia_core::impl_preprocessing_argument! {
         }
 
         #[allow(non_snake_case)]
-        fn verify<V: VerifierChannel>(
+        fn verify<V: VerifierChannel<Unit = u8>>(
             &self,
             ch: &mut V,
             vk: &DleqKey<G>,
@@ -180,20 +181,20 @@ fn main() {
 
     // -------- preprocessing step -------------------------------------------
     // preprocessing_non_interactive_argument(body, sponge) is the stateless
-    // compiled wrapper; .preprocess(&(g, h)) runs body.index(&(g, h)) once and
-    // returns (ProvingKey { key, committed_index }, verifier_key). Keys are
+    // compiled wrapper; .index(&(g, h)) runs body.index(&(g, h)) once and
+    // returns (prover_key, verifier_key). Keys are
     // then passed as inputs to prove/verify — the wrapper stores nothing.
     let nia_dleq = dsfs::preprocessing_non_interactive_argument(
         Dleq::<G>::default(),
         dsfs::Keccak::default(),
     );
-    let (proving_key, verifier_key) = nia_dleq.preprocess(&(g, h));
+    let (proving_key, verifier_key) = nia_dleq.index(&(g, h));
 
     // -------- inspect the preprocessed key directly ------------------------
     println!("Preprocessed public key:");
     println!(
         "  committed_index: 0x{}",
-        hex::encode(proving_key.committed_index.as_bytes())
+        hex::encode(proving_key.committed_index().as_bytes())
     );
     println!("  verifier_key:    {verifier_key:?}");
     println!();
@@ -243,7 +244,7 @@ mod tests {
             Dleq::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let (pk, vk) = nia.preprocess(&(g, h));
+        let (pk, vk) = nia.index(&(g, h));
 
         let u = G::generator() * F::rand(&mut OsRng);
         let v = u * x;
@@ -265,9 +266,9 @@ mod tests {
             Dleq::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let (pk_alice, _vk_alice) = nia.preprocess(&(g, h_alice));
-        let (_pk_bob, vk_bob) = nia.preprocess(&(g, h_bob));
-        assert_ne!(pk_alice.committed_index, vk_bob.committed_index());
+        let (pk_alice, _vk_alice) = nia.index(&(g, h_alice));
+        let (_pk_bob, vk_bob) = nia.index(&(g, h_bob));
+        assert_ne!(pk_alice.committed_index(), vk_bob.committed_index());
 
         // Alice produces a valid DLEQ for (u, u^x_alice).
         let u = G::generator() * F::rand(&mut OsRng);
@@ -291,7 +292,7 @@ mod tests {
             Dleq::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let (pk, vk) = nia.preprocess(&(g, h));
+        let (pk, vk) = nia.index(&(g, h));
 
         let u = G::generator() * F::rand(&mut OsRng);
         let v_wrong = u * F::rand(&mut OsRng); // not u^x
@@ -308,7 +309,7 @@ mod tests {
             Dleq::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let (pk, _vk) = nia.preprocess(&(g, h));
-        assert!(pk.committed_index.as_bytes().starts_with(b"dleq:vk:v1"));
+        let (pk, _vk) = nia.index(&(g, h));
+        assert!(pk.committed_index().as_bytes().starts_with(b"dleq:vk:v1"));
     }
 }

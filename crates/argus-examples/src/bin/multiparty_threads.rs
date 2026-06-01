@@ -11,9 +11,9 @@
 //!    we just `Copy` it into each closure).
 //!
 //! 2. **3-machine preprocessed (DLEQ).** Adds an indexer party that runs
-//!    `preprocess` once over the long-term key pair `(g, h = g^x)`. It ships
-//!    `ProvingKey { key, committed_index }` to the prover and the
-//!    `VerifierKey` to the verifier. Each party then constructs its own PNIA
+//!    `index` once over the long-term key pair `(g, h = g^x)`. It ships the
+//!    `ProverKey` to the prover and the `VerifierKey` to the verifier (each
+//!    carries the committed index). Each party then constructs its own PNIA
 //!    and wraps it with `Prover` / `Verifier` (the optional role-typed
 //!    wrappers). The prover never holds `vk`; the verifier never holds `pk`
 //!    or a `prove` method. Per claim, the prover sends `((u, v), proof)`.
@@ -31,9 +31,9 @@ use rand::rngs::OsRng;
 use spongefish_dsfs as dsfs;
 
 use ia_core::{
-    CommittedIndexBytes, Decoding, Deserialize, Encoding, NargProof, NonInteractiveArgument,
-    PreprocessingNonInteractiveArgument, Prover, ProverChannel, ProvingKey, VerificationError,
-    VerificationResult, Verifier, VerifierChannel, VerifierKeyCommitment,
+    CommittedIndex, CommittedIndexBytes, Decoding, Deserialize, Encoding, NargProof,
+    NonInteractiveArgument, PreprocessingCore, Prover, ProverChannel, VerificationError,
+    VerificationResult, Verifier, VerifierChannel,
 };
 
 // ---------------------------------------------------------------------------
@@ -62,7 +62,7 @@ ia_core::impl_interactive_argument! {
         type Witness = C::ScalarField;
 
         #[allow(non_snake_case)]
-        fn prove<P: ProverChannel>(
+        fn prove<P: ProverChannel<Unit = u8>>(
             &self,
             ch: &mut P,
             instance: &Self::Instance,
@@ -79,7 +79,7 @@ ia_core::impl_interactive_argument! {
         }
 
         #[allow(non_snake_case)]
-        fn verify<V: VerifierChannel>(
+        fn verify<V: VerifierChannel<Unit = u8>>(
             &self,
             ch: &mut V,
             instance: &Self::Instance,
@@ -108,7 +108,7 @@ struct DleqKey<C: CurveGroup> {
     h: C,
 }
 
-impl<C: CurveGroup + Encoding> VerifierKeyCommitment for DleqKey<C> {
+impl<C: CurveGroup + Encoding> CommittedIndex for DleqKey<C> {
     fn committed_index(&self) -> CommittedIndexBytes {
         // Tag + (g || h) — namespaced canonical digest of the verifier key.
         let mut out = Vec::new();
@@ -149,7 +149,7 @@ ia_core::impl_preprocessing_argument! {
         }
 
         #[allow(non_snake_case)]
-        fn prove<P: ProverChannel>(
+        fn prove<P: ProverChannel<Unit = u8>>(
             &self,
             ch: &mut P,
             pk: &DleqKey<C>,
@@ -172,7 +172,7 @@ ia_core::impl_preprocessing_argument! {
         }
 
         #[allow(non_snake_case)]
-        fn verify<V: VerifierChannel>(
+        fn verify<V: VerifierChannel<Unit = u8>>(
             &self,
             ch: &mut V,
             vk: &DleqKey<C>,
@@ -257,10 +257,10 @@ fn demo_three_machine_preprocessed() {
     let session = spongefish::session!("multiparty / preprocessed dleq");
 
     // Three wires:
-    //   setup  ──(ProvingKey)──► prover     (carries pk.key + pk.committed_index)
+    //   setup  ──(ProverKey)───► prover     (the prover key; carries the index)
     //   setup  ──(VerifierKey)─► verifier
     //   prover ──((u,v), NargProof)─► verifier
-    let (pk_tx, pk_rx) = mpsc::channel::<ProvingKey<DleqKey<G>>>();
+    let (pk_tx, pk_rx) = mpsc::channel::<DleqKey<G>>();
     let (vk_tx, vk_rx) = mpsc::channel::<DleqKey<G>>();
     let (proof_tx, proof_rx) = mpsc::channel::<((G, G), NargProof)>();
 
@@ -270,11 +270,11 @@ fn demo_three_machine_preprocessed() {
             Dleq::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let (proving_key, verifier_key) = pnia.preprocess(&(g, h));
-        let ci_hex = hex::encode(proving_key.committed_index.as_bytes());
-        pk_tx.send(proving_key).expect("ship proving key");
+        let (prover_key, verifier_key) = pnia.index(&(g, h));
+        let ci_hex = hex::encode(prover_key.committed_index().as_bytes());
+        pk_tx.send(prover_key).expect("ship prover key");
         vk_tx.send(verifier_key).expect("ship verifier key");
-        println!("  setup   : ran indexer; shipped ProvingKey + VerifierKey");
+        println!("  setup   : ran indexer; shipped ProverKey + VerifierKey");
         println!("            committed_index = 0x{}", &ci_hex[..32]);
     });
 
@@ -286,8 +286,8 @@ fn demo_three_machine_preprocessed() {
             Dleq::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let proving_key = pk_rx.recv().expect("recv proving key");
-        let prover_view = Prover::new(&pnia, &proving_key);
+        let prover_key = pk_rx.recv().expect("recv prover key");
+        let prover_view = Prover::new(&pnia, &prover_key);
 
         for i in 0..CLAIMS {
             // Per-session blinding: a fresh (u, v = u^x) pair.
@@ -350,60 +350,5 @@ mod tests {
     #[test]
     fn three_machine_preprocessed_runs() {
         demo_three_machine_preprocessed();
-    }
-
-    /// Same 3-thread topology, but the prover and verifier call the bare PNIA
-    /// primitive directly — no `Prover`/`Verifier` wrappers. The wrappers are
-    /// pure sugar; the wire shape and proof bytes are identical either way.
-    #[test]
-    fn three_machine_preprocessed_runs_without_role_wrappers() {
-        let g = G::generator();
-        let x = F::rand(&mut OsRng);
-        let h = g * x;
-        let session = spongefish::session!("multiparty / preprocessed dleq / no wrappers");
-
-        let (pk_tx, pk_rx) = mpsc::channel::<ProvingKey<DleqKey<G>>>();
-        let (vk_tx, vk_rx) = mpsc::channel::<DleqKey<G>>();
-        let (proof_tx, proof_rx) = mpsc::channel::<((G, G), NargProof)>();
-
-        // SETUP / INDEXER
-        let setup = thread::spawn(move || {
-            let pnia = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
-                Dleq::<G>::default(),
-                dsfs::Keccak::default(),
-            );
-            let (proving_key, verifier_key) = pnia.preprocess(&(g, h));
-            pk_tx.send(proving_key).expect("ship proving key");
-            vk_tx.send(verifier_key).expect("ship verifier key");
-        });
-
-        // PROVER — bare primitive: pnia.prove(&proving_key, ...)
-        let prover = thread::spawn(move || {
-            let pnia = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
-                Dleq::<G>::default(),
-                dsfs::Keccak::default(),
-            );
-            let proving_key = pk_rx.recv().expect("recv proving key");
-            let u = G::generator() * F::rand(&mut OsRng);
-            let v = u * x;
-            let proof = pnia.prove(&proving_key, &session, &(u, v), &x);
-            proof_tx.send(((u, v), proof)).expect("ship proof");
-        });
-
-        // VERIFIER — bare primitive: pnia.verify(&verifier_key, ...)
-        let verifier = thread::spawn(move || {
-            let pnia = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
-                Dleq::<G>::default(),
-                dsfs::Keccak::default(),
-            );
-            let verifier_key = vk_rx.recv().expect("recv verifier key");
-            let (instance, proof) = proof_rx.recv().expect("recv proof");
-            pnia.verify(&verifier_key, &session, &instance, &proof)
-                .expect("verifier accepts honest bare-primitive proof");
-        });
-
-        setup.join().unwrap();
-        prover.join().unwrap();
-        verifier.join().unwrap();
     }
 }

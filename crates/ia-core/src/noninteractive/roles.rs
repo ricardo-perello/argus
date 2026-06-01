@@ -3,26 +3,26 @@
 //! These bundle a stateless [`PreprocessingNonInteractiveArgument`] (or reduction)
 //! with a single party's key, so callers don't re-pass the key on every call and so
 //! a value can be typed to expose only one capability. They are pure convenience
-//! over `nia.prove(proving_key, …)` / `nia.verify(verifier_key, …)`; the real
-//! capability boundary is key possession (no proving key ⇒ no proof).
+//! over `nia.prove(prover_key, …)` / `nia.verify(verifier_key, …)`; the real
+//! capability boundary is key possession (no prover key ⇒ no proof).
 
 use crate::{
     NargProof, PreprocessingNonInteractiveArgument, PreprocessingNonInteractiveReduction,
-    ProvingKey, VerificationResult,
+    VerificationResult,
 };
 
-/// Prover view of a compiled argument: the stateless PNIA plus its proving key.
+/// Prover view of a compiled argument: the stateless PNIA plus its prover key.
 ///
-/// Exposes only [`prove`](Prover::prove). Constructed from `(nia, proving_key)` —
+/// Exposes only [`prove`](Prover::prove). Constructed from `(nia, prover_key)` —
 /// it never holds the verifier key.
 pub struct Prover<'a, N: PreprocessingNonInteractiveArgument> {
     nia: &'a N,
-    proving_key: &'a ProvingKey<N::ProverKey>,
+    prover_key: &'a N::ProverKey,
 }
 
 impl<'a, N: PreprocessingNonInteractiveArgument> Prover<'a, N> {
-    pub fn new(nia: &'a N, proving_key: &'a ProvingKey<N::ProverKey>) -> Self {
-        Self { nia, proving_key }
+    pub fn new(nia: &'a N, prover_key: &'a N::ProverKey) -> Self {
+        Self { nia, prover_key }
     }
 
     pub fn prove(
@@ -31,7 +31,7 @@ impl<'a, N: PreprocessingNonInteractiveArgument> Prover<'a, N> {
         instance: &N::Instance,
         witness: &N::Witness,
     ) -> NargProof {
-        self.nia.prove(self.proving_key, session, instance, witness)
+        self.nia.prove(self.prover_key, session, instance, witness)
     }
 }
 
@@ -62,12 +62,12 @@ impl<'a, N: PreprocessingNonInteractiveArgument> Verifier<'a, N> {
 /// Prover view of a compiled reduction.
 pub struct ProverReduction<'a, N: PreprocessingNonInteractiveReduction> {
     nia: &'a N,
-    proving_key: &'a ProvingKey<N::ProverKey>,
+    prover_key: &'a N::ProverKey,
 }
 
 impl<'a, N: PreprocessingNonInteractiveReduction> ProverReduction<'a, N> {
-    pub fn new(nia: &'a N, proving_key: &'a ProvingKey<N::ProverKey>) -> Self {
-        Self { nia, proving_key }
+    pub fn new(nia: &'a N, prover_key: &'a N::ProverKey) -> Self {
+        Self { nia, prover_key }
     }
 
     pub fn prove(
@@ -76,7 +76,7 @@ impl<'a, N: PreprocessingNonInteractiveReduction> ProverReduction<'a, N> {
         instance: &N::SourceInstance,
         witness: &N::SourceWitness,
     ) -> (NargProof, N::TargetInstance, N::TargetWitness) {
-        self.nia.prove(self.proving_key, session, instance, witness)
+        self.nia.prove(self.prover_key, session, instance, witness)
     }
 }
 

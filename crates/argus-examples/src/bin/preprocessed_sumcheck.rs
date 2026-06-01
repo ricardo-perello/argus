@@ -57,8 +57,8 @@ use rand::rngs::OsRng;
 use spongefish_dsfs as dsfs;
 
 use ia_core::{
-    CommittedIndexBytes, PreprocessingNonInteractiveReduction, ProverChannel, VerificationError,
-    VerificationResult, VerifierChannel, VerifierKeyCommitment,
+    CommittedIndex, CommittedIndexBytes, PreprocessingCore, PreprocessingNonInteractiveReduction,
+    ProverChannel, VerificationError, VerificationResult, VerifierChannel,
 };
 
 // ---------------------------------------------------------------------------
@@ -136,12 +136,25 @@ fn hash_coeffs(coeffs: &[Fr; 4]) -> [u8; 32] {
     *hasher.finalize().as_bytes()
 }
 
-impl VerifierKeyCommitment for SumcheckVerifierKey {
+/// Canonical committed-index bytes for a coefficient commitment. Shared by the
+/// prover key and the verifier key so the two can never disagree on the digest
+/// the transcript binds (`pk.committed_index() == vk.committed_index()`).
+fn sumcheck_committed_index(commit: &[u8; 32]) -> CommittedIndexBytes {
+    let mut out = Vec::with_capacity(b"preprocessed-sumcheck:vk:v1".len() + 32);
+    out.extend_from_slice(b"preprocessed-sumcheck:vk:v1");
+    out.extend_from_slice(commit);
+    CommittedIndexBytes::new(out)
+}
+
+impl CommittedIndex for SumcheckVerifierKey {
     fn committed_index(&self) -> CommittedIndexBytes {
-        let mut out = Vec::with_capacity(b"preprocessed-sumcheck:vk:v1".len() + 32);
-        out.extend_from_slice(b"preprocessed-sumcheck:vk:v1");
-        out.extend_from_slice(&self.commit);
-        CommittedIndexBytes::new(out)
+        sumcheck_committed_index(&self.commit)
+    }
+}
+
+impl CommittedIndex for SumcheckProverKey {
+    fn committed_index(&self) -> CommittedIndexBytes {
+        sumcheck_committed_index(&hash_coeffs(&self.coeffs))
     }
 }
 
@@ -176,7 +189,7 @@ ia_core::impl_preprocessing_reduction! {
             (pk, vk)
         }
 
-        fn prove<P: ProverChannel>(
+        fn prove<P: ProverChannel<Unit = u8>>(
             &self,
             ch: &mut P,
             pk: &SumcheckProverKey,
@@ -200,7 +213,7 @@ ia_core::impl_preprocessing_reduction! {
             (((r1, r2), v), ())
         }
 
-        fn verify<V: VerifierChannel>(
+        fn verify<V: VerifierChannel<Unit = u8>>(
             &self,
             ch: &mut V,
             _vk: &SumcheckVerifierKey,
@@ -256,20 +269,20 @@ fn main() {
     println!("Claimed sum  T = Σ_{{x∈{{0,1}}^2}} p(x) = {t}\n");
 
     // Preprocessing: preprocessing_non_interactive_reduction is the stateless
-    // compiled wrapper; .preprocess(&coeffs) runs body.index(&coeffs) once and
-    // returns (ProvingKey { key, committed_index }, verifier_key).
+    // compiled wrapper; .index(&coeffs) runs body.index(&coeffs) once and
+    // returns the bare (prover_key, verifier_key).
     let nir = dsfs::preprocessing_non_interactive_reduction(
         PreprocessedSumcheck,
         dsfs::Keccak::default(),
     );
-    let (proving_key, verifier_key) = nir.preprocess(&coeffs);
+    let (proving_key, verifier_key) = nir.index(&coeffs);
 
     // Inspect the verifier key + committed index directly.
     println!("Preprocessed keys:");
     println!("  Verifier key: {verifier_key:?}");
     println!(
         "  Committed index: 0x{}\n",
-        hex::encode(proving_key.committed_index.as_bytes())
+        hex::encode(proving_key.committed_index().as_bytes())
     );
 
     // Run the reduction. Source instance is just T; witness is ().
@@ -326,7 +339,7 @@ mod tests {
             PreprocessedSumcheck,
             dsfs::Keccak::default(),
         );
-        let (pk, vk) = nir.preprocess(&coeffs);
+        let (pk, vk) = nir.index(&coeffs);
 
         let (proof, _target_p, ()) = nir.prove(&pk, &session, &t, &());
         let ((r1, r2), v) = nir.verify(&vk, &session, &t, &proof).expect("verify");
@@ -348,7 +361,7 @@ mod tests {
             PreprocessedSumcheck,
             dsfs::Keccak::default(),
         );
-        let (pk, vk) = nir.preprocess(&coeffs);
+        let (pk, vk) = nir.index(&coeffs);
 
         // Prover honestly runs on (its true) `coeffs`. But the caller
         // passes the wrong T as the source instance. The verifier reads
@@ -372,9 +385,9 @@ mod tests {
             PreprocessedSumcheck,
             dsfs::Keccak::default(),
         );
-        let (pk_a, _vk_a) = nir.preprocess(&coeffs_a);
-        let (_pk_b, vk_b) = nir.preprocess(&coeffs_b);
-        assert_ne!(pk_a.committed_index, vk_b.committed_index());
+        let (pk_a, _vk_a) = nir.index(&coeffs_a);
+        let (_pk_b, vk_b) = nir.index(&coeffs_b);
+        assert_ne!(pk_a.committed_index(), vk_b.committed_index());
 
         let t_a = sum_over_hypercube(&coeffs_a);
         let (proof, _, ()) = nir.prove(&pk_a, &session, &t_a, &());
@@ -390,9 +403,9 @@ mod tests {
             PreprocessedSumcheck,
             dsfs::Keccak::default(),
         );
-        let (pk, _vk) = nir.preprocess(&coeffs);
+        let (pk, _vk) = nir.index(&coeffs);
         assert!(pk
-            .committed_index
+            .committed_index()
             .as_bytes()
             .starts_with(b"preprocessed-sumcheck:vk:v1"));
     }

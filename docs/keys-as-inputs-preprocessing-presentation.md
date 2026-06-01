@@ -6,22 +6,37 @@
 Replaces the path-2 `PreparedArgument` adapters and the key-storing `PreparedDsfsArgument`
 wrapper. Plain path, proof bytes, and transcript invariants are unchanged.
 
-**Design source of truth:** `~/wiki/wiki/projects/argus/prover-verifier-role-separation.md` (v4).
+**Updated 2026-06-01** (Chiesa / Giacomo feedback round):
+
+- The indexer's single method is `PreprocessingCore::index(ix) -> (pk, vk)`. The extra
+  `preprocess()` method and the `ProvingKey { key, committed_index }` wrapper are **gone**.
+- The committed-index trait is `CommittedIndex` (was `VerifierKeyCommitment`) and is
+  implemented by **both** the prover key and the verifier key. The compiled PNIA derives
+  the transcript digest on the fly: `pk.committed_index()` on the prover side,
+  `vk.committed_index()` on the verifier side.
+- Channel alphabet is an associated type: `trait ProverChannel { type Unit; … }` (was the
+  generic `ProverChannel<U = u8>`). Byte-oriented protocols pin it with
+  `ProverChannel<Unit = u8>`.
+
+**Design source of truth:** `~/wiki/wiki/projects/argus/prover-verifier-role-separation.md` (v4)
+and `~/wiki/2026-06-01.md` (this feedback round).
 
 ---
 
 ## 1. TL;DR
 
-The compiled preprocessing non-interactive object is now **stateless**: it holds the
-protocol body and the sponge, nothing else. The indexer (a separate party) runs once and
-returns a `ProvingKey { key, committed_index }` and a verifier key; `prove` takes the
-proving key, `verify` takes the verifier key. Plain `IA → NIA` and preprocessed `PIA → PNIA`
-are now structurally parallel. A value built to verify cannot prove (no method, no key).
+The compiled preprocessing non-interactive object is **stateless**: it holds the
+protocol body and the sponge, nothing else. The indexer (a separate party) runs
+`index(ix)` once and returns a prover key and a verifier key; `prove` takes the prover
+key, `verify` takes the verifier key. Both keys can produce the committed index
+(`CommittedIndex`), so the PNIA binds it without a precomputed wrapper. Plain `IA → NIA`
+and preprocessed `PIA → PNIA` are structurally parallel. A value built to verify cannot
+prove (no method, no key).
 
 What this fixes:
 
 - **POC-A — verifier can prove.** A prepared wrapper exposed both methods. Gone:
-`prove` requires a `ProvingKey`, `verify` requires a `VerifierKey`; mixing them is a
+`prove` requires a `ProverKey`, `verify` requires a `VerifierKey`; mixing them is a
 type error.
 - **POC-B — verifier carries the prover key.** The prepared wrapper stored both `pk`
 and `vk`. Gone: the compiled `PNIA` stores no keys; only the role that needs a key
@@ -41,15 +56,21 @@ PLAIN  (Schnorr, sumcheck, …)             PREPROCESSED  (DLEQ, WARP, lookup, �
 
   IA  ─dsfs─► NIA                           PIA  ─dsfs─► PNIA      (stateless, no keys)
                                                           │
-                                            pnia.preprocess(ix) ─► (ProvingKey, vk)
-  nia.prove (session, x, w)                 pnia.prove (&proving_key, session, x, w)
-  nia.verify(session, x, proof)             pnia.verify(&verifier_key, session, x, proof)
+                                            body.index(ix) ─► (pk, vk)
+  nia.prove (session, x, w)                 pnia.prove (&pk, session, x, w)
+  nia.verify(session, x, proof)             pnia.verify(&vk, session, x, proof)
 ```
 
-The proving key bundles `{ key, committed_index }`. `vk.committed_index()` is computed
-once at `preprocess` time and cached inside the proving key — the prover binds it without
-ever holding `vk`; the verifier re-derives it from `vk`. Single source of truth: `vk`.
-No duplication on `vk`. No author obligation.
+Both keys implement `CommittedIndex`. The PNIA derives the transcript digest on the fly
+from whichever key it is handed: `pk.committed_index()` on the prover side,
+`vk.committed_index()` on the verifier side. The author's obligation is that the two agree
+(`pk.committed_index() == vk.committed_index()` for keys from the same `index(ix)`); they
+typically route through one shared helper, so the bytes can't drift. That obligation is
+also **machine-checked**: the backend runs the indexer through
+`PreprocessingCore::index_checked`, which calls `index` and `debug_assert`s the two
+committed indices match — a buggy indexer fails loudly at index time in debug/test builds,
+not as an opaque verify failure. The prover never holds `vk`, and there is no
+precomputed-digest wrapper.
 
 ---
 
@@ -72,8 +93,9 @@ ProtocolCore                                  fn protocol_id(&self) -> impl AsRe
 ├─ ReductionCore : ProtocolCore               type {Source,Target}{Instance,Witness}
 │   │   (same pair: Interactive / NonInteractive Reduction)
 │
-└─ PreprocessingCore : ProtocolCore           type Index; type ProverKey;
-      │                                       type VerifierKey: VerifierKeyCommitment
+└─ PreprocessingCore : ProtocolCore           type Index;
+      │                                       type ProverKey:   CommittedIndex
+      │                                       type VerifierKey: CommittedIndex
       │   fn index(&self, &Index) -> (ProverKey, VerifierKey)    ◄═══ the INDEXER (3rd party)
       │
       ├─ PreprocessingInteractiveArgument     ◄─ AUTHOR
@@ -82,12 +104,15 @@ ProtocolCore                                  fn protocol_id(&self) -> impl AsRe
       │
       ├─ PreprocessingNonInteractiveArgument  ◄─ DSFS  (keys are INPUTS; object stores none)
       │     type Session
-      │     fn preprocess(&self, ix) -> (ProvingKey<Self::ProverKey>, Self::VerifierKey)
-      │     fn prove (&self, &ProvingKey, session, x, w) -> NargProof
-      │     fn verify(&self, &VerifierKey, session, x, proof) -> Result
+      │     fn prove (&self, &ProverKey,   session, x, w) -> NargProof   (binds pk.committed_index())
+      │     fn verify(&self, &VerifierKey, session, x, proof) -> Result  (binds vk.committed_index())
       │
       └─ (reduction variants of the two above)
 ```
+
+`CommittedIndex` (one method, `committed_index() -> CommittedIndexBytes`) is implemented by
+both key types. No `preprocess()` method and no `ProvingKey` wrapper: now that the prover
+key can produce the digest itself, the indexer's `index(ix)` is the only setup step.
 
 ```text
 Dsfs<IA>  : InteractiveArgument               ──►  NonInteractiveArgument
@@ -97,11 +122,11 @@ Dsfs<PIR> : PreprocessingInteractiveReduction ──►  PreprocessingNonInterac
 ```
 
 **Optional role wrappers** — concrete structs over the non-interactive plane, *not*
-traits. Built bottom-up from `(nia, key)`; never narr8ow a both-keys object:
+traits. Built bottom-up from `(nia, key)`; never narrow a both-keys object:
 
 ```rust
-pub struct Prover<'a, N: PreprocessingNonInteractiveArgument>   { nia: &'a N, pk: &'a ProvingKey<N::ProverKey> }
-pub struct Verifier<'a, N: PreprocessingNonInteractiveArgument> { nia: &'a N, vk: &'a N::VerifierKey }
+pub struct Prover<'a, N: PreprocessingNonInteractiveArgument>   { nia: &'a N, prover_key: &'a N::ProverKey }
+pub struct Verifier<'a, N: PreprocessingNonInteractiveArgument> { nia: &'a N, verifier_key: &'a N::VerifierKey }
 ```
 
 `Verifier` exposes only `verify`; `Prover` exposes only `prove`. Capability follows key
@@ -147,39 +172,35 @@ nia.verify(&session, &instance, &proof)?;
 
 ```rust
 let pnia     = dsfs::preprocessing_non_interactive_argument(PreprocessedLookup, dsfs::Keccak::default());
-let (pk, vk) = pnia.preprocess(&table);              // pk: ProvingKey { key, committed_index }
+let (pk, vk) = pnia.index(&table);                   // bare (ProverKey, VerifierKey)
 let proof    = pnia.prove (&pk, &session, &(3, table[3]), &());
 pnia.verify(&vk, &session, &(3, table[3]), &proof)?;
 ```
 
-### 5.3 Proving-key anatomy and committed-index flow
+### 5.3 Committed-index flow (keys as inputs, no wrapper)
 
-The proving key is a thin `ia-core` bundle:
-
-```rust
-pub struct ProvingKey<PK> {
-    pub key: PK,                          // the author's PreprocessingCore::ProverKey
-    pub committed_index: CommittedIndexBytes,
-}
-```
+The indexer ships the **bare** keys; there is no `ProvingKey` wrapper. Each key produces
+the committed index on demand via `CommittedIndex`, and the PNIA derives the transcript
+digest from whichever key it holds.
 
 Who holds what:
 
 
-| Party    | Receives from indexer                 | Reads / re-derives                                                                                                |
-| -------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| Indexer  | `ix`                                  | calls `index(ix)`; computes `ci = vk.committed_index()`; ships `(pk, ci)` to the prover and `vk` to the verifier. |
-| Prover   | `ProvingKey { key, committed_index }` | `pk.key` (raw material) + `pk.committed_index` (transcript-bound digest).                                         |
-| Verifier | `VerifierKey`                         | re-derives `committed_index` on demand via `vk.committed_index()` — single source of truth.                       |
+| Party    | Receives from indexer | Reads / re-derives                                                                |
+| -------- | --------------------- | --------------------------------------------------------------------------------- |
+| Indexer  | `ix`                  | calls `index(ix)`; ships `pk` to the prover and `vk` to the verifier.             |
+| Prover   | `ProverKey`           | raw prover material; PNIA binds `pk.committed_index()` into the transcript.        |
+| Verifier | `VerifierKey`         | compact key; PNIA binds `vk.committed_index()` into the transcript.               |
 
 
-The author writes only `**PreprocessingCore::index**` and `**VerifierKeyCommitment**` on the
-verifier key. The DSFS layer wraps the indexer's output and bakes the digest into the
-proving key once, at `preprocess` time.
+The author writes `PreprocessingCore::index` plus a `CommittedIndex` impl on **each** key.
+The two impls must return identical bytes for keys from the same `index(ix)` — route them
+through one shared helper and they can't drift.
 
 **Example — `PreprocessedLookup`** (Merkle vector-commitment opening;
 `crates/argus-examples/src/bin/preprocessed_lookup.rs`). The keys are genuinely asymmetric:
-the prover holds `O(n)` of `table + tree`; the verifier holds 36 bytes (`root + n`).
+the prover holds `O(n)` of `table + tree`; the verifier holds 36 bytes (`root + n`). Both
+recompute the *same* digest from what they hold.
 
 ```rust
 // Asymmetric keys.
@@ -205,25 +226,36 @@ ia_core::impl_preprocessing_argument! {
     }
 }
 
-// Author's binding contract: the bytes the transcript absorbs to commit to vk.
-impl VerifierKeyCommitment for LookupVerifierKey {
+// One canonical layout, used by both keys.
+fn lookup_committed_index(root: &[u8; 32], n: u32) -> CommittedIndexBytes {
+    let mut out = Vec::with_capacity(b"preprocessed-lookup:vk:v1".len() + 32 + 4);
+    out.extend_from_slice(b"preprocessed-lookup:vk:v1");
+    out.extend_from_slice(root);
+    out.extend_from_slice(&n.to_le_bytes());
+    CommittedIndexBytes::new(out)
+}
+
+impl CommittedIndex for LookupVerifierKey {
     fn committed_index(&self) -> CommittedIndexBytes {
-        let mut out = Vec::with_capacity(b"preprocessed-lookup:vk:v1".len() + 32 + 4);
-        out.extend_from_slice(b"preprocessed-lookup:vk:v1");
-        out.extend_from_slice(&self.root);
-        out.extend_from_slice(&self.n.to_le_bytes());
-        CommittedIndexBytes::new(out)
+        lookup_committed_index(&self.root, self.n)
+    }
+}
+
+impl CommittedIndex for LookupProverKey {
+    fn committed_index(&self) -> CommittedIndexBytes {
+        let root = *self.tree.root().as_bytes();
+        let n    = u32::try_from(self.table.len()).expect("table size fits in u32");
+        lookup_committed_index(&root, n)   // identical bytes to the verifier key
     }
 }
 ```
 
-What the DSFS `preprocess` does on top of the author's `index`:
+What the DSFS `prove` does on top of the author's keys (verify is symmetric on `vk`):
 
 ```rust
-fn preprocess(&self, ix: &Self::Index) -> (ProvingKey<Self::ProverKey>, Self::VerifierKey) {
-    let (pk, vk)        = self.ia.index(ix);          // author's indexer
-    let committed_index = vk.committed_index();       // single source of truth = vk
-    (ProvingKey::new(pk, committed_index), vk)
+fn prove(&self, prover_key: &Self::ProverKey, session, x, w) -> NargProof {
+    let committed_index = prover_key.committed_index();   // derived from pk, on the fly
+    // … absorb committed_index + instance, then run the keyed body …
 }
 ```
 
@@ -231,17 +263,16 @@ fn preprocess(&self, ix: &Self::Index) -> (ProvingKey<Self::ProverKey>, Self::Ve
 the keys came from the offline setup):
 
 ```rust
-// prover machine: has only what the indexer shipped (no vk anywhere)
-let proving_key = ProvingKey::new(pk_from_disk, ci_from_disk);
-let proof       = pnia.prove(&proving_key, &session, &instance, &witness);
+// prover machine: has only the prover key (no vk anywhere)
+let proof = pnia.prove(&prover_key_from_disk, &session, &instance, &witness);
 
 // verifier machine: has only vk
 pnia.verify(&vk_from_disk, &session, &instance, &proof)?;
 ```
 
-`ci_from_disk` must equal `vk.committed_index()` on the verifier side. Drift causes
-diverging transcripts and a verify failure — soundness is preserved, the rollout problem
-is detected on the wire.
+`prover_key.committed_index()` must equal `vk.committed_index()`. Drift causes diverging
+transcripts and a verify failure — soundness is preserved, the rollout problem is detected
+on the wire.
 
 ### 5.4 Optional role wrappers (capability typing)
 
@@ -254,7 +285,7 @@ let verifier = Verifier::new(&pnia, &vk);
 let proof = prover.prove(&session, &instance, &witness);
 verifier.verify(&session, &instance, &proof)?;
 // prover.verify(...)            // ❌ no method
-// pnia.prove(&vk, ...)          // ❌ type error: expected &ProvingKey, found &VerifierKey
+// pnia.prove(&vk, ...)          // ❌ type error: expected &ProverKey, found &VerifierKey
 ```
 
 ### 5.5 Worked contrast: Schnorr (plain) vs DLEQ (preprocessed)
@@ -267,19 +298,19 @@ nia.verify(&session, &[g, h], &proof)?;
 
 // DLEQ — preprocessed. (g, h) is the reused fixed pair; (u, v) is per-claim.
 let pnia     = dsfs::preprocessing_non_interactive_argument(Dleq::<G>::default(), dsfs::Keccak::default());
-let (pk, vk) = pnia.preprocess(&(g, h));
+let (pk, vk) = pnia.index(&(g, h));
 let proof    = pnia.prove (&pk, &session, &(u, v), &x);
 pnia.verify(&vk, &session, &(u, v), &proof)?;
 ```
 
-The whole API difference: one extra `preprocess` step and one key argument.
+The whole API difference: one extra `index` step and one key argument.
 
 ### 5.6 Two- and three-machine deployment
 
 ```text
 Preprocessed                                         Plain
 ┌─ setup machine = INDEXER ─────────────┐            (no indexer)
-│ let (pk, vk) = pnia.preprocess(&ix);  │            prover machine          verifier machine
+│ let (pk, vk) = pnia.index(&ix);       │            prover machine          verifier machine
 │  ── pk ─► prover                      │            let p = dsfs::… ;        let v = dsfs::… ;
 │  ── vk ─► verifier                    │            p.prove(s,x,w) ─proof─►  v.verify(s,x,proof)
 └────────────────────────────────────────┘
@@ -288,10 +319,11 @@ Preprocessed                                         Plain
 
 Each machine independently constructs the same stateless `pnia` from the public body +
 sponge. The prover binary never contains `vk`; the verifier binary never contains `pk`
-or `prove`. `pk.committed_index` is the agreement handshake — the indexer derives it
-from `vk` and ships it with `pk`; the verifier re-derives it. Disagreement ⇒ diverging
-transcripts ⇒ `verify` fails. This is the same separation `live-channel` already enforces
-for interactive runs; the non-interactive types now match it.
+or `prove`. The committed index is the agreement handshake — the prover binds
+`pk.committed_index()`, the verifier binds `vk.committed_index()`, and the author's
+`CommittedIndex` impls guarantee the two agree. Disagreement ⇒ diverging transcripts ⇒
+`verify` fails. This is the same separation `live-channel` already enforces for
+interactive runs; the non-interactive types now match it.
 
 ---
 
@@ -325,28 +357,47 @@ for interactive runs; the non-interactive types now match it.
 
 **Plain path (`DsfsArgument`/`DsfsReduction` + `plain_non_interactive_*`) is unchanged.**
 
+### 6.1 Follow-up (2026-06-01 feedback round)
+
+On top of the keys-as-inputs PR above:
+
+- **`ia-core`**: delete `ProvingKey<PK>`; drop `preprocess()` from the PNIA traits (only
+  `PreprocessingCore::index` remains); bound `PreprocessingCore::ProverKey: CommittedIndex`;
+  add the provided `PreprocessingCore::index_checked` (`debug_assert`s `pk`/`vk` committed
+  indices match); rename `VerifierKeyCommitment` → `CommittedIndex`; `Prover`/`ProverReduction` hold
+  `&N::ProverKey` instead of `&ProvingKey<…>`; `ProverChannel`/`VerifierChannel` take an
+  associated `type Unit` instead of the generic `<U = u8>`.
+- **`spongefish-dsfs`**: drop the `preprocess` impl; the wrappers' `index` runs the body
+  through `index_checked`; `prove` derives `committed_index` from
+  `prover_key.committed_index()`; channel impls gain `type Unit = DS::U`.
+- **Protocols / examples / WARP**: every `ProverKey` now implements `CommittedIndex`
+  (sharing a helper with its `VerifierKey`); byte-oriented `prove`/`verify` pin the
+  channel with `ProverChannel<Unit = u8>` / `VerifierChannel<Unit = u8>`.
+
+Proof bytes still byte-identical; the same 3 pre-existing `sigma-bridge` baseline failures.
+
 ---
 
 ## 7. Migration Reference
 
-*See §5.3 for the `ProvingKey<PK>` field layout and the indexer's `committed_index`
-derivation.*
+*See §5.3 for the keys-as-inputs flow and the shared `committed_index` helper.*
 
 
-| Before                                                                                    | After                                                                                                           |
-| ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `let prepared = dsfs::preprocessing_non_interactive_argument(body, sponge).prepare(&ix);` | `let pnia = dsfs::preprocessing_non_interactive_argument(body, sponge);` `let (pk, vk) = pnia.preprocess(&ix);` |
-| `prepared.prove(&session, &x, &w)`                                                        | `pnia.prove(&pk, &session, &x, &w)`                                                                             |
-| `prepared.verify(&session, &x, &proof)`                                                   | `pnia.verify(&vk, &session, &x, &proof)`                                                                        |
-| `prepared.committed_index()`                                                              | `pk.committed_index` (field) or `vk.committed_index()`                                                          |
-| `prepared.prover_key()`                                                                   | `pk.key` (field)                                                                                                |
-| `prepared.verifier_key()`                                                                 | `vk` (from `preprocess`)                                                                                        |
-| `PreparedArgument::prepare(body, &ix)` + `.indexed_instance(x)` (path 2)                  | **removed** — call `preprocess(&ix)` and pass keys directly                                                     |
-| `Dsfs…with_keys(pk, vk)` for pre-computed keys                                            | **dissolved** — call `prove(&proving_key, …)` / `verify(&vk, …)` directly                                       |
+| Before                                                                                    | After                                                                                                       |
+| ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `let prepared = dsfs::preprocessing_non_interactive_argument(body, sponge).prepare(&ix);` | `let pnia = dsfs::preprocessing_non_interactive_argument(body, sponge);` `let (pk, vk) = pnia.index(&ix);` |
+| `prepared.prove(&session, &x, &w)`                                                        | `pnia.prove(&pk, &session, &x, &w)`                                                                         |
+| `prepared.verify(&session, &x, &proof)`                                                   | `pnia.verify(&vk, &session, &x, &proof)`                                                                    |
+| `prepared.committed_index()`                                                              | `pk.committed_index()` or `vk.committed_index()`                                                            |
+| `prepared.prover_key()`                                                                   | `pk` (the prover key itself)                                                                                |
+| `prepared.verifier_key()`                                                                 | `vk` (from `index`)                                                                                         |
+| `pnia.preprocess(&ix)` (interim keys-as-inputs API)                                        | `pnia.index(&ix)` — no `ProvingKey` wrapper                                                                 |
+| `impl VerifierKeyCommitment for VK`                                                        | `impl CommittedIndex for VK` **and** `impl CommittedIndex for PK` (same bytes)                              |
+| `fn prove<P: ProverChannel>` / `fn verify<V: VerifierChannel>`                             | `fn prove<P: ProverChannel<Unit = u8>>` / `fn verify<V: VerifierChannel<Unit = u8>>`                       |
 
 
 If the body type was `Preprocessed`-bound for a generic helper, switch the helper to take
-`pk: &ProvingKey<…>` + `vk: &…VerifierKey` (or `&CommittedIndexBytes`) as explicit args.
+`pk: &…ProverKey` + `vk: &…VerifierKey` (or `&CommittedIndexBytes`) as explicit args.
 
 ---
 
@@ -364,11 +415,12 @@ If the body type was `Preprocessed`-bound for a generic helper, switch the helpe
 | build warnings (both repos)             | 0                                                                                                                                                                                                       |
 
 
-**Proof bytes are byte-identical to pre-refactor.** The four transcript runners were
-moved verbatim into `runners.rs`; the absorb path (`IndexedInstanceRef::new(committed_index, instance)`
-via `DomainSeparator::derive(...).instance(...)`) is unchanged; the committed index is
-derived identically (`vk.committed_index()`). The plain path is untouched, so
-`sigma-bridge` golden-vector parity (the cases that already pass) still passes.
+**Proof bytes are byte-identical to pre-refactor.** The transcript runners and the absorb
+path (`IndexedInstanceRef::new(committed_index, instance)` via
+`DomainSeparator::derive(...).instance(...)`) are unchanged; the committed index is now
+derived from `pk.committed_index()` on the prover side and `vk.committed_index()` on the
+verifier side, which return the same bytes. The plain path is untouched, so `sigma-bridge`
+golden-vector parity (the cases that already pass) still passes.
 
 **Capability guarantees are compile-time:** `pnia.prove(&vk, …)` is a type error; a
 `Verifier` value has no `prove` method.
@@ -377,9 +429,18 @@ derived identically (`vk.committed_index()`). The plain path is untouched, so
 
 ## 9. Decisions and Deviations from the Plan
 
-- `**preprocess` (not `index`)** is the PNIA-level setup method name — avoids clashing
-with `PreprocessingCore::index` (which still returns the bare `(pk, vk)`) and delivers
-the team's `prepare → preprocess` rename in one stroke.
+- **No PNIA-level setup method.** An earlier cut added `preprocess()` on the PNIA traits
+to wrap `index` + bake the digest into a `ProvingKey`. The 2026-06-01 feedback dropped
+both: the prover key implements `CommittedIndex` itself, so `PreprocessingCore::index` is
+the only setup step and `prove` takes the bare `&ProverKey`.
+- **`CommittedIndex` on both keys.** The committed-index trait is implemented by the prover
+key *and* the verifier key; consistency (`pk.committed_index() == vk.committed_index()`) is
+the author's obligation, kept honest by routing both through one helper. It is also
+machine-checked: `PreprocessingCore::index_checked` (a provided method the DSFS backend
+runs the indexer through) `debug_assert`s the two match, so a mismatch panics at index time
+in debug/test builds instead of failing verification opaquely.
+- **Channel alphabet is an associated type.** `trait ProverChannel { type Unit; … }`; a
+channel has exactly one alphabet. Byte-oriented protocols pin `Unit = u8` at the bound.
 - `**IndexedInstance` (owned) stays `pub`** rather than `pub(crate)`: it's harmless and
 used by encoding tests; demotion would have introduced unused-import friction. The
 borrowed `IndexedInstanceRef` is the one the DSFS runner actually uses.

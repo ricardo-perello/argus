@@ -4,7 +4,7 @@
 //! protocol identity at the root, argument/reduction shape metadata in the
 //! middle, and executable interactive traits as leaf capabilities.
 
-use crate::VerifierKeyCommitment;
+use crate::CommittedIndex;
 
 /// Common identity for any protocol core.
 pub trait ProtocolCore {
@@ -42,11 +42,33 @@ pub trait ReductionCore: ProtocolCore {
 pub trait PreprocessingCore: ProtocolCore {
     /// Static problem description that is preprocessed once.
     type Index;
-    /// Prover-side key derived from the index.
-    type ProverKey;
+    /// Prover-side key derived from the index. Carries (or can recompute) the
+    /// committed index so the prover binds it without ever holding `vk`.
+    type ProverKey: CommittedIndex;
     /// Verifier-side key derived from the index.
-    type VerifierKey: VerifierKeyCommitment;
+    type VerifierKey: CommittedIndex;
 
     /// Deterministic indexer: derives `(prover_key, verifier_key)` from `ix`.
     fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey);
+
+    /// Run [`index`](Self::index), then assert the two keys agree on the committed
+    /// index.
+    ///
+    /// The compiled prover binds `pk.committed_index()` and the verifier binds
+    /// `vk.committed_index()` (see [`CommittedIndex`]). If the author's two impls
+    /// disagree for keys from the same `ix`, the prover and verifier transcripts
+    /// diverge and *every* proof fails to verify. This guard surfaces that author
+    /// error at index time — where both keys are in hand — instead of as an opaque
+    /// verification failure later. Backends run the indexer through this method, so
+    /// the check fires on the compiled path without any extra call-site work.
+    fn index_checked(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+        let (pk, vk) = self.index(ix);
+        debug_assert_eq!(
+            pk.committed_index(),
+            vk.committed_index(),
+            "PreprocessingCore::index returned prover/verifier keys with mismatched \
+             committed_index; the prover and verifier transcripts would diverge",
+        );
+        (pk, vk)
+    }
 }

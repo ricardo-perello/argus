@@ -40,7 +40,7 @@ impl<A: InteractiveArgument> PreprocessingCore for TrivialIndexedArgument<A> {
 }
 
 impl<A: InteractiveArgument> PreprocessingInteractiveArgument for TrivialIndexedArgument<A> {
-    fn prove<P: ProverChannel>(
+    fn prove<P: ProverChannel<Unit = u8>>(
         &self,
         ch: &mut P,
         _: &Self::ProverKey,
@@ -50,7 +50,7 @@ impl<A: InteractiveArgument> PreprocessingInteractiveArgument for TrivialIndexed
         self.0.prove(ch, instance, witness)
     }
 
-    fn verify<V: VerifierChannel>(
+    fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,
         _: &Self::VerifierKey,
@@ -87,7 +87,7 @@ impl<R: InteractiveReduction> PreprocessingCore for TrivialIndexedReduction<R> {
 }
 
 impl<R: InteractiveReduction> PreprocessingInteractiveReduction for TrivialIndexedReduction<R> {
-    fn prove<P: ProverChannel>(
+    fn prove<P: ProverChannel<Unit = u8>>(
         &self,
         ch: &mut P,
         _: &Self::ProverKey,
@@ -97,7 +97,7 @@ impl<R: InteractiveReduction> PreprocessingInteractiveReduction for TrivialIndex
         self.0.prove(ch, instance, witness)
     }
 
-    fn verify<V: VerifierChannel>(
+    fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,
         _: &Self::VerifierKey,

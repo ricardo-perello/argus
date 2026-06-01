@@ -5,7 +5,7 @@ mod instance;
 
 #[cfg(test)]
 pub(crate) use commitment::VK_PAIR_TAG;
-pub use commitment::{CommittedIndexBytes, ProvingKey, VerifierKeyCommitment};
+pub use commitment::{CommittedIndex, CommittedIndexBytes};
 #[cfg(test)]
 pub(crate) use instance::INDEXED_INSTANCE_TAG;
 pub use instance::{IndexedInstance, IndexedInstanceRef};
