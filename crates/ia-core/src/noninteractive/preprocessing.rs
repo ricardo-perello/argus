@@ -3,9 +3,10 @@
 //! A [`PreprocessingNonInteractiveArgument`] is the compiled, *stateless* result
 //! of running a preprocessing interactive argument through a backend such as DSFS.
 //! Unlike a plain [`crate::NonInteractiveArgument`], `prove`/`verify` take the
-//! relevant preprocessed key as an input. The indexer ([`PreprocessingCore::index`])
-//! is a separate step that derives `(prover_key, verifier_key)`; the compiled object
-//! stores no keys, so a value built to verify carries no prover material.
+//! relevant preprocessed key as an input. The preprocessing step
+//! ([`PreprocessingCore::preprocess`]) derives `(prover_key, verifier_key)`;
+//! the compiled object stores no keys, so a value built to verify carries no
+//! prover material.
 
 use crate::{ArgumentCore, NargProof, PreprocessingCore, ReductionCore, VerificationResult};
 
@@ -16,7 +17,7 @@ use crate::{ArgumentCore, NargProof, PreprocessingCore, ReductionCore, Verificat
 /// is handed — `prover_key.committed_index()` on the prover side and
 /// `verifier_key.committed_index()` on the verifier side (see [`crate::CommittedIndex`]).
 /// There is no separate indexer method and no precomputed-digest wrapper; callers
-/// obtain the keys from [`PreprocessingCore::index`] and pass them in directly.
+/// obtain the keys from [`PreprocessingCore::preprocess`] and pass them in directly.
 pub trait PreprocessingNonInteractiveArgument: ArgumentCore + PreprocessingCore {
     /// Public session/context data bound into the non-interactive proof.
     type Session;

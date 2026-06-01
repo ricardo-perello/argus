@@ -171,14 +171,14 @@ ia_core::impl_preprocessing_argument! {
         /// Per-claim instance is (i, claimed_value).
         type Instance = (u32, u32);
         type Witness = ();
-        
+
         type Index = Vec<u32>;
         type ProverKey = LookupProverKey;
         type VerifierKey = LookupVerifierKey;
 
         /// The real work: build the tree once, slice the result into a fat
         /// prover key (table + tree) and a thin verifier key (root + length).
-        fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+        fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
             let tree = MerkleTree::new(ix);
             let root = *tree.root().as_bytes();
             let n = u32::try_from(ix.len()).expect("table size fits in u32");
@@ -258,13 +258,11 @@ fn main() {
     println!("Public table: {table:?}\n");
 
     // Preprocessing: preprocessing_non_interactive_argument(body, sponge) is the
-    // stateless compiled wrapper; .index(&table) runs body.index(&table)
+    // stateless compiled wrapper; .preprocess(&table) runs body.preprocess(&table)
     // once and returns the bare (prover_key, verifier_key).
-    let nia = dsfs::preprocessing_non_interactive_argument(
-        PreprocessedLookup,
-        dsfs::Keccak::default(),
-    );
-    let (proving_key, verifier_key) = nia.index(&table);
+    let nia =
+        dsfs::preprocessing_non_interactive_argument(PreprocessedLookup, dsfs::Keccak::default());
+    let (proving_key, verifier_key) = nia.preprocess(&table);
 
     // The asymmetry, straight off the keys: the prover key holds the full
     // table + tree (O(n)); the verifier key is just root + n (O(1)).
@@ -311,7 +309,7 @@ mod tests {
             PreprocessedLookup,
             dsfs::Keccak::default(),
         );
-        let (pk, vk) = nia.index(&table);
+        let (pk, vk) = nia.preprocess(&table);
 
         for i in 0u32..table.len() as u32 {
             let y = table[i as usize];
@@ -330,7 +328,7 @@ mod tests {
             PreprocessedLookup,
             dsfs::Keccak::default(),
         );
-        let (pk, vk) = nia.index(&table);
+        let (pk, vk) = nia.preprocess(&table);
 
         let proof = nia.prove(&pk, &session, &(3, table[3]), &());
         // Same proof bytes, but claim a different value -> reject.
@@ -351,15 +349,16 @@ mod tests {
             PreprocessedLookup,
             dsfs::Keccak::default(),
         );
-        let (pk_a, _vk_a) = nia.index(&table_a);
-        let (_pk_b, vk_b) = nia.index(&table_b);
+        let (pk_a, _vk_a) = nia.preprocess(&table_a);
+        let (_pk_b, vk_b) = nia.preprocess(&table_b);
         assert_ne!(pk_a.committed_index(), vk_b.committed_index());
 
         // Open table_a at index 5 (unperturbed in both).
         let proof = nia.prove(&pk_a, &session, &(5, table_a[5]), &());
-        assert!(nia
-            .verify(&vk_b, &session, &(5, table_a[5]), &proof)
-            .is_err());
+        assert!(
+            nia.verify(&vk_b, &session, &(5, table_a[5]), &proof)
+                .is_err()
+        );
     }
 
     /// The optional `Prover`/`Verifier` role wrappers compose `(nia, key)` and
@@ -373,7 +372,7 @@ mod tests {
             PreprocessedLookup,
             dsfs::Keccak::default(),
         );
-        let (pk, vk) = nia.index(&table);
+        let (pk, vk) = nia.preprocess(&table);
 
         let prover = Prover::new(&nia, &pk);
         let verifier = Verifier::new(&nia, &vk);
@@ -394,8 +393,8 @@ mod tests {
             PreprocessedLookup,
             dsfs::Keccak::default(),
         );
-        let (pk_small, _vk_small) = nia.index(&small);
-        let (pk_large, _vk_large) = nia.index(&large);
+        let (pk_small, _vk_small) = nia.preprocess(&small);
+        let (pk_large, _vk_large) = nia.preprocess(&large);
 
         // PK scales with the table; VK is a fixed 36 bytes (root + n) by construction.
         assert_eq!(pk_small.table.len(), 2);

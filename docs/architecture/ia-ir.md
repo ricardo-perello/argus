@@ -98,7 +98,7 @@ pub trait PreprocessingCore: ProtocolCore {
     type ProverKey;
     type VerifierKey: VerifierKeyCommitment;
 
-    fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey);
+    fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey);
 }
 ```
 

@@ -52,9 +52,7 @@ pub use noninteractive::{
     PreprocessingNonInteractiveArgument, PreprocessingNonInteractiveReduction, Prover,
     ProverReduction, Verifier, VerifierReduction,
 };
-pub use preprocessing::{
-    CommittedIndex, CommittedIndexBytes, IndexedInstance, IndexedInstanceRef,
-};
+pub use preprocessing::{CommittedIndex, CommittedIndexBytes, IndexedInstance, IndexedInstanceRef};
 pub use security::{
     ArgumentSecurity, PreprocessingArgumentSecurity, PreprocessingReductionSecurity,
     ReductionSecurity, SecurityErrorBound, SecurityProfile,

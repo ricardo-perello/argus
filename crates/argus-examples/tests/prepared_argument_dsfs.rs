@@ -8,9 +8,9 @@
 use spongefish_dsfs as dsfs;
 
 use ia_core::{
-    ArgumentCore, CommittedIndexBytes, PreprocessingCore, PreprocessingInteractiveArgument,
-    PreprocessingNonInteractiveArgument, ProtocolCore, ProverChannel, VerificationError,
-    VerificationResult, VerifierChannel, CommittedIndex,
+    ArgumentCore, CommittedIndex, CommittedIndexBytes, PreprocessingCore,
+    PreprocessingInteractiveArgument, PreprocessingNonInteractiveArgument, ProtocolCore,
+    ProverChannel, VerificationError, VerificationResult, VerifierChannel,
 };
 
 #[derive(Default)]
@@ -43,7 +43,7 @@ impl PreprocessingCore for ChallengeEchoArgument {
     type ProverKey = EchoKey;
     type VerifierKey = EchoKey;
 
-    fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+    fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
         (EchoKey(ix.clone()), EchoKey(ix.clone()))
     }
 }
@@ -93,7 +93,7 @@ fn preprocessed_dsfs_absorbs_committed_index_and_instance() {
     );
 
     // Prove under committed index [1,2,3] at instance [7].
-    let (pk, vk) = nia.index(&vec![1u8, 2, 3]);
+    let (pk, vk) = nia.preprocess(&vec![1u8, 2, 3]);
     let proof = nia.prove(&pk, &session, &[7u8], &witness);
 
     // Same committed index, same instance -> verifies.
@@ -101,9 +101,10 @@ fn preprocessed_dsfs_absorbs_committed_index_and_instance() {
         .expect("same committed index and same instance verify");
 
     // Changing only the verifier-key commitment must change the transcript.
-    let (_pk_other, vk_other_index) = nia.index(&vec![9u8, 9, 9]);
+    let (_pk_other, vk_other_index) = nia.preprocess(&vec![9u8, 9, 9]);
     assert!(
-        nia.verify(&vk_other_index, &session, &[7u8], &proof).is_err(),
+        nia.verify(&vk_other_index, &session, &[7u8], &proof)
+            .is_err(),
         "changing only the committed index must change the DSFS transcript"
     );
 

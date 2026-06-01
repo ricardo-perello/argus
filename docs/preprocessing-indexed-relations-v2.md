@@ -28,7 +28,7 @@ ProtocolCore
 Preprocessed protocols use keyed preprocessing traits plus
 `PreprocessingCore`, which exposes:
 
-- an indexer `index(ix) -> (pk, vk)`;
+- an indexer `preprocess(ix) -> (pk, vk)`;
 - prover execution with `pk`;
 - verifier execution with `vk`;
 - canonical public bytes `vk.committed_index()` that the backend binds before
@@ -79,7 +79,7 @@ pub trait PreprocessingCore: ProtocolCore {
     type ProverKey;
     type VerifierKey: VerifierKeyCommitment;
 
-    fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey);
+    fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey);
 }
 ```
 
@@ -300,7 +300,7 @@ impl<B: PreprocessingInteractiveReduction> PreparedReduction<B> {
 }
 ```
 
-`prepare` runs `body.index(ix)`. `with_keys` is for applications that persist
+`prepare` runs `body.preprocess(ix)`. `with_keys` is for applications that persist
 preprocessing keys outside Argus. Both constructors compute:
 
 ```rust

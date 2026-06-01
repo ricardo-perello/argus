@@ -8,8 +8,8 @@ use crate::{
 /// Indexed (preprocessed) interactive argument.
 ///
 /// Splits the relation into an index and a per-claim instance/witness pair.
-/// The `PreprocessingCore::index` function deterministically derives prover and
-/// verifier keys; [`prove`](Self::prove) / [`verify`](Self::verify) execute
+/// The `PreprocessingCore::preprocess` function deterministically derives prover
+/// and verifier keys; [`prove`](Self::prove) / [`verify`](Self::verify) execute
 /// keyed.
 ///
 /// There is no blanket implementation from [`crate::InteractiveArgument`] into this
@@ -64,9 +64,9 @@ mod tests {
     use crate::ChainedReduction;
     use crate::preprocessing::{INDEXED_INSTANCE_TAG, VK_PAIR_TAG};
     use crate::{
-        CommittedIndexBytes, Decoding, Deserialize, Encoding, IndexedInstance, IndexedInstanceRef,
-        InteractiveArgument, NargSerialize, ProtocolCore, ReducedArgument, TrivialIndexedArgument,
-        VerificationError, CommittedIndex, pad_protocol_id,
+        CommittedIndex, CommittedIndexBytes, Decoding, Deserialize, Encoding, IndexedInstance,
+        IndexedInstanceRef, InteractiveArgument, NargSerialize, ProtocolCore, ReducedArgument,
+        TrivialIndexedArgument, VerificationError, pad_protocol_id,
     };
     use alloc::vec;
     use alloc::vec::Vec;
@@ -180,7 +180,11 @@ mod tests {
 
     impl InteractiveArgument for PlainOk {
         fn prove<P: ProverChannel<Unit = u8>>(&self, _: &mut P, _: &(), _: &()) {}
-        fn verify<V: VerifierChannel<Unit = u8>>(&self, _: &mut V, _: &()) -> VerificationResult<()> {
+        fn verify<V: VerifierChannel<Unit = u8>>(
+            &self,
+            _: &mut V,
+            _: &(),
+        ) -> VerificationResult<()> {
             Ok(())
         }
     }
@@ -188,15 +192,15 @@ mod tests {
     #[test]
     fn trivial_indexed_argument_has_empty_committed_index() {
         let wrapped = TrivialIndexedArgument(PlainOk);
-        let (_, vk) = wrapped.index(&());
+        let (_, vk) = wrapped.preprocess(&());
         assert!(vk.committed_index().is_empty());
     }
 
-    // ---- index_checked guard ----
+    // ---- preprocess_checked guard ----
 
-    /// A buggy indexer: the prover key and verifier key disagree on their
+    /// A buggy preprocessing implementation: the prover key and verifier key disagree on their
     /// committed index. The compiled prover/verifier would derive divergent
-    /// transcripts; `index_checked` must catch this at index time.
+    /// transcripts; `preprocess_checked` must catch this at preprocessing time.
     struct MismatchedKeys;
 
     impl ProtocolCore for MismatchedKeys {
@@ -215,24 +219,24 @@ mod tests {
         type ProverKey = ByteVk;
         type VerifierKey = ByteVk;
 
-        fn index(&self, _: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+        fn preprocess(&self, _: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
             (ByteVk(vec![1]), ByteVk(vec![2]))
         }
     }
 
     #[test]
-    fn index_checked_accepts_agreeing_keys() {
+    fn preprocess_checked_accepts_agreeing_keys() {
         // EqualsKey returns `((), EqualsKeyVk(ix))`; () and the vk agree (() is
         // empty, but here both keys are the same byte) — use AddPk which returns
         // two equal AddPkVk values.
-        let (pk, vk) = AddPk.index_checked(&7u8);
+        let (pk, vk) = AddPk.preprocess_checked(&7u8);
         assert_eq!(pk.committed_index(), vk.committed_index());
     }
 
     #[test]
     #[should_panic(expected = "mismatched committed_index")]
-    fn index_checked_panics_on_mismatched_committed_index() {
-        let _ = MismatchedKeys.index_checked(&());
+    fn preprocess_checked_panics_on_mismatched_committed_index() {
+        let _ = MismatchedKeys.preprocess_checked(&());
     }
 
     // ---- Preprocessing composition tests ----
@@ -269,7 +273,7 @@ mod tests {
         type ProverKey = AddPkVk;
         type VerifierKey = AddPkVk;
 
-        fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+        fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
             (AddPkVk(*ix), AddPkVk(*ix))
         }
     }
@@ -324,7 +328,7 @@ mod tests {
         type ProverKey = ();
         type VerifierKey = EqualsKeyVk;
 
-        fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+        fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
             ((), EqualsKeyVk(*ix))
         }
     }
@@ -358,7 +362,7 @@ mod tests {
         let composed = ChainedReduction::new(AddPk, AddPk);
         // index pair: first adds 3, second adds 4.
         let ix = (3u8, 4u8);
-        let (pk, vk) = composed.index(&ix);
+        let (pk, vk) = composed.preprocess(&ix);
         assert_eq!(pk, (AddPkVk(3), AddPkVk(4)));
         // Composed VK commitment must be canonical pair (just check that it
         // exists and starts with the pair tag).
@@ -379,7 +383,7 @@ mod tests {
     fn indexed_reduced_argument_executes_through_indexed_pair() {
         let composed = ReducedArgument::new(AddPk, EqualsKey);
         let ix = (5u8, 17u8);
-        let (pk, vk) = composed.index(&ix);
+        let (pk, vk) = composed.preprocess(&ix);
         assert_eq!(pk, (AddPkVk(5), ()));
 
         // Source instance 12, plus pk=5, equals 17, which matches argument vk.

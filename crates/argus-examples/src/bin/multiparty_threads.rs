@@ -143,7 +143,7 @@ ia_core::impl_preprocessing_argument! {
         type ProverKey = DleqKey<C>;
         type VerifierKey = DleqKey<C>;
 
-        fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+        fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
             let key = DleqKey { g: ix.0, h: ix.1 };
             (key.clone(), key)
         }
@@ -214,10 +214,8 @@ fn demo_two_machine_plain() {
     // PROVER machine. Holds the witness `x`. Builds its own compiled NIA from
     // the public body + sponge config; the verifier independently builds the same.
     let prover = thread::spawn(move || {
-        let nia = dsfs::plain_non_interactive_argument(
-            Schnorr::<G>::default(),
-            dsfs::Keccak::default(),
-        );
+        let nia =
+            dsfs::plain_non_interactive_argument(Schnorr::<G>::default(), dsfs::Keccak::default());
         let proof = nia.prove(&session, &[g, h], &x);
         let n = proof.as_bytes().len();
         proof_tx.send(proof).expect("ship proof");
@@ -226,10 +224,8 @@ fn demo_two_machine_plain() {
 
     // VERIFIER machine. Holds no witness. Same body + sponge config => same compiled NIA.
     let verifier = thread::spawn(move || {
-        let nia = dsfs::plain_non_interactive_argument(
-            Schnorr::<G>::default(),
-            dsfs::Keccak::default(),
-        );
+        let nia =
+            dsfs::plain_non_interactive_argument(Schnorr::<G>::default(), dsfs::Keccak::default());
         let proof = proof_rx.recv().expect("recv proof");
         nia.verify(&session, &[g, h], &proof)
             .expect("verifier accepts honest proof");
@@ -270,7 +266,7 @@ fn demo_three_machine_preprocessed() {
             Dleq::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let (prover_key, verifier_key) = pnia.index(&(g, h));
+        let (prover_key, verifier_key) = pnia.preprocess(&(g, h));
         let ci_hex = hex::encode(prover_key.committed_index().as_bytes());
         pk_tx.send(prover_key).expect("ship prover key");
         vk_tx.send(verifier_key).expect("ship verifier key");

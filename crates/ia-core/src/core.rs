@@ -49,24 +49,25 @@ pub trait PreprocessingCore: ProtocolCore {
     type VerifierKey: CommittedIndex;
 
     /// Deterministic indexer: derives `(prover_key, verifier_key)` from `ix`.
-    fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey);
+    fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey);
 
-    /// Run [`index`](Self::index), then assert the two keys agree on the committed
-    /// index.
+    /// Run [`preprocess`](Self::preprocess), then assert the two keys agree on
+    /// the committed index.
     ///
     /// The compiled prover binds `pk.committed_index()` and the verifier binds
     /// `vk.committed_index()` (see [`CommittedIndex`]). If the author's two impls
     /// disagree for keys from the same `ix`, the prover and verifier transcripts
     /// diverge and *every* proof fails to verify. This guard surfaces that author
-    /// error at index time — where both keys are in hand — instead of as an opaque
-    /// verification failure later. Backends run the indexer through this method, so
-    /// the check fires on the compiled path without any extra call-site work.
-    fn index_checked(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
-        let (pk, vk) = self.index(ix);
+    /// error at preprocessing time — where both keys are in hand — instead of as
+    /// an opaque verification failure later. Backends run preprocessing through
+    /// this method, so the check fires on the compiled path without any extra
+    /// call-site work.
+    fn preprocess_checked(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+        let (pk, vk) = self.preprocess(ix);
         debug_assert_eq!(
             pk.committed_index(),
             vk.committed_index(),
-            "PreprocessingCore::index returned prover/verifier keys with mismatched \
+            "PreprocessingCore::preprocess returned prover/verifier keys with mismatched \
              committed_index; the prover and verifier transcripts would diverge",
         );
         (pk, vk)

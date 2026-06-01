@@ -181,7 +181,7 @@ ia_core::impl_preprocessing_reduction! {
         type ProverKey = SumcheckProverKey;
         type VerifierKey = SumcheckVerifierKey;
 
-        fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+        fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
             let pk = SumcheckProverKey { coeffs: *ix };
             let vk = SumcheckVerifierKey {
                 commit: hash_coeffs(ix),
@@ -269,13 +269,13 @@ fn main() {
     println!("Claimed sum  T = Σ_{{x∈{{0,1}}^2}} p(x) = {t}\n");
 
     // Preprocessing: preprocessing_non_interactive_reduction is the stateless
-    // compiled wrapper; .index(&coeffs) runs body.index(&coeffs) once and
+    // compiled wrapper; .preprocess(&coeffs) runs body.preprocess(&coeffs) once and
     // returns the bare (prover_key, verifier_key).
     let nir = dsfs::preprocessing_non_interactive_reduction(
         PreprocessedSumcheck,
         dsfs::Keccak::default(),
     );
-    let (proving_key, verifier_key) = nir.index(&coeffs);
+    let (proving_key, verifier_key) = nir.preprocess(&coeffs);
 
     // Inspect the verifier key + committed index directly.
     println!("Preprocessed keys:");
@@ -339,7 +339,7 @@ mod tests {
             PreprocessedSumcheck,
             dsfs::Keccak::default(),
         );
-        let (pk, vk) = nir.index(&coeffs);
+        let (pk, vk) = nir.preprocess(&coeffs);
 
         let (proof, _target_p, ()) = nir.prove(&pk, &session, &t, &());
         let ((r1, r2), v) = nir.verify(&vk, &session, &t, &proof).expect("verify");
@@ -361,7 +361,7 @@ mod tests {
             PreprocessedSumcheck,
             dsfs::Keccak::default(),
         );
-        let (pk, vk) = nir.index(&coeffs);
+        let (pk, vk) = nir.preprocess(&coeffs);
 
         // Prover honestly runs on (its true) `coeffs`. But the caller
         // passes the wrong T as the source instance. The verifier reads
@@ -385,8 +385,8 @@ mod tests {
             PreprocessedSumcheck,
             dsfs::Keccak::default(),
         );
-        let (pk_a, _vk_a) = nir.index(&coeffs_a);
-        let (_pk_b, vk_b) = nir.index(&coeffs_b);
+        let (pk_a, _vk_a) = nir.preprocess(&coeffs_a);
+        let (_pk_b, vk_b) = nir.preprocess(&coeffs_b);
         assert_ne!(pk_a.committed_index(), vk_b.committed_index());
 
         let t_a = sum_over_hypercube(&coeffs_a);
@@ -403,10 +403,11 @@ mod tests {
             PreprocessedSumcheck,
             dsfs::Keccak::default(),
         );
-        let (pk, _vk) = nir.index(&coeffs);
-        assert!(pk
-            .committed_index()
-            .as_bytes()
-            .starts_with(b"preprocessed-sumcheck:vk:v1"));
+        let (pk, _vk) = nir.preprocess(&coeffs);
+        assert!(
+            pk.committed_index()
+                .as_bytes()
+                .starts_with(b"preprocessed-sumcheck:vk:v1")
+        );
     }
 }

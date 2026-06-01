@@ -93,7 +93,7 @@ ia_core::impl_preprocessing_reduction! {
         type ProverKey = WarpProverKey;
         type VerifierKey = WarpVerifierKey;
 
-        fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+        fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
             ...
         }
 
@@ -170,7 +170,7 @@ Preparation stores keys:
 
 ```text
 prepare(ix)
-  -> body.index(ix)
+  -> body.preprocess(ix)
   -> stores pk, vk, vk.committed_index()
 ```
 

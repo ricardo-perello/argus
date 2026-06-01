@@ -9,10 +9,10 @@ use ark_serialize::CanonicalSerialize;
 use ark_std::log2;
 
 use ia_core::{
-    ArgumentCore, CommittedIndexBytes, PreprocessingArgumentSecurity, PreprocessingCore,
-    PreprocessingInteractiveArgument, PreprocessingInteractiveReduction,
+    ArgumentCore, CommittedIndex, CommittedIndexBytes, PreprocessingArgumentSecurity,
+    PreprocessingCore, PreprocessingInteractiveArgument, PreprocessingInteractiveReduction,
     PreprocessingReductionSecurity, ProtocolCore, ProverChannel, SecurityErrorBound,
-    SecurityProfile, VerificationResult, VerifierChannel, CommittedIndex,
+    SecurityProfile, VerificationResult, VerifierChannel,
 };
 
 use crate::protocol::commitment::committed_index_for;
@@ -195,7 +195,7 @@ where
     type ProverKey = WarpProverKey<F, P, C, MT>;
     type VerifierKey = WarpVerifierKey<F, P, C, MT>;
 
-    fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+    fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
         let (material, dimensions) = indexed_material(ix);
         (
             prover_key(material.clone(), dimensions),
@@ -451,7 +451,7 @@ where
     type ProverKey = ();
     type VerifierKey = WarpVerifierKey<F, P, C, MT>;
 
-    fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+    fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
         let (material, dimensions) = indexed_material(ix);
         ((), verifier_key(material, dimensions))
     }
@@ -659,8 +659,8 @@ where
     type ProverKey = WarpProverKey<F, P, C, MT>;
     type VerifierKey = WarpVerifierKey<F, P, C, MT>;
 
-    fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
-        self.reduction.index(ix)
+    fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+        self.reduction.preprocess(ix)
     }
 }
 

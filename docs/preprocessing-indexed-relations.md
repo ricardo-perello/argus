@@ -113,7 +113,7 @@ pub trait PreprocessingInteractiveArgument {
     fn protocol_id(&self) -> impl AsRef<[u8]>;
 
     /// Deterministic indexer (CY24 §32.1).
-    fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey);
+    fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey);
 
     fn prove<P: ProverChannel>(
         &self,
@@ -152,7 +152,7 @@ impl<T: InteractiveArgument> PreprocessingInteractiveArgument for T {
         <T as InteractiveArgument>::protocol_id(self)
     }
 
-    fn index(&self, _: &()) -> ((), ()) {
+    fn preprocess(&self, _: &()) -> ((), ()) {
         ((), ())
     }
 
@@ -274,7 +274,7 @@ where
 The concrete API can expose both:
 
 ```rust
-let prepared = dsfs.prepare(&ix);        // runs protocol.index(ix)
+let prepared = dsfs.prepare(&ix);        // runs protocol.preprocess(ix)
 let prepared = dsfs.with_keys(pk, vk);   // uses externally stored keys
 ```
 
@@ -357,9 +357,9 @@ type Index = (First::Index, Second::Index);
 type ProverKey = (First::ProverKey, Second::ProverKey);
 type VerifierKey = (First::VerifierKey, Second::VerifierKey);
 
-fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
-    let (pk1, vk1) = self.first.index(&ix.0);
-    let (pk2, vk2) = self.second.index(&ix.1);
+fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+    let (pk1, vk1) = self.first.preprocess(&ix.0);
+    let (pk2, vk2) = self.second.preprocess(&ix.1);
     ((pk1, pk2), (vk1, vk2))
 }
 ```
@@ -415,7 +415,7 @@ impl PreprocessingInteractiveReduction for WARPReduction<...> {
     type SourceInstance = WARPInstance<...>;
     type TargetInstance = DeciderInstance<...>;
 
-    fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+    fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
         // Encode A, B, C; build prover oracles; emit verifier commitments.
     }
 }

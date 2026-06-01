@@ -19,9 +19,9 @@ where
     type ProverKey = (First::ProverKey, Second::ProverKey);
     type VerifierKey = (First::VerifierKey, Second::VerifierKey);
 
-    fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
-        let (pk1, vk1) = self.first.index(&ix.0);
-        let (pk2, vk2) = self.second.index(&ix.1);
+    fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+        let (pk1, vk1) = self.first.preprocess(&ix.0);
+        let (pk2, vk2) = self.second.preprocess(&ix.1);
         ((pk1, pk2), (vk1, vk2))
     }
 }
@@ -65,9 +65,9 @@ where
     type ProverKey = (R::ProverKey, A::ProverKey);
     type VerifierKey = (R::VerifierKey, A::VerifierKey);
 
-    fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
-        let (pk1, vk1) = self.reduction.index(&ix.0);
-        let (pk2, vk2) = self.argument.index(&ix.1);
+    fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+        let (pk1, vk1) = self.reduction.preprocess(&ix.0);
+        let (pk2, vk2) = self.argument.preprocess(&ix.1);
         ((pk1, pk2), (vk1, vk2))
     }
 }

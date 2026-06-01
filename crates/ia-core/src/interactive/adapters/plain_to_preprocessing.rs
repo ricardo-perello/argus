@@ -34,7 +34,7 @@ impl<A: InteractiveArgument> PreprocessingCore for TrivialIndexedArgument<A> {
     type ProverKey = ();
     type VerifierKey = ();
 
-    fn index(&self, _: &()) -> ((), ()) {
+    fn preprocess(&self, _: &()) -> ((), ()) {
         ((), ())
     }
 }
@@ -81,7 +81,7 @@ impl<R: InteractiveReduction> PreprocessingCore for TrivialIndexedReduction<R> {
     type ProverKey = ();
     type VerifierKey = ();
 
-    fn index(&self, _: &()) -> ((), ()) {
+    fn preprocess(&self, _: &()) -> ((), ()) {
         ((), ())
     }
 }

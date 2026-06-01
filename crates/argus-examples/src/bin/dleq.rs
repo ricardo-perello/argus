@@ -111,7 +111,7 @@ ia_core::impl_preprocessing_argument! {
         /// verifier-side key exposes a canonical commitment via
         /// `CommittedIndex`; the prover-side key is the same data but
         /// without the trait obligation.
-        fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+        fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
             let key = DleqKey { g: ix.0, h: ix.1 };
             (key.clone(), key)
         }
@@ -181,14 +181,12 @@ fn main() {
 
     // -------- preprocessing step -------------------------------------------
     // preprocessing_non_interactive_argument(body, sponge) is the stateless
-    // compiled wrapper; .index(&(g, h)) runs body.index(&(g, h)) once and
+    // compiled wrapper; .preprocess(&(g, h)) runs body.preprocess(&(g, h)) once and
     // returns (prover_key, verifier_key). Keys are
     // then passed as inputs to prove/verify — the wrapper stores nothing.
-    let nia_dleq = dsfs::preprocessing_non_interactive_argument(
-        Dleq::<G>::default(),
-        dsfs::Keccak::default(),
-    );
-    let (proving_key, verifier_key) = nia_dleq.index(&(g, h));
+    let nia_dleq =
+        dsfs::preprocessing_non_interactive_argument(Dleq::<G>::default(), dsfs::Keccak::default());
+    let (proving_key, verifier_key) = nia_dleq.preprocess(&(g, h));
 
     // -------- inspect the preprocessed key directly ------------------------
     println!("Preprocessed public key:");
@@ -244,7 +242,7 @@ mod tests {
             Dleq::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let (pk, vk) = nia.index(&(g, h));
+        let (pk, vk) = nia.preprocess(&(g, h));
 
         let u = G::generator() * F::rand(&mut OsRng);
         let v = u * x;
@@ -266,8 +264,8 @@ mod tests {
             Dleq::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let (pk_alice, _vk_alice) = nia.index(&(g, h_alice));
-        let (_pk_bob, vk_bob) = nia.index(&(g, h_bob));
+        let (pk_alice, _vk_alice) = nia.preprocess(&(g, h_alice));
+        let (_pk_bob, vk_bob) = nia.preprocess(&(g, h_bob));
         assert_ne!(pk_alice.committed_index(), vk_bob.committed_index());
 
         // Alice produces a valid DLEQ for (u, u^x_alice).
@@ -276,9 +274,10 @@ mod tests {
         let proof = nia.prove(&pk_alice, &session, &(u, v_alice), &x_alice);
 
         // Verifying under Bob's key rejects — the bound public key differs.
-        assert!(nia
-            .verify(&vk_bob, &session, &(u, v_alice), &proof)
-            .is_err());
+        assert!(
+            nia.verify(&vk_bob, &session, &(u, v_alice), &proof)
+                .is_err()
+        );
     }
 
     /// Mismatching (u, v) — i.e., v != u^x — must be rejected by the
@@ -292,7 +291,7 @@ mod tests {
             Dleq::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let (pk, vk) = nia.index(&(g, h));
+        let (pk, vk) = nia.preprocess(&(g, h));
 
         let u = G::generator() * F::rand(&mut OsRng);
         let v_wrong = u * F::rand(&mut OsRng); // not u^x
@@ -309,7 +308,7 @@ mod tests {
             Dleq::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let (pk, _vk) = nia.index(&(g, h));
+        let (pk, _vk) = nia.preprocess(&(g, h));
         assert!(pk.committed_index().as_bytes().starts_with(b"dleq:vk:v1"));
     }
 }

@@ -312,9 +312,9 @@ macro_rules! __ia_core_parse_preprocessing_argument {
             $(#[$verifier_key_attr:meta])*
             type VerifierKey = $verifier_key:ty;
 
-            $(#[$index_fn_attr:meta])*
-            fn index(&self, $ix:ident: &Self::Index) -> (Self::ProverKey, Self::VerifierKey)
-                $index_body:block
+            $(#[$preprocess_fn_attr:meta])*
+            fn preprocess(&self, $ix:ident: &Self::Index) -> (Self::ProverKey, Self::VerifierKey)
+                $preprocess_body:block
 
             $($methods:tt)*
         }
@@ -348,9 +348,9 @@ macro_rules! __ia_core_parse_preprocessing_argument {
             $(#[$verifier_key_attr])*
             type VerifierKey = $verifier_key;
 
-            $(#[$index_fn_attr])*
-            fn index(&self, $ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey)
-                $index_body
+            $(#[$preprocess_fn_attr])*
+            fn preprocess(&self, $ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey)
+                $preprocess_body
         }
 
         impl $($impl_generics)* $crate::PreprocessingInteractiveArgument for $ty
@@ -366,7 +366,7 @@ macro_rules! __ia_core_parse_preprocessing_argument {
     };
     ([$($impl_generics:tt)*]) => {
         compile_error!(
-            "impl_preprocessing_argument! could not parse this block. Expected `impl ... PreprocessingInteractiveArgument for Type { fn protocol_id(...) { ... } type Instance = ...; type Witness = ...; type Index = ...; type ProverKey = ...; type VerifierKey = ...; fn index(...) -> (...) { ... } fn prove(...) { ... } fn verify(...) -> VerificationResult<()> { ... } }`."
+            "impl_preprocessing_argument! could not parse this block. Expected `impl ... PreprocessingInteractiveArgument for Type { fn protocol_id(...) { ... } type Instance = ...; type Witness = ...; type Index = ...; type ProverKey = ...; type VerifierKey = ...; fn preprocess(...) -> (...) { ... } fn prove(...) { ... } fn verify(...) -> VerificationResult<()> { ... } }`."
         );
     };
 }
@@ -395,9 +395,9 @@ macro_rules! __ia_core_parse_preprocessing_argument_where {
             $(#[$verifier_key_attr:meta])*
             type VerifierKey = $verifier_key:ty;
 
-            $(#[$index_fn_attr:meta])*
-            fn index(&self, $ix:ident: &Self::Index) -> (Self::ProverKey, Self::VerifierKey)
-                $index_body:block
+            $(#[$preprocess_fn_attr:meta])*
+            fn preprocess(&self, $ix:ident: &Self::Index) -> (Self::ProverKey, Self::VerifierKey)
+                $preprocess_body:block
 
             $($methods:tt)*
         }
@@ -431,9 +431,9 @@ macro_rules! __ia_core_parse_preprocessing_argument_where {
             $(#[$verifier_key_attr])*
             type VerifierKey = $verifier_key;
 
-            $(#[$index_fn_attr])*
-            fn index(&self, $ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey)
-                $index_body
+            $(#[$preprocess_fn_attr])*
+            fn preprocess(&self, $ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey)
+                $preprocess_body
         }
 
         impl $($impl_generics)* $crate::PreprocessingInteractiveArgument for $ty
@@ -449,7 +449,7 @@ macro_rules! __ia_core_parse_preprocessing_argument_where {
     };
     ([$($impl_generics:tt)*] [$ty:ty] [$($where_clause:tt)*]) => {
         compile_error!(
-            "impl_preprocessing_argument! could not parse this block after the `where` clause. Put `fn protocol_id` first, then `Instance`/`Witness`, preprocessing key types, `index`, `prove`, and `verify`."
+            "impl_preprocessing_argument! could not parse this block after the `where` clause. Put `fn protocol_id` first, then `Instance`/`Witness`, preprocessing key types, `preprocess`, `prove`, and `verify`."
         );
     };
 }
@@ -508,9 +508,9 @@ macro_rules! __ia_core_parse_preprocessing_reduction {
             $(#[$verifier_key_attr:meta])*
             type VerifierKey = $verifier_key:ty;
 
-            $(#[$index_fn_attr:meta])*
-            fn index(&self, $ix:ident: &Self::Index) -> (Self::ProverKey, Self::VerifierKey)
-                $index_body:block
+            $(#[$preprocess_fn_attr:meta])*
+            fn preprocess(&self, $ix:ident: &Self::Index) -> (Self::ProverKey, Self::VerifierKey)
+                $preprocess_body:block
 
             $($methods:tt)*
         }
@@ -550,9 +550,9 @@ macro_rules! __ia_core_parse_preprocessing_reduction {
             $(#[$verifier_key_attr])*
             type VerifierKey = $verifier_key;
 
-            $(#[$index_fn_attr])*
-            fn index(&self, $ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey)
-                $index_body
+            $(#[$preprocess_fn_attr])*
+            fn preprocess(&self, $ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey)
+                $preprocess_body
         }
 
         impl $($impl_generics)* $crate::PreprocessingInteractiveReduction for $ty
@@ -568,7 +568,7 @@ macro_rules! __ia_core_parse_preprocessing_reduction {
     };
     ([$($impl_generics:tt)*]) => {
         compile_error!(
-            "impl_preprocessing_reduction! could not parse this block. Expected `impl ... PreprocessingInteractiveReduction for Type { fn protocol_id(...) { ... } type SourceInstance = ...; type TargetInstance = ...; type SourceWitness = ...; type TargetWitness = ...; type Index = ...; type ProverKey = ...; type VerifierKey = ...; fn index(...) -> (...) { ... } fn prove(...) -> (...) { ... } fn verify(...) -> VerificationResult<_> { ... } }`."
+            "impl_preprocessing_reduction! could not parse this block. Expected `impl ... PreprocessingInteractiveReduction for Type { fn protocol_id(...) { ... } type SourceInstance = ...; type TargetInstance = ...; type SourceWitness = ...; type TargetWitness = ...; type Index = ...; type ProverKey = ...; type VerifierKey = ...; fn preprocess(...) -> (...) { ... } fn prove(...) -> (...) { ... } fn verify(...) -> VerificationResult<_> { ... } }`."
         );
     };
 }
@@ -603,9 +603,9 @@ macro_rules! __ia_core_parse_preprocessing_reduction_where {
             $(#[$verifier_key_attr:meta])*
             type VerifierKey = $verifier_key:ty;
 
-            $(#[$index_fn_attr:meta])*
-            fn index(&self, $ix:ident: &Self::Index) -> (Self::ProverKey, Self::VerifierKey)
-                $index_body:block
+            $(#[$preprocess_fn_attr:meta])*
+            fn preprocess(&self, $ix:ident: &Self::Index) -> (Self::ProverKey, Self::VerifierKey)
+                $preprocess_body:block
 
             $($methods:tt)*
         }
@@ -645,9 +645,9 @@ macro_rules! __ia_core_parse_preprocessing_reduction_where {
             $(#[$verifier_key_attr])*
             type VerifierKey = $verifier_key;
 
-            $(#[$index_fn_attr])*
-            fn index(&self, $ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey)
-                $index_body
+            $(#[$preprocess_fn_attr])*
+            fn preprocess(&self, $ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey)
+                $preprocess_body
         }
 
         impl $($impl_generics)* $crate::PreprocessingInteractiveReduction for $ty
@@ -663,7 +663,7 @@ macro_rules! __ia_core_parse_preprocessing_reduction_where {
     };
     ([$($impl_generics:tt)*] [$ty:ty] [$($where_clause:tt)*]) => {
         compile_error!(
-            "impl_preprocessing_reduction! could not parse this block after the `where` clause. Put `fn protocol_id` first, then source/target instance and witness types, preprocessing key types, `index`, `prove`, and `verify`."
+            "impl_preprocessing_reduction! could not parse this block after the `where` clause. Put `fn protocol_id` first, then source/target instance and witness types, preprocessing key types, `preprocess`, `prove`, and `verify`."
         );
     };
 }
@@ -671,10 +671,10 @@ macro_rules! __ia_core_parse_preprocessing_reduction_where {
 #[cfg(test)]
 mod tests {
     use crate::{
-        CommittedIndexBytes, Decoding, Encoding, InteractiveArgument, InteractiveReduction,
-        NargSerialize, PreprocessingCore, PreprocessingInteractiveArgument, ProverChannel,
-        ReducedArgument, VerificationError, VerificationResult, VerifierChannel,
-        CommittedIndex, pad_protocol_id,
+        CommittedIndex, CommittedIndexBytes, Decoding, Encoding, InteractiveArgument,
+        InteractiveReduction, NargSerialize, PreprocessingCore, PreprocessingInteractiveArgument,
+        ProverChannel, ReducedArgument, VerificationError, VerificationResult, VerifierChannel,
+        pad_protocol_id,
     };
     use alloc::vec::Vec;
     use core::marker::PhantomData;
@@ -823,7 +823,7 @@ mod tests {
             type ProverKey = Vk;
             type VerifierKey = Vk;
 
-            fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+            fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
                 (Vk(*ix), Vk(*ix))
             }
 
@@ -851,9 +851,9 @@ mod tests {
 
     #[test]
     fn preprocessing_argument_macro_emits_keyed_prove_verify() {
-        // The macro should emit PreprocessingCore (index) plus keyed prove/verify.
+        // The macro should emit PreprocessingCore (preprocess) plus keyed prove/verify.
         let body = MacroPreArg;
-        let (pk, vk) = body.index(&7u32);
+        let (pk, vk) = body.preprocess(&7u32);
         let mut prover = TestProver::default();
         body.prove(&mut prover, &pk, &2u32, &3u32);
         let mut verifier = TestVerifier {
@@ -879,7 +879,7 @@ mod tests {
             type ProverKey = Vk;
             type VerifierKey = Vk;
 
-            fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+            fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
                 (Vk(*ix), Vk(*ix))
             }
 
@@ -907,7 +907,7 @@ mod tests {
     #[test]
     fn preprocessing_reduction_macro_composes_with_preprocessing_argument() {
         let composed = ReducedArgument::new(MacroPreReduction, MacroPreArg);
-        let (pk, vk) = composed.index(&(5, 5));
+        let (pk, vk) = composed.preprocess(&(5, 5));
         let mut prover = TestProver::default();
         composed.prove(&mut prover, &pk, &1, &2);
         let mut verifier = TestVerifier {

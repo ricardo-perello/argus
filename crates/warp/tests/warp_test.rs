@@ -17,8 +17,8 @@ use ark_std::rand::Rng;
 use rand::thread_rng;
 
 use ia_core::{
-    Encoding, PreprocessingCore, PreprocessingNonInteractiveArgument,
-    PreprocessingNonInteractiveReduction, PreprocessingReductionSecurity, CommittedIndex,
+    CommittedIndex, Encoding, PreprocessingCore, PreprocessingNonInteractiveArgument,
+    PreprocessingNonInteractiveReduction, PreprocessingReductionSecurity,
 };
 use spongefish_dsfs::{self as dsfs, Keccak};
 use warp::{
@@ -211,7 +211,7 @@ fn changed_relation_same_dimensions(r1cs: &R1CS<Fp>) -> R1CS<Fp> {
 
 fn committed_index(ix: &WarpIndex<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>) -> Vec<u8> {
     let ir = WarpReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
-    let (_, vk) = ir.index(ix);
+    let (_, vk) = ir.preprocess(ix);
     vk.committed_index().as_bytes().to_vec()
 }
 
@@ -287,8 +287,8 @@ fn warp_commitment_changes_when_merkle_params_change() {
     let ix_b = param_warp_index(r1cs, code, [3u8; 32], [2u8; 32]);
 
     let ir = WarpReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, ParamMT>::new();
-    let (_, vk_a) = ir.index(&ix_a);
-    let (_, vk_b) = ir.index(&ix_b);
+    let (_, vk_a) = ir.preprocess(&ix_a);
+    let (_, vk_b) = ir.preprocess(&ix_b);
 
     assert_ne!(vk_a.committed_index(), vk_b.committed_index());
 }
@@ -307,8 +307,8 @@ fn proof_rejects_with_wrong_verifier_key_same_dimensions() {
         WarpReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new(),
         Keccak::default(),
     );
-    let (pk_a, _vk_a) = nir.index(&ix_a);
-    let (_pk_b, vk_b) = nir.index(&ix_b);
+    let (pk_a, _vk_a) = nir.preprocess(&ix_a);
+    let (_pk_b, vk_b) = nir.preprocess(&ix_b);
 
     let (proof, _, _) = nir.prove(&pk_a, &session, &instance, &witness);
     assert!(nir.verify(&vk_b, &session, &instance, &proof).is_err());
@@ -335,7 +335,7 @@ fn warp_ir_dsfs_prove_verify() {
     let session = spongefish::session!("warp IR test");
     let ir = WarpReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
     let nir = dsfs::preprocessing_non_interactive_reduction(ir, Keccak::default());
-    let (pk, vk) = nir.index(&ix);
+    let (pk, vk) = nir.preprocess(&ix);
     let (proof, target_p, _target_w) = nir.prove(&pk, &session, &instance, &witness);
 
     let target = nir
@@ -372,7 +372,7 @@ fn full_warp_dsfs_roundtrip() {
         WarpDecider::default(),
     );
     let nia = dsfs::preprocessing_non_interactive_argument(full, Keccak::default());
-    let (pk, vk) = nia.index(&ix);
+    let (pk, vk) = nia.preprocess(&ix);
     let proof = nia.prove(&pk, &session, &instance, &witness);
 
     nia.verify(&vk, &session, &instance, &proof)
