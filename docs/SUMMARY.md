@@ -28,6 +28,7 @@
 # Active Design Plans
 
 - [Protocol Core Tree and DSFS Constructors](protocol-core-dsfs-presentation.md)
+- [Keys-as-Inputs Preprocessing NARG](keys-as-inputs-preprocessing-presentation.md)
 - [Preprocessing Indexed Relations v2](preprocessing-indexed-relations-v2.md)
 
 # Protocols
