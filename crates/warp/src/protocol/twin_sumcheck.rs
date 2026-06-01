@@ -71,7 +71,7 @@ pub fn prove<F, P>(
 ) -> Vec<F>
 where
     F: Field + Send + Sync,
-    P: ProverChannel,
+    P: ProverChannel<Unit = u8>,
     F: spongefish::Encoding + spongefish::Decoding,
 {
     let mut challenges = Vec::with_capacity(n_rounds);
@@ -155,7 +155,7 @@ pub fn verify<F, V>(
 ) -> ia_core::VerificationResult<(Vec<F>, Vec<Vec<F>>)>
 where
     F: Field,
-    V: VerifierChannel,
+    V: VerifierChannel<Unit = u8>,
     F: spongefish::Encoding + spongefish::Decoding + ia_core::Deserialize,
 {
     let mut challenges = Vec::with_capacity(n_rounds);

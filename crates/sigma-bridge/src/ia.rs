@@ -64,7 +64,7 @@ impl<S> InteractiveArgument for SigmaIA<S>
 where
     S: SigmaProtocol,
 {
-    fn prove<P: ProverChannel>(
+    fn prove<P: ProverChannel<Unit = u8>>(
         &self,
         ch: &mut P,
         instance: &SigmaIA<S>,
@@ -94,7 +94,7 @@ where
         }
     }
 
-    fn verify<V: VerifierChannel>(
+    fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,
         instance: &SigmaIA<S>,

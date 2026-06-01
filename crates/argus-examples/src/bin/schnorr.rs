@@ -53,7 +53,7 @@ ia_core::impl_interactive_argument! {
         type Witness = G::ScalarField;
 
         #[allow(non_snake_case)]
-        fn prove<P: ProverChannel>(&self, ch: &mut P, instance: &[G; 2], witness: &G::ScalarField) {
+        fn prove<P: ProverChannel<Unit = u8>>(&self, ch: &mut P, instance: &[G; 2], witness: &G::ScalarField) {
             let k = G::ScalarField::rand(&mut OsRng);
             let K = instance[0] * k;
 
@@ -64,7 +64,7 @@ ia_core::impl_interactive_argument! {
         }
 
         #[allow(non_snake_case)]
-        fn verify<V: VerifierChannel>(&self, ch: &mut V, instance: &[G; 2]) -> VerificationResult<()> {
+        fn verify<V: VerifierChannel<Unit = u8>>(&self, ch: &mut V, instance: &[G; 2]) -> VerificationResult<()> {
             let (G_gen, X) = (instance[0], instance[1]);
 
             let K: G = ch.read_prover_message()?;

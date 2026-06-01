@@ -134,7 +134,7 @@ ia_core::impl_interactive_argument! {
         type Witness = Vec<Fr>;
 
         #[allow(non_snake_case)]
-        fn prove<P: ProverChannel>(&self, ch: &mut P, instance: &Instance, evals: &Vec<Fr>) {
+        fn prove<P: ProverChannel<Unit = u8>>(&self, ch: &mut P, instance: &Instance, evals: &Vec<Fr>) {
             let n = instance.n as usize;
             let (tree, root) = Self::build_merkle_tree(evals);
             assert_eq!(root.as_slice(), instance.root.0.as_slice());
@@ -183,7 +183,7 @@ ia_core::impl_interactive_argument! {
             });
         }
 
-        fn verify<V: VerifierChannel>(
+        fn verify<V: VerifierChannel<Unit = u8>>(
             &self,
             ch: &mut V,
             instance: &Instance,

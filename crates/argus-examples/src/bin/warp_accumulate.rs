@@ -64,7 +64,7 @@ impl InteractiveReduction for Accumulate {
     type SourceWitness = Vec<Fr>;
     type TargetWitness = ();
 
-    fn prove<P: ProverChannel>(
+    fn prove<P: ProverChannel<Unit = u8>>(
         &self,
         ch: &mut P,
         instance: &SourceInstance,
@@ -93,7 +93,7 @@ impl InteractiveReduction for Accumulate {
         )
     }
 
-    fn verify<V: VerifierChannel>(
+    fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,
         instance: &SourceInstance,

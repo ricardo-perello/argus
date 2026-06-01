@@ -15,7 +15,7 @@ where
             SourceWitness = First::TargetWitness,
         >,
 {
-    fn prove<P: ProverChannel>(
+    fn prove<P: ProverChannel<Unit = u8>>(
         &self,
         ch: &mut P,
         instance: &Self::SourceInstance,
@@ -25,7 +25,7 @@ where
         self.second.prove(ch, &x2, &w2)
     }
 
-    fn verify<V: VerifierChannel>(
+    fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,
         instance: &Self::SourceInstance,
@@ -85,7 +85,7 @@ where
     R: InteractiveReduction,
     A: InteractiveArgument<Instance = R::TargetInstance, Witness = R::TargetWitness>,
 {
-    fn prove<P: ProverChannel>(
+    fn prove<P: ProverChannel<Unit = u8>>(
         &self,
         ch: &mut P,
         instance: &Self::Instance,
@@ -95,7 +95,7 @@ where
         self.argument.prove(ch, &x2, &w2);
     }
 
-    fn verify<V: VerifierChannel>(
+    fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,
         instance: &Self::Instance,
@@ -160,7 +160,7 @@ mod tests {
     }
 
     impl InteractiveReduction for SizedReduction {
-        fn prove<P: ProverChannel>(
+        fn prove<P: ProverChannel<Unit = u8>>(
             &self,
             _ch: &mut P,
             instance: &Self::SourceInstance,
@@ -169,7 +169,7 @@ mod tests {
             (instance + 7, ())
         }
 
-        fn verify<V: VerifierChannel>(
+        fn verify<V: VerifierChannel<Unit = u8>>(
             &self,
             _ch: &mut V,
             instance: &Self::SourceInstance,
@@ -230,7 +230,7 @@ mod tests {
     }
 
     impl InteractiveArgument for BoundedArgument {
-        fn prove<P: ProverChannel>(
+        fn prove<P: ProverChannel<Unit = u8>>(
             &self,
             _ch: &mut P,
             _instance: &Self::Instance,
@@ -238,7 +238,7 @@ mod tests {
         ) {
         }
 
-        fn verify<V: VerifierChannel>(
+        fn verify<V: VerifierChannel<Unit = u8>>(
             &self,
             _ch: &mut V,
             _instance: &Self::Instance,

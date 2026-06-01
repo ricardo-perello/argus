@@ -31,6 +31,8 @@ impl LiveProverChannel {
 }
 
 impl ia_core::ProverChannel for LiveProverChannel {
+    type Unit = u8;
+
     fn send_prover_message<M: Encoding + NargSerialize>(&mut self, msg: &M) {
         let bytes = msg.encode();
         self.to_verifier.send(bytes.as_ref().to_vec()).unwrap();
@@ -63,6 +65,8 @@ impl LiveVerifierChannel {
 }
 
 impl ia_core::VerifierChannel for LiveVerifierChannel {
+    type Unit = u8;
+
     fn read_prover_message<M: Encoding + Deserialize>(&mut self) -> VerificationResult<M> {
         let bytes = self.from_prover.recv().map_err(|_| VerificationError)?;
         let mut buf = bytes.as_slice();

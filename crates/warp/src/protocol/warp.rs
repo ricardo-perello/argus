@@ -304,7 +304,7 @@ where
 {
     /// Full WARP prover, sending all messages through the channel.
     #[allow(clippy::type_complexity)]
-    pub fn prove_with_channel<Ch: ProverChannel>(
+    pub fn prove_with_channel<Ch: ProverChannel<Unit = u8>>(
         &self,
         ch: &mut Ch,
         pk: &WarpProverKey<F, P, C, MT>,
@@ -572,7 +572,7 @@ where
     ///
     /// Returns the target accumulator instance plus auxiliary data needed
     /// by the BCS oracle layer (source roots, shift query indexes).
-    pub fn verify_reduction_transcript<Ch: VerifierChannel>(
+    pub fn verify_reduction_transcript<Ch: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut Ch,
         vk: &WarpVerifierKey<F, P, C, MT>,
@@ -805,7 +805,7 @@ where
     /// target accumulator, compares it to the provided `acc_instance`, then
     /// checks Merkle auth paths from `proof`.
     #[allow(dead_code)]
-    pub fn verify_with_channel<Ch: VerifierChannel>(
+    pub fn verify_with_channel<Ch: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut Ch,
         vk: &WarpVerifierKey<F, P, C, MT>,
@@ -930,14 +930,14 @@ where
 
     // ---- Helper methods for digest serialization ----
 
-    fn send_digest<Ch: ProverChannel>(&self, ch: &mut Ch, digest: &MT::InnerDigest) {
+    fn send_digest<Ch: ProverChannel<Unit = u8>>(&self, ch: &mut Ch, digest: &MT::InnerDigest) {
         let bytes = digest.as_ref();
         for &b in bytes {
             ch.send_prover_message(&[b]);
         }
     }
 
-    fn read_digest<Ch: VerifierChannel>(
+    fn read_digest<Ch: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut Ch,
     ) -> Result<MT::InnerDigest, WARPVerifierError>
@@ -954,7 +954,7 @@ where
         Ok(digest.into())
     }
 
-    fn absorb_acc_instances_prover<Ch: ProverChannel>(
+    fn absorb_acc_instances_prover<Ch: ProverChannel<Unit = u8>>(
         &self,
         ch: &mut Ch,
         acc: &AccumulatorInstances<F, MT>,
@@ -986,7 +986,7 @@ where
     }
 
     #[allow(clippy::type_complexity)]
-    fn read_acc_instances_verifier<Ch: VerifierChannel>(
+    fn read_acc_instances_verifier<Ch: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut Ch,
         l2: usize,

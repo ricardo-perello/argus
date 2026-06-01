@@ -51,7 +51,7 @@ impl<N> InteractiveArgument for NargAsInteractiveArgument<N>
 where
     N: NonInteractiveArgument,
 {
-    fn prove<P: ProverChannel>(
+    fn prove<P: ProverChannel<Unit = u8>>(
         &self,
         ch: &mut P,
         instance: &Self::Instance,
@@ -61,7 +61,7 @@ where
         ch.send_prover_message(&proof);
     }
 
-    fn verify<V: VerifierChannel>(
+    fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,
         instance: &Self::Instance,
@@ -107,6 +107,8 @@ mod tests {
     }
 
     impl ProverChannel for CountingProver {
+        type Unit = u8;
+
         fn send_prover_message<PM: Encoding<[u8]> + NargSerialize>(&mut self, msg: &PM) {
             msg.serialize_into_narg(&mut self.proof_bytes);
         }
@@ -123,6 +125,8 @@ mod tests {
     }
 
     impl VerifierChannel for CountingVerifier<'_> {
+        type Unit = u8;
+
         fn read_prover_message<PM: Encoding<[u8]> + crate::Deserialize>(
             &mut self,
         ) -> VerificationResult<PM> {

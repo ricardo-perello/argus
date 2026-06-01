@@ -65,7 +65,7 @@ impl InteractiveReduction for FoldPairs {
     type SourceWitness = Values;
     type TargetWitness = Values;
 
-    fn prove<P: ProverChannel>(
+    fn prove<P: ProverChannel<Unit = u8>>(
         &self,
         ch: &mut P,
         instance: &Claims,
@@ -89,7 +89,7 @@ impl InteractiveReduction for FoldPairs {
         (Claims(folded_claims), Values(folded_values))
     }
 
-    fn verify<V: VerifierChannel>(
+    fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,
         instance: &Claims,
@@ -159,7 +159,7 @@ impl InteractiveReduction for Accumulate {
     type SourceWitness = Values;
     type TargetWitness = ();
 
-    fn prove<P: ProverChannel>(
+    fn prove<P: ProverChannel<Unit = u8>>(
         &self,
         ch: &mut P,
         instance: &Claims,
@@ -190,7 +190,7 @@ impl InteractiveReduction for Accumulate {
         )
     }
 
-    fn verify<V: VerifierChannel>(
+    fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,
         instance: &Claims,
@@ -265,9 +265,9 @@ impl InteractiveArgument for EqualityCheck {
     type Instance = AccPair;
     type Witness = ();
 
-    fn prove<P: ProverChannel>(&self, _ch: &mut P, _instance: &AccPair, _witness: &()) {}
+    fn prove<P: ProverChannel<Unit = u8>>(&self, _ch: &mut P, _instance: &AccPair, _witness: &()) {}
 
-    fn verify<V: VerifierChannel>(
+    fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         _ch: &mut V,
         instance: &AccPair,
