@@ -1797,6 +1797,7 @@ dependencies = [
 [[package]]
 name = "spongefish"
 version = "0.7.1"
+source = "git+https://github.com/ricardo-perello/spongefish.git?branch=main#851af485cb3b656c418dee037e4a99b115fb6170"
 dependencies = [
  "ark-ec",
  "ark-ff",
@@ -1818,6 +1819,7 @@ dependencies = [
 [[package]]
 name = "spongefish-derive"
 version = "0.7.1"
+source = "git+https://github.com/ricardo-perello/spongefish.git?branch=main#851af485cb3b656c418dee037e4a99b115fb6170"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1827,6 +1829,7 @@ dependencies = [
 [[package]]
 name = "spongefish-dsfs"
 version = "0.7.1"
+source = "git+https://github.com/ricardo-perello/spongefish.git?branch=main#851af485cb3b656c418dee037e4a99b115fb6170"
 dependencies = [
  "ia-core",
  "rand 0.8.5",
