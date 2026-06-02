@@ -36,6 +36,3 @@ spongefish-dsfs = { git = "https://github.com/ricardo-perello/spongefish.git", b
 
 [patch."https://github.com/ricardo-perello/argus.git"]
 ia-core = { path = "crates/ia-core" }
-
-[patch."https://github.com/ricardo-perello/sigma-proofs.git"]
-sigma-proofs = { path = "../sigma-proofs" }
