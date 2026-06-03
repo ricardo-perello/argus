@@ -5,7 +5,7 @@
 //! The proof is the full spongefish NARG string.
 //!
 //! This matches `sigma-proofs::Nizk::prove_batchable` (PR #130+), where both commitments and
-//! responses are recorded via `prover_messages` and the proof is the complete NARG string.
+//! responses are recorded as prover messages and the proof is the complete NARG string.
 
 use alloc::vec::Vec;
 

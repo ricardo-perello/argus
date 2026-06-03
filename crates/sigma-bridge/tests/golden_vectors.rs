@@ -7,8 +7,9 @@
 //! bytes for this workspace’s transcript layout, verified against both BLS12-381 and P-256.
 //!
 //! `sigma_Keccak1600_BLS12381.json`: uses [`sigma_bridge::prove_with_protocol_domain`] with
-//! `StdHash` and the `ciphersuite` string as an explicit 64-byte protocol domain tag. Vectors
-//! regenerated for spongefish 0.7.0 (`DomainSeparator::derive`).
+//! `StdHash` and the `ciphersuite` string as an explicit 64-byte protocol domain tag. The fixture
+//! pins the current bridge transcript layout; despite the filename, this path is a SHAKE128
+//! compatibility transcript with an external protocol-domain tag.
 
 use bls12_381::G1Projective as Bls12381G1;
 use group::{ff::PrimeField, prime::PrimeGroup};
