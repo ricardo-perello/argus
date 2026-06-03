@@ -2,8 +2,12 @@ use ark_curve25519::Fr;
 use ark_ff::{One, Zero};
 use ark_std::UniformRand;
 use rand::rngs::OsRng;
-use spongefish::{DomainSeparator, Encoding, ProverState, protocol_id};
-use spongefish_dsfs::{Keccak, SpongeInfo};
+use spongefish::Encoding;
+use spongefish_dsfs as dsfs;
+
+use ia_core::{
+    NonInteractiveArgument, ProverChannel, VerificationError, VerificationResult, VerifierChannel,
+};
 
 struct Sumcheck;
 
@@ -20,17 +24,17 @@ struct Instance {
 }
 
 impl Sumcheck {
-    pub fn protocol_id() -> [u8; 64] {
-        protocol_id(core::format_args!("sumcheck proof"))
+    fn expected_table_len(n: u32) -> Option<usize> {
+        1usize.checked_shl(n)
     }
 
     /// Warmup sumcheck prover for a multilinear function given by its full table on `{0,1}^n`.
     ///
     /// Convention: `x_1` is the least-significant bit of the index into `evals`, so round 1
     /// pairs entries `(0,1), (2,3), ...`.
-    pub fn prove<'a>(prover_state: &'a mut ProverState, instance: &Instance) -> &'a [u8] {
+    fn prove_sumcheck<P: ProverChannel<Unit = u8>>(ch: &mut P, instance: &Instance) {
         let n = instance.n as usize;
-        let expected = 1usize << n;
+        let expected = Self::expected_table_len(instance.n).expect("n is too large for usize");
         assert_eq!(
             instance.evals.len(),
             expected,
@@ -56,10 +60,11 @@ impl Sumcheck {
             debug_assert_eq!(s0 + s1, claim);
 
             // Prover message α_i: the linear polynomial g_i represented by its values at 0 and 1.
-            prover_state.prover_messages(&[s0, s1]);
+            ch.send_prover_message(&s0);
+            ch.send_prover_message(&s1);
 
-            // Verifier message ρ_i: challenge r_i (public coin). In DSFS this is squeezed.
-            let r_i: Fr = prover_state.verifier_message();
+            // Verifier message ρ_i: challenge r_i (public coin).
+            let r_i: Fr = ch.read_verifier_message();
             let one_minus_r = Fr::one() - r_i;
 
             // Update running claim S_i = g_i(r_i).
@@ -75,40 +80,79 @@ impl Sumcheck {
 
         debug_assert_eq!(table.len(), 1);
         debug_assert_eq!(table[0], claim);
-
-        prover_state.narg_string()
     }
 
-    //verify
-    pub fn verify(
-        mut verifier_state: spongefish::VerifierState,
+    fn verify_sumcheck<V: VerifierChannel<Unit = u8>>(
+        ch: &mut V,
         instance: &Instance,
-    ) -> spongefish::VerificationResult<()> {
+    ) -> VerificationResult<()> {
+        let Some(expected) = Self::expected_table_len(instance.n) else {
+            return Err(VerificationError);
+        };
+        let n = instance.n as usize;
+        if instance.evals.len() != expected {
+            return Err(VerificationError);
+        }
+
         let mut claim = instance.claimed_sum;
         let mut table = instance.evals.clone();
-        let n = instance.n as usize;
 
         for _round in 0..n {
-            let [s0, s1] = verifier_state.prover_messages::<Fr, 2>()?;
-            assert_eq!(s0 + s1, claim);
-            let r_i: Fr = verifier_state.verifier_message();
+            let s0: Fr = ch.read_prover_message()?;
+            let s1: Fr = ch.read_prover_message()?;
+            if s0 + s1 != claim {
+                return Err(VerificationError);
+            }
+
+            let r_i: Fr = ch.send_verifier_message();
             let one_minus_r = Fr::one() - r_i;
             claim = one_minus_r * s0 + r_i * s1;
-            //fold the table: v' = (1-r) * v0 + r * v1 for each pair.
+            // Fold the table: v' = (1-r) * v0 + r * v1 for each pair.
             let mut next = Vec::with_capacity(table.len() / 2);
             for pair in table.chunks_exact(2) {
                 next.push(one_minus_r * pair[0] + r_i * pair[1]);
             }
             table = next;
         }
-        assert_eq!(table[0], claim);
-        verifier_state.check_eof()?;
-        Ok(())
+
+        if table.first().copied() == Some(claim) {
+            Ok(())
+        } else {
+            Err(VerificationError)
+        }
+    }
+}
+
+ia_core::impl_interactive_argument! {
+    impl InteractiveArgument for Sumcheck {
+        fn protocol_id(&self) -> impl AsRef<[u8]> {
+            ia_core::pad_protocol_id(b"sumcheck proof")
+        }
+
+        type Instance = Instance;
+        type Witness = ();
+
+        fn prove<P: ProverChannel<Unit = u8>>(
+            &self,
+            ch: &mut P,
+            instance: &Instance,
+            _witness: &(),
+        ) {
+            Self::prove_sumcheck(ch, instance);
+        }
+
+        fn verify<V: VerifierChannel<Unit = u8>>(
+            &self,
+            ch: &mut V,
+            instance: &Instance,
+        ) -> VerificationResult<()> {
+            Self::verify_sumcheck(ch, instance)
+        }
     }
 }
 
 fn main() {
-    //set up instance
+    // Set up instance.
     let n: u32 = 4;
     let size = 1usize << (n as usize);
 
@@ -122,20 +166,14 @@ fn main() {
         claimed_sum,
     };
 
-    let domain_separator = DomainSeparator::derive(
-        Sumcheck::protocol_id().as_ref(),
-        Keccak::SPONGE_INFO,
-        spongefish::session!("argus examples").as_slice(),
-    )
-    .instance(&instance);
+    let session = spongefish::session!("argus examples");
+    let nia = dsfs::plain_non_interactive_argument(Sumcheck, dsfs::Keccak::default());
+    let proof = nia.prove(&session, &instance, &());
 
-    let mut prover_state = domain_separator.std_prover();
-    let narg_string = Sumcheck::prove(&mut prover_state, &instance);
+    println!("Sumcheck proof bytes:\n{}", hex::encode(proof.as_bytes()));
 
-    println!("Sumcheck proof bytes:\n{}", hex::encode(narg_string));
-
-    let verifier_state = domain_separator.std_verifier(narg_string);
-    Sumcheck::verify(verifier_state, &instance).expect("Invalid proof");
+    nia.verify(&session, &instance, &proof)
+        .expect("Invalid proof");
 }
 
 #[cfg(test)]
@@ -155,17 +193,36 @@ mod tests {
             claimed_sum,
         };
 
-        let domain_separator = DomainSeparator::derive(
-            Sumcheck::protocol_id().as_ref(),
-            Keccak::SPONGE_INFO,
-            spongefish::session!("argus examples").as_slice(),
-        )
-        .instance(&instance);
+        let session = spongefish::session!("argus examples");
+        let nia = dsfs::plain_non_interactive_argument(Sumcheck, dsfs::Keccak::default());
+        let proof = nia.prove(&session, &instance, &());
 
-        let mut prover_state = domain_separator.std_prover();
-        let narg = Sumcheck::prove(&mut prover_state, &instance).to_vec();
+        nia.verify(&session, &instance, &proof)
+            .expect("sumcheck verification failed");
+    }
 
-        let verifier_state = domain_separator.std_verifier(&narg);
-        Sumcheck::verify(verifier_state, &instance).expect("sumcheck verification failed");
+    #[test]
+    fn sumcheck_rejects_wrong_claimed_sum() {
+        let n: u32 = 4;
+        let size = 1usize << n as usize;
+        let evals: Vec<Fr> = (0..size as u64).map(Fr::from).collect();
+        let claimed_sum = evals.iter().copied().sum();
+
+        let instance = Instance {
+            n,
+            evals,
+            claimed_sum,
+        };
+
+        let session = spongefish::session!("argus examples");
+        let nia = dsfs::plain_non_interactive_argument(Sumcheck, dsfs::Keccak::default());
+        let proof = nia.prove(&session, &instance, &());
+
+        let bad_instance = Instance {
+            claimed_sum: instance.claimed_sum + Fr::one(),
+            ..instance
+        };
+
+        assert!(nia.verify(&session, &bad_instance, &proof).is_err());
     }
 }
