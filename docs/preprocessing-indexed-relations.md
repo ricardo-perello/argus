@@ -1,41 +1,109 @@
-# Indexed Relations & Preprocessing — Design Proposal
+# Indexed Relations & Preprocessing — Revised Design Proposal
 
-**Status:** Draft, for advisor review (Chiesa, Orrù).
+**Status:** Revised draft after Chiesa feedback. No Rust implementation yet.
 
 ## Context
 
-CY24 §32 separates an indexed relation $\mathcal{R}_i$ on triples $(\ell, x, w)$ into:
+CY24 §32 separates an indexed relation $\mathcal{R}_{\mathbb{i}}$ on triples
+$(\mathbb{i}, x, w)$ into:
 
-- $\ell$ — the **index**: large, static problem description (e.g. R1CS matrices, a circuit).
+- $\mathbb{i}$ — the **index**: large, static problem description, such as an
+  R1CS matrix tuple or circuit.
 - $x$ — the **instance**: small, per-claim public input.
 - $w$ — the **witness**: private input.
 
-A deterministic indexer $\mathcal{I}(\ell) \to (\mathsf{pik}, \mathsf{vik})$ splits preprocessing across prover and verifier so that V's online cost is $\mathrm{poly}(|\mathsf{vik}|, |x|)$, independent of $|\ell|$.
+A deterministic indexer
+$\mathcal{I}(\mathbb{i}) \to (\mathsf{pik}, \mathsf{vik})$ splits
+preprocessing across prover and verifier. The prover key may be large and
+prover-only. The verifier key is public data that fixes the preprocessed
+relation before the first public-coin challenge.
 
-The current `ia-core` trait surface collapses $(\ell, x, w)$ into a single `Instance` / `Witness` pair. WARP carries the structure manually: `WARPInstance` (`crates/warp/src/protocol/ir.rs`) bundles `warp.code`, `warp.config`, `pk`, the per-claim instances, and accumulator handles. The verify path at `crates/warp/src/protocol/ir.rs:121` is the smoking gun:
+The current `ia-core` trait surface is intentionally smaller:
+`InteractiveArgument` and `InteractiveReduction` expose only
+`Instance` / `Witness` channel programs. That is good UX for ordinary
+interactive arguments and should stay that way.
+
+The missing abstraction shows up in WARP. `WARPInstance`
+(`crates/warp/src/protocol/ir.rs`) currently bundles `warp.code`,
+`warp.config`, `pk`, per-claim instances, and accumulator handles. The verify
+path still reconstructs what is effectively a verifier key out of that
+prover-side bundle:
 
 ```rust
 let vk = (instance.pk.1, instance.pk.2, instance.pk.3);
 ```
 
-V is already destructuring a prover-only blob to recover what is effectively a $\mathsf{vik}$. This proposal makes the $(\ell, \mathsf{pik}, \mathsf{vik}, x, w)$ split first-class on the IA/IR traits, threads it through composition and the security profile, and binds $\mathsf{vk}$ into the transcript as a public input.
+This proposal adds preprocessing as a first-class layer without forcing every
+non-indexed protocol to write `Index = ()` boilerplate.
 
-## Proposed changes
+## Design Requirements
 
-Steps are in dependency order. Each is a small, locally-reviewable change.
+1. **Keep non-indexed protocols ergonomic.** Schnorr, sumcheck, sigma-bridge,
+   and similar protocols should keep implementing the existing
+   `InteractiveArgument` / `InteractiveReduction` traits.
+2. **Expose indexed protocols explicitly.** Protocols with real preprocessing
+   implement `IndexedInteractiveArgument` / `IndexedInteractiveReduction`.
+3. **Use one DSFS compiler wrapper.** Users should not choose between `Dsfs`
+   and `IndexedDsfs`. `Dsfs::new(...)` stays the public compiler constructor.
+4. **Let composition use heterogeneous preprocessing.** A composed protocol's
+   index/key data is a pair of the first component and second component data;
+   the two components do not need the same index type.
+5. **Absorb the committed verifier index, not necessarily the full key.** DSFS
+   binds the preprocessed relation by absorbing `vk.committed_index()` before
+   any challenge. For small keys this may be the whole verifier key; for
+   holographic or Merkle-backed keys it may be only a digest/root tuple.
+6. **Keep transcript mechanics backend-owned.** Protocol code still only calls
+   `send_prover_message`, `read_verifier_message`, `read_prover_message`, and
+   `send_verifier_message`.
+7. **Use `ix` / $\mathbb{i}$ for index notation.** Avoid the previous
+   lowercase-l notation for this role.
 
-### 1. Add `Index` / `ProverKey` / `VerifierKey` to the IA and IR traits
+## Proposed Changes
 
-`crates/ia-core/src/{argument.rs,reduction.rs}`:
+Steps are in dependency order.
+
+### 1. Keep the existing non-indexed IA/IR traits
+
+`InteractiveArgument` and `InteractiveReduction` remain the user-facing traits
+for protocols with no preprocessing:
 
 ```rust
 pub trait InteractiveArgument {
-    type Index;          // ℓ
-    type ProverKey;      // pik
-    type VerifierKey;    // vik
+    type Instance;
+    type Witness;
 
-    type Instance;       // x
-    type Witness;        // w
+    fn protocol_id(&self) -> impl AsRef<[u8]>;
+
+    fn prove<P: ProverChannel>(
+        &self,
+        ch: &mut P,
+        instance: &Self::Instance,
+        witness: &Self::Witness,
+    );
+
+    fn verify<V: VerifierChannel>(
+        &self,
+        ch: &mut V,
+        instance: &Self::Instance,
+    ) -> VerificationResult<()>;
+}
+```
+
+No protocol should have to add empty `Index`, `ProverKey`, `VerifierKey`, or
+`index()` methods just because a backend can also compile indexed relations.
+
+### 2. Add indexed IA/IR traits
+
+Indexed protocols implement a separate surface:
+
+```rust
+pub trait IndexedInteractiveArgument {
+    type Index;
+    type ProverKey;
+    type VerifierKey: VerifierKeyCommitment;
+
+    type Instance;
+    type Witness;
 
     fn protocol_id(&self) -> impl AsRef<[u8]>;
 
@@ -43,187 +111,381 @@ pub trait InteractiveArgument {
     fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey);
 
     fn prove<P: ProverChannel>(
-        &self, ch: &mut P,
+        &self,
+        ch: &mut P,
         pk: &Self::ProverKey,
         instance: &Self::Instance,
         witness: &Self::Witness,
     );
 
     fn verify<V: VerifierChannel>(
-        &self, ch: &mut V,
+        &self,
+        ch: &mut V,
         vk: &Self::VerifierKey,
         instance: &Self::Instance,
     ) -> VerificationResult<()>;
 }
 ```
 
-`InteractiveReduction` takes the same three associated types. Simplest variant: index is fixed across a reduction (no `TargetIndex`); see open question 1.
+`IndexedInteractiveReduction` mirrors this shape with
+`SourceInstance`, `TargetInstance`, `SourceWitness`, and `TargetWitness`.
 
-This makes the IA side symmetric with `NonInteractiveArgument::Session` (`crates/ia-core/src/narg.rs:107`), which already documents itself as "public session/context data bound into the proof" — the existing precedent for a $\mathsf{vk}$-shaped slot at the NARG layer.
-
-### 2. Backend: absorb $\mathsf{vk}$ before the first squeeze
-
-CLAUDE.md invariant #2: public inputs must be absorbed before any challenge is squeezed. $\mathsf{vk}$ is a public input.
-
-DSFS path: `crates/sigma-bridge/src/session.rs`. Live path: `crates/live-channel/src/lib.rs`. New shape:
+The conservative Rust rule is: a concrete protocol type implements either the
+non-indexed trait or the indexed trait. That makes a blanket lift possible for
+ordinary protocols:
 
 ```rust
-let (pk, vk) = protocol.index(&index);
+impl<T: InteractiveArgument> IndexedInteractiveArgument for T {
+    type Index = ();
+    type ProverKey = ();
+    type VerifierKey = ();
 
+    type Instance = T::Instance;
+    type Witness = T::Witness;
+
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        <T as InteractiveArgument>::protocol_id(self)
+    }
+
+    fn index(&self, _: &()) -> ((), ()) {
+        ((), ())
+    }
+
+    fn prove<P: ProverChannel>(
+        &self,
+        ch: &mut P,
+        _: &(),
+        instance: &Self::Instance,
+        witness: &Self::Witness,
+    ) {
+        <T as InteractiveArgument>::prove(self, ch, instance, witness)
+    }
+
+    fn verify<V: VerifierChannel>(
+        &self,
+        ch: &mut V,
+        _: &(),
+        instance: &Self::Instance,
+    ) -> VerificationResult<()> {
+        <T as InteractiveArgument>::verify(self, ch, instance)
+    }
+}
+```
+
+The blanket impl is an internal adapter, not boilerplate protocol authors
+write by hand. If a protocol has real preprocessing, it implements only the
+indexed trait and therefore avoids the overlapping-impl issue. If an existing
+protocol type migrates from non-indexed to indexed, remove the old non-indexed
+impl or introduce a newtype wrapper.
+
+### 3. Add `VerifierKeyCommitment`
+
+For DSFS, the transcript does not need to absorb the whole verifier key in all
+settings. It needs to bind the preprocessed relation before the first challenge.
+
+```rust
+pub trait VerifierKeyCommitment {
+    /// Canonical public bytes that DSFS absorbs before the first challenge.
+    fn committed_index(&self) -> impl AsRef<[u8]> + '_;
+}
+
+impl VerifierKeyCommitment for () {
+    fn committed_index(&self) -> impl AsRef<[u8]> + '_ {
+        &[]
+    }
+}
+```
+
+The protocol author chooses what this returns:
+
+- **Full verifier key** for small, fully-read keys.
+- **Digest only** for large keys where the verifier key contains oracle data.
+- **Tuple commitment** such as CY24's $(\rho_0, \mathsf{rt}_0)$, where
+  $\rho_0$ hashes the raw index and $\mathsf{rt}_0$ commits to the encoded
+  verifier oracle.
+
+For composed keys, the default tuple commitment should be length-prefixed and
+domain separated, for example:
+
+```text
+tag || u64_le(len(c1)) || c1 || u64_le(len(c2)) || c2
+```
+
+This avoids ambiguity between `(vk1, vk2)` commitments.
+
+The CY24 COS transformation supports this design: the verifier key is a short
+commitment to the long index, and first-round Fiat-Shamir derivation binds that
+commitment rather than rereading the full index. The soundness loss is the
+offline commitment/collision error, accounted for separately in CY24 §32.8.
+Arc App. B uses the same pattern with an index commitment paired with the
+verifier-side encoded index handle.
+
+### 4. Use one DSFS wrapper and prepared NARG views
+
+`spongefish-dsfs` should keep a single public compiler wrapper:
+
+```rust
+let dsfs = spongefish_dsfs::Dsfs::new(protocol, spongefish_dsfs::Keccak::default());
+```
+
+Do **not** add separate indexed NARG traits unless a real generic use case
+appears. Otherwise the public vocabulary becomes:
+
+```rust
+IA, IR, indexed IA, indexed IR, NIA, NIR, indexed NIA, indexed NIR
+```
+
+That is too many names for a small abstraction.
+
+Instead, indexed DSFS produces a **prepared non-interactive view** that stores
+the preprocessing keys and implements the existing `NonInteractiveArgument` or
+`NonInteractiveReduction` trait:
+
+```rust
+let dsfs = spongefish_dsfs::Dsfs::new(protocol, spongefish_dsfs::Keccak::default());
+let prepared = dsfs.prepare(&ix);
+
+let proof = prepared.prove(&session, &instance, &witness);
+prepared.verify(&session, &instance, &proof)?;
+```
+
+Internally:
+
+```rust
+pub struct PreparedDsfs<IA, S> {
+    dsfs: Dsfs<IA, S>,
+    pk: IA::ProverKey,
+    vk: IA::VerifierKey,
+}
+
+impl<IA, S> NonInteractiveArgument for PreparedDsfs<IA, S>
+where
+    IA: IndexedInteractiveArgument,
+{
+    // Existing NIA shape: no indexed NARG trait needed.
+}
+```
+
+The concrete API can expose both:
+
+```rust
+let prepared = dsfs.prepare(&ix);        // runs protocol.index(ix)
+let prepared = dsfs.with_keys(pk, vk);   // uses externally stored keys
+```
+
+For non-indexed protocols, `Dsfs<IA, S>` keeps implementing
+`NonInteractiveArgument` and `DsfsReduction<IR, S>` keeps implementing
+`NonInteractiveReduction` directly. Internally they can still compile through
+the indexed adapter with `Index = ()`, `ProverKey = ()`, `VerifierKey = ()`,
+and an empty committed index. The unit committed index should be a no-op for
+proof bytes; if the implementation gives even the empty commitment its own
+transcript marker, that is a layout change and must bump the DSFS-level
+`protocol_id`.
+
+DSFS transcript initialization becomes:
+
+```rust
 let mut domsep = DomainSeparator::new();
-absorb_protocol_id(&mut domsep, protocol.protocol_id());
-absorb_vk(&mut domsep, &vk);              // NEW
+absorb_compiler_domain(&mut domsep, prepared.protocol_id(), session);
+absorb_committed_index(&mut domsep, prepared.vk.committed_index()); // NEW
 absorb_instance(&mut domsep, instance);
 let mut prover = domsep.to_prover(Keccak::default());
-protocol.prove(&mut prover, &pk, instance, witness);
+prepared.dsfs.protocol.prove(&mut prover, &prepared.pk, instance, witness);
 ```
 
-Per the CLAUDE.md rule "if you change transcript/NARG layout, the DSFS-level `protocol_id` must change too," every protocol's `protocol_id` is bumped to tag the new layout. For protocols with `type Index = ()`, $\mathsf{vk}$ encodes to zero bytes (no observable absorb), but the `protocol_id` bump still signals the new format.
+The exact helper names are illustrative. The invariant is not: all public data
+that fixes the relation, including `vk.committed_index()`, is absorbed before
+the first challenge, and protocol code never performs this absorption itself.
 
-### 3. Trivially migrate non-indexed protocols
+Changing the transcript layout, sponge choice, salt policy, or the bytes
+returned by `committed_index()` requires a DSFS-level `protocol_id` review and
+usually a `protocol_id` bump. The `protocol_id` itself should remain a label for
+the compiled proof format; the concrete index is already bound as public input
+through `committed_index()`.
 
-Schnorr, the sumcheck examples, all current sigma-bridge protocols:
+### 5. Make security metadata index-aware without disturbing non-indexed protocols
 
-```rust
-type Index = ();
-type ProverKey = ();
-type VerifierKey = ();
-
-fn index(&self, _: &()) -> ((), ()) { ((), ()) }
-```
-
-plus an unused arg on `prove` / `verify`. ~5-line diff per protocol plus the signature update.
-
-### 4. Make `ArgumentSecurity` / `ReductionSecurity` index-aware
-
-`crates/ia-core/src/security.rs`. CY24 Def 32.5.2 writes the size-bound as $\varepsilon(k, n)$ — index size *and* instance size. Split params/bounds:
+Keep the current `ArgumentSecurity` and `ReductionSecurity` traits for
+non-indexed protocols. Add indexed variants for preprocessing:
 
 ```rust
-pub trait ArgumentSecurity: InteractiveArgument {
-    type IndexParams;     type IndexBound;
-    type InstanceParams;  type InstanceBound;
+pub trait IndexedArgumentSecurity: IndexedInteractiveArgument {
+    type IndexParams;
+    type IndexBound;
+    type InstanceParams;
+    type InstanceBound;
 
     fn index_security_params(&self, ix: &Self::Index) -> Self::IndexParams;
+
     fn instance_security_params(
-        &self, ix_params: &Self::IndexParams, inst: &Self::Instance,
+        &self,
+        ix_params: &Self::IndexParams,
+        instance: &Self::Instance,
     ) -> Self::InstanceParams;
 
     fn profile_for_instance_params(
         &self,
         ix_params: &Self::IndexParams,
-        inst_params: &Self::InstanceParams,
+        instance_params: &Self::InstanceParams,
     ) -> SecurityProfile;
-    // bound variants analogous
 }
 ```
 
-Trivial protocols set `IndexParams = ()`. WARP's existing `WARPSecurityParams` (`crates/warp/src/protocol/ir.rs:42–60`) splits into `WARPIndexParams` (matrix sizes, code config, OOD/shift counts — all index-derived) and `WARPInstanceParams` (per-claim data).
+Reduction security gets the analogous source/target shape. Non-indexed
+security can be lifted with `IndexParams = ()` and `IndexBound = ()`, but users
+do not write that by hand.
 
-### 5. Thread $\mathsf{vk}$ through composition
+WARP's current `WARPSecurityParams` naturally splits into:
 
-`crates/ia-core/src/compose.rs`. With "index fixed across the chain" (the simple option for open question 1):
+- `WARPIndexParams`: code parameters, matrix dimensions, constraint counts,
+  OOD sample counts, and shift-query counts derived from the static index.
+- `WARPInstanceParams`: per-claim data that can vary between instances under
+  the same preprocessed index.
+
+### 6. Compose heterogeneous indices and keys
+
+`ChainedReduction<First, Second>` should not require both reductions to share
+the same index or verifier key type. Its indexed impl has paired preprocessing:
 
 ```rust
-impl<First, Second> InteractiveReduction for ChainedReduction<First, Second>
-where
-    First: InteractiveReduction,
-    Second: InteractiveReduction<
-        Index = First::Index,
-        ProverKey = First::ProverKey,
-        VerifierKey = First::VerifierKey,
-        SourceInstance = First::TargetInstance,
-        SourceWitness = First::TargetWitness,
-    >,
-{
-    type Index = First::Index;
-    type ProverKey = First::ProverKey;
-    type VerifierKey = First::VerifierKey;
+type Index = (First::Index, Second::Index);
+type ProverKey = (First::ProverKey, Second::ProverKey);
+type VerifierKey = (First::VerifierKey, Second::VerifierKey);
 
-    fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
-        self.first.index(ix)
-    }
-
-    fn prove<P: ProverChannel>(
-        &self, ch: &mut P, pk: &Self::ProverKey,
-        instance: &Self::SourceInstance, witness: &Self::SourceWitness,
-    ) -> (Self::TargetInstance, Self::TargetWitness) {
-        let (x2, w2) = self.first.prove(ch, pk, instance, witness);
-        self.second.prove(ch, pk, &x2, &w2)
-    }
-    // verify analogous
+fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+    let (pk1, vk1) = self.first.index(&ix.0);
+    let (pk2, vk2) = self.second.index(&ix.1);
+    ((pk1, pk2), (vk1, vk2))
 }
 ```
 
-`ReducedArgument` gets the same treatment.
+Each reduction step receives only its own key:
 
-### 6. WARP refactor — retroactive grounding
+```rust
+let (x2, w2) = self.first.prove(ch, &pk.0, instance, witness);
+self.second.prove(ch, &pk.1, &x2, &w2)
+```
 
-Pull what is currently lumped inside `WARPInstance` apart along the index/pk/vk/instance lines:
+`ReducedArgument<Reduction, Argument>` follows the same pattern:
+
+```rust
+type Index = (Reduction::Index, Argument::Index);
+type ProverKey = (Reduction::ProverKey, Argument::ProverKey);
+type VerifierKey = (Reduction::VerifierKey, Argument::VerifierKey);
+```
+
+The composed verifier key's `committed_index()` is the canonical commitment to
+both component commitments, not an assumption that the two components share an
+index.
+
+### 7. Refactor WARP as the first real consumer
+
+WARP should stop storing preprocessing inside the source instance:
 
 ```rust
 struct WARPIndex<F, P, C, MT> {
-    warp: WARPParams<F, P, C, MT>,   // code, config, MT params, constraint system
+    // Static relation data: code, config, Merkle params, constraint system, etc.
 }
 
 struct WARPProverKey<F, MT> {
-    encoded_matrices: Vec<Codeword<F>>,
-    matrix_trees: Vec<MerkleTree<MT>>,
+    // Encoded matrices, prover oracle data, Merkle trees, etc.
 }
 
 struct WARPVerifierKey<MT> {
-    matrix_roots: [MT::InnerDigest; 3],
-    code_params: CodeConfig,
-    constraint_count: usize,
+    // Matrix commitments/roots and compact verifier metadata.
 }
 
 struct WARPInstance<F> {
-    instances: Vec<...>,
-    acc_instances: Vec<...>,
+    // Per-claim public instances and accumulator instances only.
 }
+```
 
-impl InteractiveReduction for WARPReduction<...> {
-    type Index = WARPIndex<F, P, C, MT>;
-    type ProverKey = WARPProverKey<F, MT>;
-    type VerifierKey = WARPVerifierKey<MT>;
-    type SourceInstance = WARPInstance<F>;
+Then:
 
-    fn index(&self, ix: &WARPIndex<...>) -> (WARPProverKey<...>, WARPVerifierKey<...>) {
-        // RS-encode A, B, C; build MT trees; emit roots.
+```rust
+impl IndexedInteractiveReduction for WARPReduction<...> {
+    type Index = WARPIndex<...>;
+    type ProverKey = WARPProverKey<...>;
+    type VerifierKey = WARPVerifierKey<...>;
+    type SourceInstance = WARPInstance<...>;
+    type TargetInstance = DeciderInstance<...>;
+
+    fn index(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+        // Encode A, B, C; build prover oracles; emit verifier commitments.
     }
 }
 ```
 
-The destructuring at `ir.rs:121` becomes a direct read of `vk`.
+The current verifier-side reconstruction:
 
-### 7. Unblocks `crates/ibcs`
+```rust
+let vk = (instance.pk.1, instance.pk.2, instance.pk.3);
+```
 
-`crates/ibcs/src/lib.rs` is currently a stub. iBCS specifically needs to commit to an *index encoding* (the IOP's preprocessed oracle for V), so it cannot be implemented honestly without a place to put it. Step 1 provides the slot; iBCS becomes the first new protocol that uses indexed relations from day one.
+becomes a direct use of `vk`.
 
-## Migration order
+### 8. Unblock `crates/ibcs`
 
-1. Steps 1 + 3 in one PR (trait change + trivial protocols). Compiles; existing tests pass with `Index = ()`.
-2. Step 2 in a follow-up PR (backend absorb + `protocol_id` bump). DSFS golden vectors updated.
-3. Step 4 — independent, can land anytime after 1.
-4. Step 5 — needed before any test that composes indexed protocols.
-5. Step 6 — first real consumer.
-6. Step 7 — first new protocol that needs this from day one.
+`crates/ibcs` needs a place for the preprocessed verifier oracle commitment.
+With the indexed traits in place, iBCS can be written against
+`IndexedInteractiveArgument` / `IndexedInteractiveReduction` from day one
+instead of smuggling index material through `Instance`.
 
-## Open questions for advisors
+## Migration Order
 
-1. **`TargetIndex` on reductions.** Arc IORs have an indexer that emits a new $\ell'$ on the verifier side. CY24 §32 has a fixed index. Do we expect any Argus reduction to *change* the index, or does "index fixed across the chain" cover everything we plan to build? The simplest trait surface assumes fixed; adding `TargetIndex` later is a breaking change.
+1. Add `VerifierKeyCommitment`, indexed IA/IR traits, and the blanket lift for
+   non-indexed IA/IR. Existing protocols should keep compiling unchanged.
+2. Add `PreparedDsfs` / `PreparedDsfsReduction` views for indexed protocols.
+   They store `(pk, vk)` and implement the existing `NonInteractiveArgument` /
+   `NonInteractiveReduction` traits. Keep direct NIA/NIR impls for ordinary
+   non-indexed protocols.
+3. Add tuple commitments and heterogeneous indexed composition for
+   `ChainedReduction` and `ReducedArgument`.
+4. Add indexed security traits and blanket lifts from the existing security
+   traits.
+5. Refactor WARP into `WARPIndex`, `WARPProverKey`, `WARPVerifierKey`, and
+   per-claim `WARPInstance`.
+6. Implement iBCS on top of the indexed surface.
+7. Sweep docs and code comments for index notation: use `ix` in Rust and
+   $\mathbb{i}$ in math.
 
-2. **Indexer location.** Is `fn index(&self, ix) -> (pik, vik)` a method on the IA/IR trait, or a separate `Indexer` trait? Method form is one fewer trait bound and works fine if the indexer is unique per protocol. Separate trait matches the CY24 formalism literally and lets the same indexer be reused across protocols — does that ever happen in practice?
+## Transcript Checklist
 
-3. **Implicit instance $y$ (Arnon–Boneh–Fenzi).** This proposal does *not* address ABF's per-instance oracle handle (the encoded RS message in WARP); it is filed as a separate open question. Should the trait redesign address both at once with one $(\ell, x, y)$ shape, or land preprocessing first and treat $y$ as a follow-up?
+Any implementation PR for this proposal must explicitly check:
 
-4. **Holographic vs. fully-read $\mathsf{vik}$.** CY24 §32.1 has V read $\mathsf{vik}$ in full. Arc §5.1 has V query an oracle-encoded $\iota$. This proposal assumes full read ($\mathsf{vik}$ is small bytes). If iBCS / WHIR backends want oracle access to $\iota$, do we extend `VerifierKey` to support both modes, or treat oracle-$\mathsf{vik}$ as a separate protocol layer?
+- `vk.committed_index()` is absorbed before the first challenge.
+- The instance is absorbed before the first challenge.
+- The backend, not protocol code, performs all transcript absorption.
+- Prover messages are still absorbed before the challenge for their round.
+- Verification consumes exactly the expected proof bytes.
+- Any change to committed-index bytes, sponge choice, salt policy, or proof
+  layout triggers a DSFS `protocol_id` review.
 
-5. **Per-index `protocol_id`.** Should the `protocol_id` derivation include $\mathsf{vk}$'s hash (so different indices give different transcripts), or is the new "absorb $\mathsf{vk}$" step alone sufficient? Today's `protocol_id` is a static label per protocol; binding $\mathsf{vk}$ into it would tie the domain separator to the specific preprocessed instance.
+## Open Questions
+
+1. **Exact `committed_index()` return type.** The design needs canonical public
+   bytes for DSFS. The final Rust type can be `impl AsRef<[u8]> + '_`, an
+   associated commitment type, or a spongefish codec-backed value. Choose the
+   version that fits the codec ownership after the `spongefish-dsfs` split.
+2. **Prepared DSFS view shape.** The doc sketches `prepare(&ix)` and
+   `with_keys(pk, vk)`. The implementation should decide whether one prepared
+   wrapper stores both keys, or whether prover/verifier halves are useful for
+   deployment. This should not become new indexed NARG traits unless generic
+   code actually needs them.
+3. **Implicit instance $y$ (Arnon--Boneh--Fenzi).** This proposal does not
+   address ABF's per-instance oracle handle. Land preprocessing first unless
+   the iBCS design needs both abstractions at once.
+4. **Live-channel runner API.** Live execution should pass `pk`/`vk` to indexed
+   protocols but does not absorb transcript bytes. The exact runner function
+   names can follow after the DSFS API settles.
 
 ## References
 
-- CY24 §32.1 (preprocessing setting), §32.5 (HIOPs), §32.6 (SR for HIOPs).
-- Arc 2024/1731 §5.1 (indexed oracle relations), §5.3 (BCS-style compilation).
-- Arnon–Boneh–Fenzi 2026/680 §A.1 (IOR formalism with implicit instance $y$).
-- `docs/adr/0003-instance-aware-security-metadata.md` (current security trait shape).
-- CLAUDE.md: non-negotiable invariant #2 (public inputs before first challenge); `protocol_id` rule.
+- CY24 §32.1 (preprocessing setting), §32.5 (HIOPs), §32.7 (COS
+  transformation), §32.8 (offline commitment soundness gap).
+- Arc 2024/1731 §5.1, §5.3, App. B Construction B.2.
+- Arnon--Boneh--Fenzi 2026/680 §A.1 (IOR formalism with implicit instance
+  $y$).
+- `docs/adr/0003-instance-aware-security-metadata.md`.
+- `docs/security/transcript-invariants.md`.
+- `docs/security/domain-separation.md`.
