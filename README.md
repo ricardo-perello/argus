@@ -24,10 +24,13 @@ review.
 
 ## Architecture
 
-Argus aims to express:
+Argus aims to make the IA/IR channel layer usable in both directions:
 
-- **DSFS[IA]**: compile a public-coin Interactive Argument (IA) into a non-interactive proof.
-- **BCS[IOP, MT] = DSFS[IA]**, where **IA = IBCS[IOP, MT]** (work in progress).
+- As a **source** for backends: **DSFS[IA]** compiles a public-coin
+  Interactive Argument (IA) into a non-interactive proof.
+- As a **target** for higher-level compilers: future iBCS work should compile
+  **IOP + Merkle-tree commitment** material into an IA, so
+  **BCS[IOP, MT] = DSFS[IA]** where **IA = IBCS[IOP, MT]**.
 
 The key invariants (enforced by the backend, not by protocol code) are:
 
@@ -43,8 +46,10 @@ An IA/IR implementation is just code that exchanges typed messages with a channe
 - Prover side: `send_prover_message`, `read_verifier_message`
 - Verifier side: `read_prover_message`, `send_verifier_message`
 
-Swapping the channel swaps the execution model (DSFS-compiled vs truly interactive) without changing
-the protocol.
+Swapping the channel swaps the execution model (DSFS-compiled vs truly
+interactive) without changing the protocol. The same channel surface can also be
+the output of another compiler: for example, an iBCS compiler can produce an IA
+channel program from an IOP before DSFS turns that IA into a NARG.
 
 ## Crate map
 

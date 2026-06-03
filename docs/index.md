@@ -3,13 +3,20 @@
 Argus is a Rust workspace for writing public-coin interactive protocols once
 against a generic channel interface and running them through different backends.
 
-The core split is:
+The submission-facing story is simple:
 
 - **Protocol code** uses only `ia-core` channel traits.
 - **Backends** own execution mechanics such as transcript ordering, sponge
   absorption, challenge derivation, and interactive transport.
 - **Security metadata** is instance-aware: a security profile is evaluated for a
   concrete instance or for an explicit instance-family bound.
+- **Preprocessing keys are inputs**: compiled wrappers stay stateless while DSFS
+  binds committed-index bytes before the first challenge.
+- **IA is also a target language**: future compilers such as iBCS can output an
+  IA/channel program, which can then run through the same backends.
+
+For the six-page final report, see `docs/final-report.tex` and
+`docs/final-report.pdf`.
 
 ## Recommended reading path
 

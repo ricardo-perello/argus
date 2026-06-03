@@ -2,6 +2,7 @@
 
 [Home](index.md)
 [Getting Started](getting-started.md)
+[Final Report](final-report.md)
 
 # Architecture
 

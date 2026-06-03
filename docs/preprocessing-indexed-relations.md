@@ -425,10 +425,10 @@ let vk = (instance.pk.1, instance.pk.2, instance.pk.3);
 
 becomes a direct use of `vk`.
 
-### 8. Unblock `crates/ibcs`
+### 8. Unblock Future iBCS Work
 
-`crates/ibcs` needs a place for the preprocessed verifier oracle commitment.
-With the indexed traits in place, iBCS can be written against
+Future iBCS work needs a place for the preprocessed verifier oracle commitment.
+With the indexed traits in place, it can be written against
 `IndexedInteractiveArgument` / `IndexedInteractiveReduction` from day one
 instead of smuggling index material through `Instance`.
 

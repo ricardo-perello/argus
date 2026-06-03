@@ -29,3 +29,9 @@ This is intentional for compatibility and should not be simplified.
 
 The Shake128 `sigma-proofs` fixtures are byte-for-byte golden tests in
 `crates/sigma-bridge/tests/golden_vectors.rs` when using `StdHash`.
+
+The Keccak-named fixture in the same test file is a bridge regression for
+`prove_with_protocol_domain`: it uses the fixture's `ciphersuite` as the
+explicit 64-byte Fiat-Shamir protocol tag while still running the `StdHash`
+compatibility transcript. Do not infer the active sponge from that filename
+alone.

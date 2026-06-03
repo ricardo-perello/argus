@@ -3,7 +3,9 @@
 Argus separates protocol logic from execution mechanics.
 
 Protocol crates implement public-coin interactive protocols against the small
-channel API in `ia-core`. Backend crates decide how the same protocol program is
+channel API in `ia-core`. Other compilers can target the same surface: for
+example, future iBCS work can compile an IOP plus commitment scheme into an IA
+channel program. Backend crates then decide how that protocol program is
 executed:
 
 - `spongefish::dsfs` compiles the protocol into a non-interactive argument or
@@ -25,7 +27,6 @@ layout are backend responsibilities.
 - `crates/warp`: WARP as an interactive reduction plus a final argument.
 - `crates/sigma-bridge`: compatibility layer for `sigma-proofs` protocols.
 - `crates/argus-examples`: runnable examples and small protocol demos.
-- `crates/ibcs`: work in progress for IOP-to-IA compilation.
 
 The DSFS backend currently lives in the local `spongefish` dependency, exposed as
 `spongefish::dsfs`.
@@ -35,14 +36,17 @@ The DSFS backend currently lives in the local `spongefish` dependency, exposed a
 ```mermaid
 flowchart LR
     A["Protocol implementation"] --> B["ia-core channel traits"]
+    G["IOP + commitment compiler"] --> B
     B --> C["spongefish::dsfs"]
     B --> D["live-channel"]
     C --> E["NARG proof bytes"]
     D --> F["Interactive transcript"]
 ```
 
-This split is what lets a protocol such as Schnorr, sumcheck, or WARP be written
-once and then used non-interactively or interactively.
+This split is what lets a protocol such as Schnorr, sumcheck, or WARP be
+written once and then used non-interactively or interactively. It also makes IA
+the intended output type for higher-level protocol compilers, not only the input
+type for DSFS.
 
 Preprocessed protocols use the same backend boundary. The protocol core exposes
 preprocessing and keyed execution; DSFS keeps the compiled wrapper stateless,

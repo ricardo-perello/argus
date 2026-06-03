@@ -1,6 +1,8 @@
 # Channel Model
 
-An Argus protocol is a channel program.
+An Argus protocol is a channel program. This is both an authoring model and a
+compilation target: a protocol author can write an IA/IR directly, or another
+compiler can output an IA/IR channel program.
 
 The prover side writes prover messages and reads public verifier messages:
 
@@ -17,6 +19,10 @@ ch.send_verifier_message(&challenge);
 ```
 
 The same calls mean different things depending on the backend.
+
+That bidirectionality is important for the long-term BCS direction. DSFS
+consumes an IA and produces a NARG; an iBCS compiler would consume an IOP plus a
+commitment scheme and produce an IA that uses the same channel interface.
 
 ## DSFS Backend
 
