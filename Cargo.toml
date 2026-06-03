@@ -2,7 +2,6 @@
 members = [
     "crates/ia-core",
     "crates/live-channel",
-    "crates/ibcs",
     "crates/argus-examples",
     "crates/sigma-bridge",
     "crates/warp",

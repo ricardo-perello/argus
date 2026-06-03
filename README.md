@@ -71,7 +71,6 @@ the protocol.
   - `WarpDecider` (a `PreprocessingInteractiveArgument`)
   - `FullWarp` (a single-index preprocessing argument built from the reduction and decider)
 - **`crates/argus-examples`**: runnable examples (e.g. Schnorr).
-- **`crates/ibcs`**: WIP — will implement the IOP-to-IA compiler (BCS[IOP, MT] = DSFS[IBCS[IOP, MT]]).
 
 ## Documentation index
 

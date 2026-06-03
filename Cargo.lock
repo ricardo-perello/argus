@@ -935,15 +935,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ibcs"
-version = "0.1.0"
-dependencies = [
- "ark-serialize",
- "ark-std",
- "ia-core",
-]
-
-[[package]]
 name = "ident_case"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
