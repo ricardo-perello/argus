@@ -1,10 +1,11 @@
 \documentclass[11pt]{article}
 
+\usepackage{amsmath}
 \usepackage[margin=1in]{geometry}
 \usepackage[hidelinks]{hyperref}
 \setlength{\emergencystretch}{2em}
 
-\title{Argus: A Channel Interface for Public-Coin Interactive Protocols}
+\title{Argus: A Typed Interface Layer for Public-Coin Arguments and Reductions}
 \author{Ricardo Perello}
 \date{Final project report, June 2026}
 
@@ -12,339 +13,352 @@
 \maketitle
 
 \begin{abstract}
-Argus is a Rust research prototype for writing public-coin interactive
-protocols once and executing them through multiple backends. Its central design
-choice is to express protocol logic as a channel program: the prover sends
-messages and reads public verifier messages, while the verifier reads prover
-messages and sends public verifier messages. The backend, not the protocol,
-owns the transcript. This separation is motivated by the duplex-sponge
-Fiat--Shamir transformation of Chiesa and Orru and by the practical difficulty
-of maintaining transcript discipline across different protocols, examples, and
-compatibility paths.
+Argus is a Rust research prototype for describing public-coin interactive
+arguments and reductions as typed protocol objects. The project is motivated by
+a gap in the existing arkworks proof-system stack. Spongefish already provides
+Fiat--Shamir transcript machinery and non-interactive argument strings, but a
+protocol written directly against spongefish state is primarily an imperative
+transcript program: it calls transcript methods to record prover messages,
+derive verifier messages, and replay proof bytes. Such code is useful for
+building non-interactive proofs, but it is not a clean interface for the
+underlying interactive argument or reduction.
 
-The project supports interactive arguments, interactive reductions, indexed
-preprocessing, composition, instance-aware security metadata, a live interactive
-backend, and a non-interactive backend based on spongefish's DSFS compiler. The
-main result is an interface layer that keeps protocol implementations free of
-sponge operations while still supporting non-trivial case studies, including
-Schnorr, sumcheck-style examples, a compatibility bridge for sigma protocols,
-and WARP as a preprocessing interactive reduction composed with a final
-decider. Argus is not a production-reviewed cryptographic library; it is a
-prototype for protocol design and security-model engineering.
+Argus introduces that missing layer. A protocol author writes only the
+public-coin message flow: the prover sends prover messages and reads public
+verifier messages; the verifier reads prover messages and sends public verifier
+messages. A hand-written protocol in this interface can run interactively or
+compile through \texttt{spongefish-dsfs} into a non-interactive argument or
+reduction. The same interface can also be the thing produced by a future
+compiler: for example, an IOP-to-iBCS compiler could output an IA, and that IA
+could then run through the same backends. The main design result is a typed
+interface that covers arguments and reductions, interactive and
+non-interactive execution, and plain and preprocessed protocols without
+collapsing all cases into one maximal object.
 \end{abstract}
 
 \section{Motivation}
 
-Many modern proof systems begin life as public-coin interactive protocols. A
-prover sends a commitment or algebraic message, the verifier samples a public
-challenge, and the protocol repeats until the verifier either accepts or
-computes a reduced target claim. In implementations, these protocols are often
-made non-interactive with Fiat--Shamir: prover messages are absorbed into a
-transcript, verifier challenges are derived from that transcript, and the
-resulting transcript string becomes a proof.
+Many modern proof systems are easiest to describe as public-coin interactive
+protocols. A prover sends algebraic data, commitments, or oracle-derived
+messages; the verifier samples public randomness; and the protocol repeats
+until the verifier either accepts or computes a reduced target claim. In a
+non-interactive proof system, the same public randomness is produced by a
+Fiat--Shamir transcript. The implementation must therefore serialize prover
+messages, absorb them into a transcript, derive verifier challenges, and replay
+the same operations during verification.
 
-This implementation pattern creates a persistent engineering problem. The
-mathematical protocol is usually described round by round, but the code must
-also enforce a low-level transcript discipline. Every prover message must be
-absorbed before the next challenge is squeezed. Public inputs, domain-separation
-data, session identifiers, and indexed-relation commitments must be fixed before
-the first challenge. Verification must replay the same operations
-deterministically, and it must reject malformed proof bytes rather than silently
-accepting a prefix. These requirements are easy to state and easy to violate,
-especially when each protocol implementation manually handles its own
-transcript.
+Spongefish gives the arkworks ecosystem this transcript machinery. For example,
+the spongefish Schnorr example is written around prover and verifier transcript
+state: the prover records prover messages and asks the transcript for verifier
+messages, while the verifier reads messages from a non-interactive argument
+string, absorbs them, derives challenges, and checks end-of-file. This is the
+right level of abstraction for a transcript library. It is not the right level
+of abstraction for describing an interactive argument as a reusable protocol.
+The protocol and the compiled transcript are entangled in the same imperative
+code.
 
-Argus addresses this by treating the transcript as a backend concern. A protocol
-author writes an interactive protocol against a generic channel API. The same
-protocol can then be executed by a live interactive backend, where verifier
-messages are sampled and sent over channels, or by a duplex-sponge
-Fiat--Shamir backend, where verifier messages are squeezed from a transcript
-and prover messages are serialized into a non-interactive argument. The channel
-API is also a target language: a compiler such as a future IOP-to-IA or iBCS
-compiler can output the same kind of channel program before DSFS turns it into a
-non-interactive argument. The author does not instantiate a sponge, absorb
-public input, or derive challenges manually. The protocol code is intended to
-read like the interactive protocol, while the backend enforces the transcript
-invariants.
+Argus exists to separate these two concerns. The protocol-facing interface says
+only what the interactive protocol does: which messages the prover sends, which
+public messages the verifier sends, and what the verifier outputs. Transcript
+mechanics are delegated to a backend. This means the same protocol object can
+be used as an input to DSFS, as a live interactive protocol, or as a target
+interface for a future compiler that turns a richer formalism into an
+interactive argument.
 
-The second motivation is reductions. Many proof systems are not naturally just
-``accept or reject'' protocols. An interactive oracle reduction, folding
-scheme, or accumulation scheme may transform one claim into another claim. The
-verifier's output is a target instance, not a Boolean. Modeling only
-interactive arguments forces these protocols into awkward encodings. Argus
-therefore has first-class interactive reductions alongside interactive
-arguments, and it supports composing reductions with other reductions or with a
-final argument.
+This last point matters for the broader arkworks post-quantum direction. The
+planned \texttt{arkworks-pq} workspace is intended to provide trait surfaces and
+backends for vector commitments, Merkle trees, FRI/STIR/WHIR-style components,
+STARK ingredients, linear codes, binary-field primitives, and related
+hash-based SNARK infrastructure. Those systems need a clean argument layer.
+Long term, the desired shape is not merely
+\[
+    IA \xrightarrow{DSFS} NARG,
+\]
+but also
+\[
+    IOP \xrightarrow{iBCS} IA \xrightarrow{DSFS} NARG.
+\]
+In this pipeline, the IA interface is simultaneously a target language, a
+source language, and an executable object.
 
-The third motivation is preprocessing. Protocols such as WARP have static
-relation material, code parameters, Merkle parameters, and circuit descriptions
-that should be bound before any challenge, but should not be repeatedly copied
-into each per-claim instance. Argus models this with preprocessing keys. A
-preprocessing protocol derives a prover key and verifier key from an index; the
-compiled backend receives the relevant key as an input and absorbs a committed
-index together with the ordinary instance. This keeps the non-interactive
-wrapper stateless while still binding the indexed relation into the transcript.
+\section{Design Problem}
 
-\section{Design Objectives and Constraints}
+The core design problem is a small matrix of protocol forms. Argus wants to
+represent:
 
-The primary objective is a clean channel interface that can be used both by
-protocol authors and by protocol compilers. Protocol implementations should
-depend on the interface crate, not on spongefish transcript internals. On the
-prover side, the available operations are sending a prover message and reading a
-verifier message. On the verifier side, the available operations are reading a
-prover message and sending a verifier message. This is deliberately small: it
-prevents protocol code from deciding where absorb and squeeze operations occur,
-and it gives higher-level compilers a concrete IA target to emit.
+\begin{center}
+\begin{tabular}{c|c}
+Axis & Cases \\
+\hline
+Verifier output & argument / reduction \\
+Execution mode & interactive / non-interactive \\
+Setup model & plain / preprocessed
+\end{tabular}
+\end{center}
 
-The second objective is backend-owned transcript semantics. In the DSFS backend,
-sending a prover message appends it to the proof string and absorbs it into the
-sponge. Reading a verifier message squeezes the next challenge. During
-verification, reading a prover message consumes proof bytes and absorbs the same
-message before the verifier derives the matching challenge. This ownership
-boundary is what protects the key invariants: public inputs before the first
-challenge, all prover messages before a challenge, deterministic replay, no
-challenge reuse, and no hidden transcript state outside the backend.
+These three binary choices give eight useful combinations. A plain interactive
+argument is the familiar accept/reject public-coin protocol. An interactive
+reduction outputs a target instance instead of a Boolean. A non-interactive
+argument or reduction is the DSFS-compiled form. A preprocessed protocol has an
+index, prover key, verifier key, and a committed representation of the indexed
+material that must be fixed before the first challenge.
 
-The third objective is to support both interactive arguments and interactive
-reductions. An interactive argument has a public instance, a private witness,
-and a verifier that returns accept or reject. An interactive reduction has a
-source instance and witness, and it produces a target instance and target
-witness on the prover side while the verifier computes the target instance.
-This distinction matters because it gives accumulation and folding-style
-protocols a natural representation.
+One possible design is top-down: define one maximally general object, roughly a
+preprocessing interactive reduction, and recover all simpler objects by
+degeneration. A plain protocol has a trivial index. An argument is a reduction
+whose target is a unit type or whose verifier output is interpreted as
+accept/reject. Non-preprocessed protocols have dummy keys. This is compact, but
+it weakens the type meaning of the API. A plain interactive argument would
+appear to have preprocessing methods even when preprocessing is not part of the
+protocol.
 
-The fourth objective is composability. A reduction followed by another
-reduction is again a reduction, and a reduction followed by an argument is an
-argument for the original relation. Argus exposes this through composition
-adapters. Composition also has to preserve domain separation: composed protocol
-identifiers are derived using structured, length-prefixed encodings rather than
-ambiguous string concatenation.
+Argus takes the opposite approach. It starts with a bottom-up capability tree.
+All protocol objects share protocol identity. Arguments add instance and
+witness types. Reductions add source and target relation types. Preprocessing
+adds an index, prover key, verifier key, and preprocessing function. Executable
+interactive protocols add channel methods. Non-interactive protocols add
+session-bound proving and verification. The result is more traits, but each
+trait states an actual capability. A plain argument cannot accidentally call
+\texttt{preprocess()}, while a preprocessed argument exposes that capability
+explicitly.
 
-The fifth objective is instance-aware security metadata. For protocols such as
-sumcheck or WARP, the soundness profile depends on instance-derived parameters:
-field size, degree bounds, number of rounds, code length, constraint count, or
-query counts. Argus therefore does not attach a single global security number to
-a protocol type. Instead, security traits compute profiles for concrete
-instances or for explicit worst-case instance families. The DSFS layer can then
-combine an interactive profile with sponge parameters and adversarial query
-budgets.
+The second design requirement is to avoid duplicating machinery across the
+eight cases. The trait tree lets common structure be factored once: protocol
+identity, relation shape, channel execution, non-interactive proof vocabulary,
+preprocessing key derivation, and security metadata. Where a degeneration is
+useful, Argus provides it explicitly through adapters. For example, a plain
+protocol can be lifted into the preprocessing world by adding a trivial index
+and trivial keys, but this is an adapter rather than the core meaning of a
+plain argument.
 
-The main cryptographic constraint is that Argus should not duplicate transcript
-logic across modules. Sponge operations belong in DSFS. Public input absorption
-belongs in the backend, including protocol identifiers, sponge information,
-sessions, ordinary instances, and preprocessing committed-index bytes. Protocol
-code may branch on public messages and public challenges, but it must not derive
-Fiat--Shamir challenges itself. If sponge choice, salt policy, proof layout, or
-absorb/squeeze order changes, the change is a backend-level change and requires
-a protocol-identifier review.
+\section{The Channel Interface}
 
-There is also a compatibility constraint. The project uses Keccak as the Argus
-standard DSFS sponge. However, some compatibility paths, especially the
-sigma-proofs bridge, need spongefish's \texttt{StdHash} construction based on
-SHAKE128 to match external vector formats. The interface must allow this
-without making SHAKE128 the default Argus transcript. This is why the report and
-documentation distinguish the Argus standard from spongefish's ``standard hash''
-terminology.
+The channel traits are the small boundary between protocol code and execution
+machinery. On the prover side, the protocol can only send prover messages and
+read verifier messages. On the verifier side, it can only read prover messages
+and send verifier messages. There is no sponge object in the protocol code, no
+explicit absorb call, no manual Fiat--Shamir challenge derivation, and no
+proof-byte parser.
 
-\section{Architecture}
+This gives three useful interpretations of the same code. With the live
+backend, the verifier samples actual public coins and sends them over Rust
+channels. With \texttt{spongefish-dsfs}, prover messages are appended to the
+non-interactive argument string and absorbed into the sponge; verifier messages
+are squeezed from the transcript; and verification replays the same sequence
+from proof bytes. In the future, an iBCS compiler could produce exactly this
+kind of channel program: it would translate an IOP plus commitment machinery
+into an IA expressed through the same message interface.
 
-Argus is organized as a Rust workspace. The \texttt{ia-core} crate is the
-protocol-facing layer. It defines channel traits, protocol core traits,
-interactive argument and reduction traits, preprocessing traits,
-non-interactive vocabulary, composition adapters, and security metadata. The
-live backend is implemented in \texttt{live-channel}. The DSFS backend is
-provided by the local \texttt{spongefish::dsfs} dependency. Protocol examples
-and demonstrations live in \texttt{argus-examples}; WARP lives in
-\texttt{warp}; and sigma-proofs compatibility lives in \texttt{sigma-bridge}.
-IOP-to-IA compilation remains a future direction rather than a workspace crate,
-but the interface is designed so such a compiler can emit the same channel
-programs that hand-written protocols use.
+The \texttt{spongefish-dsfs} crate is therefore part of the contribution. It is
+not just an external library call at the edge of the project. It implements the
+DSFS channel backend for the protocols written against Argus: prover channels,
+verifier channels, proof serialization, public-input binding, deterministic
+replay, and EOF checking. The transcript invariants are concentrated there:
+all public inputs are fixed before the first challenge, every prover message is
+absorbed before the next challenge is squeezed, verifier replay is
+deterministic, and malformed proof strings are rejected rather than accepted as
+prefixes.
 
-The core trait tree separates identity, relation shape, and execution. Every
-protocol implements \texttt{ProtocolCore}, which supplies a protocol identifier
-for domain separation. Arguments implement \texttt{ArgumentCore}, which defines
-the public instance and private witness types. Reductions implement
-\texttt{ReductionCore}, which defines source and target instances and
-witnesses. The executable leaves are \texttt{InteractiveArgument} and
-\texttt{InteractiveReduction}. Preprocessing protocols also implement
-\texttt{PreprocessingCore}, which defines the index, prover key, verifier key,
-and deterministic preprocessing function.
+This separation also clarifies what Argus does not claim. Writing a protocol
+against channels is not a security proof. It only removes one common source of
+implementation error: protocol authors no longer decide when to absorb
+messages, when to squeeze challenges, or how to replay proof bytes. Those
+choices are centralized in the backend. The actual security still comes from
+the protocol analysis, the DSFS theorem being applied, and the correctness of
+the backend implementation.
 
-The channel traits are the narrow waist of the system. A prover channel has an
-associated alphabet \texttt{Unit}; byte-oriented protocols use
-\texttt{Unit = u8}, while the type is general enough for algebraic sponge
-settings. Prover messages implement the encoding and serialization traits
-needed to be written into a non-interactive proof. Verifier messages implement
-decoding. These bounds are intentionally close to spongefish's codec vocabulary,
-which made it possible to reuse the existing DSFS machinery. One design
-question left for future cleanup is whether \texttt{ia-core} should own a
-smaller codec abstraction so the abstract channel layer is less visibly tied to
-the DSFS implementation.
+\section{State and Domain Separation}
 
-The DSFS constructors are semantic: they name the object being constructed. The
-plain argument constructor compiles an interactive argument into a
-non-interactive argument, and the plain reduction constructor compiles an
-interactive reduction into a non-interactive reduction. Preprocessing variants
-return stateless compiled handles. The caller runs preprocessing to obtain a
-prover key and verifier key, then passes the relevant key to proving or
-verification. The compiled object stores the protocol body and sponge choice,
-not the keys.
+A central design question was whether protocol execution should be completely
+static. In the most austere design, \texttt{prove} and \texttt{verify} would
+take all parameters as explicit inputs: instance, witness, prover key, verifier
+key, or session. The protocol object itself would carry no meaningful
+configuration. This style is attractive because it makes hidden state hard to
+miss.
 
-Preprocessing is represented as ``keys as inputs.'' Both prover and verifier
-keys implement \texttt{CommittedIndex}. The prover-side compiled path binds
-\texttt{pk.committed\_index()}, while the verifier-side path binds
-\texttt{vk.committed\_index()}. The backend absorbs this committed index
-together with the per-claim instance before deriving any verifier challenge.
-This design is important for indexed relations: the verifier can bind the
-static relation without the prover needing to hold the verifier key, and the
-ordinary instance remains a per-claim object rather than a container for static
-setup material.
+In practice, complex protocols often have configuration that is neither a
+per-claim instance nor a witness. WHIR-style and FRI-style protocols may carry
+rates, folding schedules, query counts, code information, hash choices, and
+other static protocol parameters. WARP has dimensions, code parameters,
+configuration, and relation descriptions. Keeping such information in
+\texttt{\&self} is convenient and often the most natural Rust representation.
+Argus therefore allows protocol objects to be stateful in this immutable
+configuration sense.
 
-The live backend gives the same channel program a genuine interactive
-execution. The verifier samples messages and sends them to the prover over Rust
-channels. This backend is not meant to be a network protocol. Its value is as a
-sanity check: if a protocol cannot be expressed as public-coin channel code, it
-should not be silently compiled through DSFS.
+This creates a hard domain-separation rule. Any data in \texttt{self} that
+affects the message flow, verifier challenges, accepted statements, proof
+layout, soundness profile, or transcript semantics must be reflected in
+\texttt{protocol\_id(\&self)} or otherwise absorbed as public input before the
+first challenge. The method is intentionally a method on \texttt{\&self},
+rather than only an associated constant, so configured protocol objects can
+identify the actual compiled protocol they represent.
 
-\section{Representative Implementations}
+This distinction is important. It is acceptable for \texttt{self} to say which
+protocol is being run: for example, which code rate, folding schedule, or hash
+configuration is part of the protocol. It is not acceptable for \texttt{self}
+to secretly run the transcript: it should not contain a mutable sponge,
+Fiat--Shamir state, or hidden challenge counter. The backend channel owns that
+state. A useful review rule is: if changing \texttt{self} would make the
+verifier accept a different language, derive different challenges, or interpret
+proof bytes differently, then the domain separator must change too.
 
-The examples crate demonstrates the authoring model on small protocols. Schnorr
-can be run non-interactively through DSFS or interactively through the live
-backend. Sumcheck examples exercise multi-round public-coin structure. A
-committed sumcheck example includes Merkle commitments and query openings. A
-composition example shows how reductions and arguments can be connected without
-manually reimplementing the combined transcript.
+\section{Preprocessing as Keys-as-Inputs}
 
-The sigma bridge tests compatibility with an external protocol library. It
-drives sigma-proofs protocols through the Argus IA-to-DSFS pipeline. This part
-of the project is intentionally geared toward compatibility: it preserves expected
-session derivation behavior and uses \texttt{StdHash} only for explicit
-SHAKE128 vector matching. In particular, \texttt{derive\_session\_id} uses
-SHAKE128 with the domain \texttt{fiat-shamir/session-id} and writes output into
-the high 32 bytes of the 64-byte session field. The bridge is a useful stress
-test because it forces the Argus abstraction to interact with existing proof
-formats rather than only toy examples.
+Preprocessing introduced a second statefulness question. Early designs stored
+preprocessing keys inside a prepared protocol object. Proving then looked like
+\texttt{prove(\&self, instance, witness)}, with \texttt{self.pk} used
+internally. This was ergonomic, but it blurred the distinction between the
+protocol description and party-specific execution material.
 
-The largest case study is WARP, a linear-time accumulation scheme for R1CS. In
-the paper, WARP is naturally an interactive oracle reduction: it reduces a set
-of fresh and accumulated claims into a single accumulated claim, then a decider
-checks the accumulated witness. Argus models this as a preprocessing
-interactive reduction plus a preprocessing interactive argument. The
-\texttt{WarpReduction} performs the reduction and outputs accumulator
-instances; the \texttt{WarpDecider} performs the final local check; and
-\texttt{FullWarp} exposes a single-index preprocessing argument for the common
-end-to-end path.
+Argus instead uses keys as explicit inputs:
+\texttt{preprocess(index)} returns a prover key and verifier key. At the
+interactive level, the body is run as
+\texttt{body.prove(ch, pk, instance, witness)} and
+\texttt{body.verify(ch, vk, instance)}. At the non-interactive level, DSFS hides
+the channel and adds a session and proof object:
+\texttt{pnia.prove(pk, session, instance, witness)} and
+\texttt{pnia.verify(vk, session, instance, proof)}. In both cases, the protocol
+body is not a prepared object containing a key.
 
-This case study exercised the most important design constraints. Static WARP
-material, including dimensions, configuration, code material, Merkle parameters,
-and R1CS matrices, is part of the preprocessing index. The derived verifier key
-commits to this material. The per-claim WARP instance contains only fresh
-instances and previous accumulators. DSFS absorbs the committed index and the
-per-claim instance before any WARP challenge. The WARP protocol engine itself
-uses only channel operations for messages and challenges; it does not own the
-sponge. This is precisely the separation Argus was built to enforce.
+This is cleaner because the prover and verifier naturally hold different keys,
+and because the same compiled wrapper can be reused for many independently
+preprocessed indexes. The committed-index binding is also explicit: DSFS
+derives public input bytes from \texttt{pk.committed\_index()} on the prover
+side and \texttt{vk.committed\_index()} on the verifier side, then absorbs those
+bytes together with the per-claim instance before the first challenge.
 
-The WARP security implementation is instance-aware. The reduction derives
-security parameters from the static index, including round counts, field size,
-code parameters, and WARP configuration. It reports per-round round-by-round
-soundness terms for the twin sumcheck and batching sumcheck phases, plus
-one-time commitment and sampling terms. Some code-specific bounds are currently
-conservative, and the precise placement of certain commitment-phase terms is
-documented as a future review point rather than hidden as a settled theorem.
+Optional role wrappers recover the ergonomics of prepared prover/verifier
+objects without making keys hidden state. A prover wrapper bundles the compiled
+object with a prover key and exposes \texttt{prove}; a verifier wrapper bundles
+it with a verifier key and exposes \texttt{verify}. The real capability
+boundary remains key possession.
+
+\section{Composition}
+
+Reductions are first-class because many proof systems do not end each
+interactive phase with accept/reject. A reduction transforms a source relation
+into a target relation. Sequential composition is therefore fundamental:
+\[
+    R_0 \xrightarrow{IR_1} R_1 \xrightarrow{IR_2} R_2.
+\]
+Argus implements this with binary composition. Two reductions compose when the
+target instance and witness of the first match the source instance and witness
+of the second. Repeating the binary constructor gives arbitrary finite
+sequential chains, limited in practice by Rust type ergonomics and trait
+solving rather than by the abstraction.
+
+A reduction followed by an argument is itself an argument for the original
+source relation. Argus represents this with a reduced-argument adapter. The
+prover first runs the reduction, obtaining a target instance and witness, then
+runs the final argument. The verifier computes the target instance by verifying
+the reduction and passes that target instance to the final argument verifier.
+
+Preprocessing composition is especially informative. Composition must combine
+not only protocol execution but also indexes, prover keys, verifier keys, and
+committed-index bytes. Argus represents composed indexes and keys structurally,
+routes each sub-key to the corresponding component, and relies on the backend
+to bind the combined committed index before the first challenge. For example,
+if a preprocessing reduction is followed by a preprocessing decider, the index,
+prover key, and verifier key are pairs. The composed prover routes the first
+prover key to the reduction and the second to the decider; the verifier routes
+the verifier keys analogously. If keys had been stored inside prepared protocol
+objects, this composition would require assembling hidden-state objects. With
+keys as inputs, it is just typed routing.
+
+The current composition framework is intentionally sequential. It does not try
+to be a general protocol DAG language. That restriction keeps the API small and
+matches the main use cases: chains of reductions and a final decider or
+argument.
 
 \section{Results}
 
-The main result of the project is an executable separation between protocol
-logic and transcript logic. Protocol implementations use a small channel API.
-DSFS owns absorb/squeeze ordering, public-input binding, proof serialization,
-and deterministic replay. The live backend owns interactive transport. This
-means that a protocol such as Schnorr can be authored once and then run in both
-modes, and a more involved reduction such as WARP can be compiled
-non-interactively without embedding sponge calls in the protocol code.
+The project produced an executable interface layer with DSFS and live backends,
+examples, and case studies. Schnorr and sumcheck-style protocols show the basic
+authoring model: the same channel code can be compiled through DSFS, and
+Schnorr can also run as a live interactive protocol.
 
-The second result is a unified interface for arguments, reductions, and
-preprocessing. Earlier designs often become strained when reductions enter the
-picture, because the verifier output is not a Boolean. Argus makes that output
-part of the type system. Composition adapters can therefore express
-\texttt{IR -> IR} and \texttt{IR -> IA} composition directly. Preprocessing also
-fits the same structure: keys are explicit inputs, compiled wrappers are
-stateless, and committed-index bytes are absorbed by the backend as public
-input.
+The largest case study is WARP, a linear-time accumulation scheme for R1CS,
+modeled as a preprocessing interactive reduction plus a final preprocessing
+interactive argument. Static material such as configuration, code information,
+Merkle parameters, and relation data belongs to the index and is represented by
+committed-index bytes; per-claim fresh instances and accumulators remain
+ordinary instances. The WARP protocol engine uses channels for messages and
+challenges and does not own a sponge.
 
-The third result is a security metadata layer that matches the way protocols
-are parameterized in practice. Instead of a single protocol-level error bound,
-Argus supports profiles derived from concrete instances or explicit instance
-families. This is especially useful for reductions because the target-instance
-bound of one reduction can feed the profile of the next protocol in a composed
-chain.
+Argus also includes instance-aware security metadata. Security profiles can be
+derived from concrete instances or explicit instance-family bounds, which is
+important when field size, round count, degree bounds, code parameters, or
+relation dimensions affect soundness. Composition combines these profiles along
+the reduction chain.
 
-The fourth result is a set of regression tests and examples that exercise the
-architecture. The WARP integration tests check deterministic index commitments,
-commitment sensitivity to relation/code/configuration changes, rejection under
-the wrong verifier key, separation between static index material and per-claim
-instances, DSFS prove/verify paths for the reduction, and the single-index
-\texttt{FullWarp} path. The sigma bridge has golden-vector tests for SHAKE128
-compatibility. The examples crate provides runnable DSFS and live-channel
-protocols.
+The sigma bridge is a smaller compatibility experiment. It rewrites the
+non-interactive sigma-proofs pipeline in the Argus style and shows that sigma
+protocols can be driven through the same IA-to-DSFS interface. The existing
+sigma-proofs Fiat--Shamir path is already used by other consumers, so the
+bridge remains compatibility-oriented evidence rather than the main
+contribution.
 
-From a project-submission perspective, Argus is best presented as a systems and
-interface contribution rather than as a new cryptographic construction. It
-implements and enforces a disciplined boundary around an analyzed DSFS
-transformation, and it demonstrates that the boundary is expressive enough for
-small arguments, reductions, preprocessing, external compatibility, and a WARP
-case study.
+From a submission perspective, the contribution is best understood as a systems
+and interface contribution. Argus is not a new proof system. It is a typed
+argument/reduction layer that makes public-coin protocol descriptions reusable
+across interactive execution, DSFS compilation, preprocessing, composition, and
+future IOP-to-IA compilation.
 
 \section{Limitations and Future Work}
 
-Argus remains a research prototype. It has not received production
-cryptographic review. The code is intended for protocol experimentation and
-security-model engineering, not deployment. This distinction is important
-because transcript correctness is necessary for security but not sufficient for
-a production proof system.
+Argus is a research prototype and has not received production cryptographic
+review. The interface enforces important implementation discipline, but
+transcript discipline is only one part of proof-system security.
 
-The long-term architectural goal is still to express BCS as DSFS applied to an
-interactive argument obtained from an IOP and a Merkle-tree commitment scheme.
-Equivalently, the channel layer should be the output of an iBCS-style compiler
-as well as the input to DSFS. The current project lays the interface groundwork
-for that direction, but it does not include an IOP-to-IA compiler.
+The most important missing piece is the IOP-to-IA compiler. The interface was
+designed so that an iBCS-style compiler can output an IA, but the current
+workspace does not yet implement that compiler. This is the natural next step
+for connecting Argus to the broader arkworks-pq direction.
 
-The channel codec boundary could be improved. Today, \texttt{ia-core}
-re-exports spongefish encoding and serialization vocabulary. This choice kept
-the prototype small and compatible with the DSFS backend, but it also means the
-abstract protocol-facing crate exposes names that are historically tied to the
-non-interactive backend. A cleaner future design may define a smaller Argus
-codec layer and adapt it to spongefish at the backend boundary.
+The codec boundary could also be improved. Today, the abstract channel layer is
+close to spongefish's encoding and NARG serialization vocabulary. This made the
+prototype small, but several details deserve review: whether
+\texttt{NargSerialize} belongs on an abstract interactive channel trait, whether
+verifier reads should consistently use \texttt{NargDeserialize} or the current
+\texttt{Deserialize} abstraction, and whether \texttt{ia-core} should own
+smaller codec traits instead of re-exporting spongefish's
+\texttt{Encoding}/\texttt{Decoding}.
 
-The WARP security profile is useful but not final. Some list-size and
-commitment-phase terms are intentionally conservative. Tightening them requires
-a closer pass against the WARP analysis and the precise adversarial model used
-by the DSFS security helper. The current implementation makes those choices
-visible in documentation and tests rather than presenting them as completed
-formalization.
+Another open point is public-coin branching. A verifier may inspect a prover
+message and choose which challenge type comes next if the choice is a
+deterministic public function of the instance and transcript so far. This still
+fits the public-coin model. It would not fit Argus if the next challenge
+depended on hidden verifier state or if protocol code manually derived the
+challenge from transcript operations.
 
-Finally, compatibility paths need continued care. The sigma bridge demonstrates
-that Argus can match external layouts when explicitly configured, but this
-should not blur the default transcript story. Keccak remains the Argus standard
-DSFS sponge, while SHAKE128 \texttt{StdHash} is a compatibility selection. Any
-future change to sponge choice, proof layout, salt policy, or transcript domain
-separation must trigger a protocol-identifier review.
+Some WARP security terms are intentionally conservative and should be tightened
+against the exact analysis. Composition could also become more ergonomic: the
+current binary composition model is type-safe and expressive for finite
+sequential chains, but deeply nested chains and preprocessing tuples can become
+clumsy.
+
+Finally, the statefulness rule deserves continued review. Allowing
+configuration in \texttt{self} is necessary for realistic protocols, but every
+behavior-affecting parameter must be reflected in domain separation. This is
+the right tradeoff for now, but it should remain a review checklist item for
+future protocols such as WHIR, STIR, FRI, and STARK components.
 
 \section{Conclusion}
 
-Argus shows that public-coin protocol implementations can be written as clean
-channel programs while leaving transcript mechanics to execution backends. This
-is a small interface idea with large consequences: it reduces duplicated
-Fiat--Shamir logic, makes transcript invariants local to the DSFS compiler,
-supports genuine interactive execution for sanity checks, and gives reductions
-and preprocessing a first-class place in the API.
+Argus supplies a missing protocol layer in the arkworks proof-system stack. It
+lets authors describe interactive arguments and reductions as typed
+public-coin channel programs, separates those descriptions from transcript
+mechanics, and provides DSFS and live backends for executing the same protocol
+objects. The design covers the eight useful combinations of
+argument/reduction, interactive/non-interactive, and plain/preprocessed
+protocols through a bottom-up capability tree rather than a single maximal
+type.
 
-The project's contribution is not a new proof system. It is a disciplined Rust
-architecture for implementing proof-system components without mixing protocol
-logic with transcript internals. The case studies suggest that the abstraction
-is expressive enough for both simple examples and a substantial accumulation
-protocol. The remaining work is to sharpen the codec boundary, complete the
-IOP-to-IA direction, and continue validating the security metadata against the
-underlying papers.
+The main lesson is that IA/IR should be treated as an interface in its own
+right. It is an input to DSFS, a target for future iBCS compilation, and a
+protocol that can be run interactively. Once that layer exists, transcript
+discipline, preprocessing, composition, and security metadata become backend
+and type-system concerns rather than ad hoc code inside each protocol.
 
 \begin{thebibliography}{9}
 
@@ -354,17 +368,16 @@ Alessandro Chiesa and Michele Orru.
 \newblock IACR ePrint 2025/536, 2025.
 \newblock \url{https://eprint.iacr.org/2025/536}
 
+\bibitem{spongefish-schnorr}
+arkworks-rs spongefish.
+\newblock Schnorr example.
+\newblock \url{https://github.com/arkworks-rs/spongefish/blob/main/spongefish/examples/schnorr.rs}
+
 \bibitem{warp}
 Benedikt B\"unz, Alessandro Chiesa, Giacomo Fenzi, and William Wang.
 \newblock \emph{Linear-Time Accumulation Schemes}.
 \newblock IACR ePrint 2025/753, 2025.
 \newblock \url{https://eprint.iacr.org/2025/753}
-
-\bibitem{spongefish}
-spongefish and spongefish-dsfs.
-\newblock Rust implementation of the duplex-sponge Fiat--Shamir transformation
-used by Argus.
-\newblock \url{https://github.com/ricardo-perello/spongefish}
 
 \end{thebibliography}
 
