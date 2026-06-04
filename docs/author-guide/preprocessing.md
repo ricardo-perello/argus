@@ -1,11 +1,11 @@
 # Preprocessing
 
-Preprocessing splits static relation data from per-proof claims.
+Preprocessing separates static relation data from per-claim data.
 
 Plain Schnorr carries the generator in every instance:
 
 ```text
-Instance = [G, X]
+Instance = (G, X)
 Witness  = x
 ```
 
@@ -19,161 +19,25 @@ Instance = X
 Witness  = x
 ```
 
-That is a small example. In real indexed protocols, the prover key may be large
-and the verifier key may be compact.
+The message flow is unchanged. The difference is where static data lives.
 
-## Author Trait
+## Keys Are Inputs
 
-Use `impl_preprocessing_argument!` for keyed arguments. Here is the
-preprocessed Schnorr shape from the examples.
+Preprocessing protocols expose setup through `PreprocessingCore`:
 
-First define the key and its committed index:
-
-```rust
-#[derive(Clone, Debug)]
-struct SchnorrKey<G: CurveGroup>(G);
-
-impl<G: CurveGroup + Encoding> CommittedIndex for SchnorrKey<G> {
-    fn committed_index(&self) -> CommittedIndexBytes {
-        let mut out = Vec::new();
-
-        // Domain tag for this key commitment. Without the tag, the same bytes
-        // could accidentally mean something else in another protocol.
-        out.extend_from_slice(b"preprocessed-schnorr:vk:v1");
-
-        // Canonical public encoding of the indexed relation data.
-        out.extend_from_slice(self.0.encode().as_ref());
-
-        CommittedIndexBytes::new(out)
-    }
-}
+```text
+preprocess(index) -> (prover_key, verifier_key)
 ```
 
-Then write the preprocessing argument:
+Execution remains keyed:
 
-```rust
-ia_core::impl_preprocessing_argument! {
-    impl<G> PreprocessingInteractiveArgument for PreprocessedSchnorr<G>
-    where
-        G: CurveGroup + PrimeGroup + Encoding + Deserialize,
-        G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
-    {
-        fn protocol_id(&self) -> impl AsRef<[u8]> {
-            ia_core::pad_protocol_id(b"preprocessed-schnorr")
-        }
-
-        // Indexed relation R_G = { (X, x) : X = x * G }.
-        type Index = G;
-
-        // This toy example gives both parties the same key shape.
-        // In lookup-style protocols, PK and VK are usually different.
-        type ProverKey = SchnorrKey<G>;
-        type VerifierKey = SchnorrKey<G>;
-
-        // Per-claim data: public key X and secret scalar x.
-        type Instance = G;
-        type Witness = G::ScalarField;
-
-        fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
-            (SchnorrKey(*ix), SchnorrKey(*ix))
-        }
-
-        #[allow(non_snake_case)]
-        fn prove<P: ProverChannel<Unit = u8>>(
-            &self,
-            ch: &mut P,
-            pk: &SchnorrKey<G>,
-            instance: &Self::Instance,
-            witness: &Self::Witness,
-        ) {
-            let G_gen = pk.0;
-            let k = G::ScalarField::rand(&mut OsRng);
-            let K = G_gen * k;
-            ch.send_prover_message(&K);
-
-            let c: G::ScalarField = ch.read_verifier_message();
-            let r = k + c * witness;
-            ch.send_prover_message(&r);
-        }
-
-        #[allow(non_snake_case)]
-        fn verify<V: VerifierChannel<Unit = u8>>(
-            &self,
-            ch: &mut V,
-            vk: &SchnorrKey<G>,
-            instance: &Self::Instance,
-        ) -> VerificationResult<()> {
-            let G_gen = vk.0;
-            let X = *instance;
-
-            let K: G = ch.read_prover_message()?;
-            let c: G::ScalarField = ch.send_verifier_message();
-            let r: G::ScalarField = ch.read_prover_message()?;
-
-            if G_gen * r == K + X * c {
-                Ok(())
-            } else {
-                Err(VerificationError)
-            }
-        }
-    }
-}
+```text
+prove(ch, prover_key, instance, witness)
+verify(ch, verifier_key, instance)
 ```
 
-The important difference from plain Schnorr is not the message flow. The message
-flow is the same. The difference is where `G` lives: the plain protocol carries
-`G` in every instance, while the preprocessing protocol receives it through
-`pk` or `vk`.
-
-Preprocessing reductions use `impl_preprocessing_reduction!` and return target
-instances in the same way plain reductions do.
-
-## Committed Index
-
-Both key types must implement `CommittedIndex`. In the Schnorr example, the same
-`SchnorrKey` type is used for both sides, so the implementation above covers
-both. In an asymmetric protocol, the implementations usually share a helper:
-
-```rust
-fn lookup_committed_index(root: &[u8; 32], n: u32) -> CommittedIndexBytes {
-    let mut out = Vec::new();
-    out.extend_from_slice(b"preprocessed-lookup:vk:v1");
-    out.extend_from_slice(root);
-    out.extend_from_slice(&n.to_le_bytes());
-    CommittedIndexBytes::new(out)
-}
-
-impl CommittedIndex for LookupVerifierKey {
-    fn committed_index(&self) -> CommittedIndexBytes {
-        lookup_committed_index(&self.root, self.n)
-    }
-}
-
-impl CommittedIndex for LookupProverKey {
-    fn committed_index(&self) -> CommittedIndexBytes {
-        let root = *self.tree.root().as_bytes();
-        let n = u32::try_from(self.table.len()).expect("table size fits in u32");
-        lookup_committed_index(&root, n)
-    }
-}
-```
-
-The committed index is public transcript input. It binds the proof to the
-indexed relation before the first challenge. For lookup, that means the proof is
-bound to `(root, n)` before the row opening challenge flow begins.
-
-The provided `preprocess_checked(&ix)` helper calls `preprocess(&ix)` and
-debug-asserts:
-
-```rust
-pk.committed_index() == vk.committed_index()
-```
-
-DSFS runs preprocessing through this helper.
-
-## Compile with DSFS
-
-Preprocessing DSFS wrappers are stateless. They do not store keys.
+The compiled DSFS wrapper stores the protocol body and sponge configuration, but
+it stores no keys:
 
 ```rust
 use ia_core::{PreprocessingCore, PreprocessingNonInteractiveArgument};
@@ -185,42 +49,77 @@ let pnia = dsfs::preprocessing_non_interactive_argument(
 );
 
 let (pk, vk) = pnia.preprocess(&index);
-
 let proof = pnia.prove(&pk, &session, &instance, &witness);
 pnia.verify(&vk, &session, &instance, &proof)?;
 ```
 
-The prover side binds `pk.committed_index()`. The verifier side binds
-`vk.committed_index()`. If they differ, the transcripts diverge and verification
-fails.
+This is intentional. A prover receives the prover key; a verifier receives the
+verifier key. The protocol object itself is not a hidden store of setup
+material.
 
-## Key Asymmetry
+## Committed Index
 
-Preprocessed lookup is the canonical example:
+Both key types implement `CommittedIndex`:
+
+```rust
+pub trait CommittedIndex {
+    fn committed_index(&self) -> CommittedIndexBytes;
+}
+```
+
+For keys produced by the same preprocessing call, the committed-index bytes must
+match:
 
 ```text
-Index       = Vec<u32>
-ProverKey   = table + Merkle tree
-VerifierKey = root + length
-Instance    = (i, claimed_value)
+pk.committed_index() == vk.committed_index()
+```
+
+DSFS binds those bytes as public input before the first challenge. This lets a
+proof be tied to the indexed relation without requiring the verifier to hold the
+whole prover key or requiring protocol code to manually absorb setup data.
+
+The provided `preprocess_checked(&ix)` helper calls `preprocess(&ix)` and
+debug-asserts that the two committed indexes agree. Backends use this helper
+when they run preprocessing.
+
+## Asymmetric Keys
+
+Lookup-style protocols show why preprocessing is useful:
+
+```text
+Index       = table T
+ProverKey   = T plus Merkle tree
+VerifierKey = Merkle root plus table length
+Instance    = (row, claimed value)
 Witness     = ()
 ```
 
-The prover key is large because it must open paths. The verifier key is small
-because it only needs to check paths against the root.
+The prover key is large because it needs opening material. The verifier key is
+small because it only needs to check openings against the root. Both keys can
+derive the same committed-index bytes, usually through one shared helper.
 
-The protocol body still uses channels. The Merkle root is not manually absorbed
-by the protocol; it is exposed through `CommittedIndex` and bound by the backend.
+```rust
+fn lookup_committed_index(root: &[u8; 32], n: u32) -> CommittedIndexBytes {
+    let mut out = Vec::new();
+    out.extend_from_slice(b"preprocessed-lookup:vk:v1");
+    out.extend_from_slice(root);
+    out.extend_from_slice(&n.to_le_bytes());
+    CommittedIndexBytes::new(out)
+}
+```
+
+The protocol body still sends and receives typed messages through the channel.
+It does not absorb the Merkle root itself.
 
 ## When To Use Preprocessing
 
 Use preprocessing when:
 
-- Many proofs share the same static relation data.
-- The verifier should keep a compact key.
-- The prover needs derived material such as tables, trees, bases, or oracles.
-- The transcript must bind an indexed relation separately from the per-claim
+- many proofs share the same static relation data,
+- the verifier should keep a compact key,
+- the prover needs derived material such as tables, trees, bases, or oracles,
+- the transcript must bind an indexed relation separately from the per-claim
   instance.
 
 Keep a protocol plain when setup would only move fields around without changing
-the cost model or relation structure.
+the relation structure or cost model.

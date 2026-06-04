@@ -1,40 +1,56 @@
 # Argus Documentation
 
-Argus is a Rust workspace for writing public-coin interactive protocols once
-against a generic channel interface and running them through different backends.
+Argus gives protocol authors a clean Rust interface for public-coin interactive
+arguments and reductions.
 
-The submission-facing story is simple:
+The motivation is simple: transcript libraries can already build
+Fiat-Shamir proofs, but without a protocol interface the prover and verifier
+often describe the transcript imperatively. Sponge calls, challenge derivation,
+and proof layout become entangled with the mathematical protocol. That is the
+right level of abstraction for a transcript backend. It is not the right level
+for a reusable IA or IR.
 
-- **Protocol code** uses only `ia-core` channel traits.
-- **Backends** own execution mechanics such as transcript ordering, sponge
-  absorption, challenge derivation, and interactive transport.
-- **Security metadata** is instance-aware: a security profile is evaluated for a
-  concrete instance or for an explicit instance-family bound.
-- **Preprocessing keys are inputs**: compiled wrappers stay stateless while DSFS
-  binds committed-index bytes before the first challenge.
-- **IA is also a target language**: future compilers such as iBCS can output an
-  IA/channel program, which can then run through the same backends.
+Argus separates those jobs. A protocol is written as a pure channel program:
+the prover sends messages and reads public coins; the verifier reads messages
+and sends public coins. A backend gives those operations concrete meaning.
 
-For the six-page final report, see `docs/final-report.tex` and
-`docs/final-report.pdf`.
+```text
+protocol body
+    |
+    v
+ia-core channels
+    |
+    +-- spongefish-dsfs -> non-interactive proof
+    |
+    +-- live-channel    -> interactive execution
+    |
+    +-- future compiler target, such as IOP + commitment -> IA
+```
 
-## Recommended reading path
+This makes the IA layer useful in both directions. It can be consumed by DSFS,
+run directly as an interactive protocol, or serve as the output interface for a
+future compiler that lowers a richer formalism into an interactive argument.
 
-1. [Architecture overview](architecture/overview.md)
-2. [Channel model](architecture/channel-model.md)
-3. [IA, IR, and composition](architecture/ia-ir.md)
-4. [Transcript invariants](security/transcript-invariants.md)
-5. [Instance-aware security](security/instance-aware-security.md)
-6. [ia-core API](api/ia-core.md)
+## Where To Start
 
-Historical design iterations are preserved under [Documentation History](history/README.md).
+- [Getting Started](getting-started.md): commands and the shortest runnable path.
+- [Architecture Overview](architecture/overview.md): the main design story.
+- [Channel Model](architecture/channel-model.md): what protocol code may and may
+  not do.
+- [Author Guide](author-guide/overview.md): how to write protocols.
+- [Transcript Invariants](security/transcript-invariants.md): rules for backend
+  and transcript changes.
+- [Final Report](final-report.md): six-page academic report.
 
-## Current Design Notes
+## Project Shape
 
-- [Protocol Core Tree and DSFS Constructors](protocol-core-dsfs-presentation.md)
-  is the current presentation snapshot of the OOP-style core traits, semantic
-  DSFS constructors, keys-as-inputs preprocessing wrappers, preprocessing
-  composition, security metadata, and WARP shape.
-- [Preprocessing Indexed Relations v2](preprocessing-indexed-relations-v2.md)
-  is the current implementation snapshot for keyed preprocessing protocols,
-  stateless DSFS wrappers, and WARP migration.
+Argus covers a matrix of protocol shapes:
+
+- argument or reduction,
+- interactive or non-interactive,
+- plain or preprocessing.
+
+The Rust API uses capability-specific traits instead of one maximal protocol
+type. A plain interactive argument cannot accidentally call preprocessing APIs,
+while preprocessing protocols still share the same channel machinery and
+composition model.

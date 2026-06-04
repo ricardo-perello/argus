@@ -1,12 +1,19 @@
 # `sigma-bridge`
 
-`sigma-bridge` drives `sigma-proofs` protocols through the Argus IA-to-DSFS
-pipeline.
+`sigma-bridge` is a compatibility experiment. It drives selected
+`sigma-proofs` protocols through the Argus channel model and DSFS backend while
+preserving external proof-layout expectations where required.
 
-It is compatibility-oriented. The main concerns are:
+This is not the central contribution of Argus. It is useful because it stresses
+the abstraction against an existing proof layout rather than only against toy
+protocols.
+
+## Compatibility Concerns
+
+The bridge is responsible for:
 
 - matching external transcript layouts where required,
-- preserving `sigma-proofs` vector behavior,
+- preserving selected `sigma-proofs` vector behavior,
 - deriving session IDs in the expected format,
 - selecting `StdHash` only for explicit compatibility paths.
 
@@ -30,8 +37,6 @@ This is intentional for compatibility and should not be simplified.
 The Shake128 `sigma-proofs` fixtures are byte-for-byte golden tests in
 `crates/sigma-bridge/tests/golden_vectors.rs` when using `StdHash`.
 
-The Keccak-named fixture in the same test file is a bridge regression for
-`prove_with_protocol_domain`: it uses the fixture's `ciphersuite` as the
-explicit 64-byte Fiat-Shamir protocol tag while still running the `StdHash`
-compatibility transcript. Do not infer the active sponge from that filename
-alone.
+Some fixture names mention Keccak even when the compatibility path is exercising
+an external protocol tag with the `StdHash` transcript. Do not infer the active
+sponge from a fixture filename alone.

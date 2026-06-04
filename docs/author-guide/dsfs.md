@@ -1,6 +1,7 @@
 # Compile with DSFS
 
-DSFS turns the interactive channel program into a non-interactive proof.
+`spongefish-dsfs` turns an interactive channel program into a non-interactive
+proof.
 
 For a plain argument:
 
@@ -9,10 +10,8 @@ use ia_core::NonInteractiveArgument;
 use spongefish_dsfs as dsfs;
 
 let session = spongefish::session!("schnorr example");
-let schnorr = Schnorr::<G>::default();
-
 let nia = dsfs::plain_non_interactive_argument(
-    schnorr,
+    Schnorr::<G>::default(),
     dsfs::Keccak::default(),
 );
 
@@ -20,16 +19,16 @@ let proof = nia.prove(&session, &instance, &witness);
 nia.verify(&session, &instance, &proof)?;
 ```
 
-The constructor consumes the interactive body and a transcript sponge
-configuration. The returned value implements `NonInteractiveArgument`.
+The constructor consumes the interactive body and a sponge configuration. The
+returned value implements `NonInteractiveArgument`.
 
-## What DSFS Does
+## What DSFS Owns
 
 During proving, DSFS:
 
 - derives the transcript domain separator,
 - absorbs protocol/session/public input before the first challenge,
-- records prover messages into the proof string,
+- records prover messages into the proof,
 - absorbs prover messages before squeezing challenges,
 - returns a `NargProof`.
 
@@ -39,25 +38,25 @@ During verification, DSFS:
 - reads prover messages from proof bytes,
 - absorbs them in the same order,
 - squeezes the same challenges,
-- rejects if the protocol check fails or proof bytes are malformed/trailing.
+- rejects malformed or trailing proof bytes.
 
 The protocol body sees only the channel API.
 
 ## Session
 
-The `Session` is public context bound into the proof. Use it for application
-context such as statement grouping, batch identity, or higher-level protocol
+The session is public context bound into the proof. Use it for application
+context such as batch identity, statement grouping, or higher-level protocol
 state.
 
 ```rust
 let session = spongefish::session!("my application session");
 ```
 
-A proof for one session should not verify under another session.
+A proof for one session should not verify under another.
 
-## Plain Reductions
+## Reductions
 
-DSFS can also compile reductions:
+Reductions compile the same way, but verification returns a target instance:
 
 ```rust
 use ia_core::NonInteractiveReduction;
@@ -74,22 +73,10 @@ let verified_target =
     nir.verify(&session, &source_instance, &proof)?;
 ```
 
-The verifier returns the target instance because reductions produce claims, not
-just accept/reject bits.
-
 ## Sponge Choice
 
-Argus's standard DSFS path uses Keccak:
+Argus's standard DSFS path uses Keccak.
 
-```rust
-dsfs::Keccak::default()
-```
-
-`StdHash` is available for explicit compatibility with spongefish or
+`StdHash` is available for explicit compatibility with external spongefish or
 `sigma-proofs` layouts. Do not silently change sponge choice for an existing
-protocol without reviewing the DSFS-level protocol ID and transcript fixtures.
-
-## Backend Ownership
-
-If you find yourself wanting to call a sponge method from protocol code, stop.
-The DSFS backend is the only layer that should touch sponge operations.
+proof format without reviewing protocol id, domain separation, and fixtures.

@@ -1,50 +1,39 @@
 # Getting Started
 
-Build everything:
+This page is the shortest path from a fresh checkout to a running protocol.
+
+## Build and Test
 
 ```bash
 cargo build
-```
-
-Run the full test suite:
-
-```bash
 cargo test
 ```
 
-Run examples:
+Run the smallest example as a DSFS-compiled non-interactive proof:
 
 ```bash
 cargo run -p argus-examples --bin schnorr
+```
+
+Run the same Schnorr protocol with live prover and verifier threads:
+
+```bash
 cargo run -p argus-examples --bin schnorr -- --live
+```
+
+Other useful examples:
+
+```bash
 cargo run -p argus-examples --bin sumcheck
 cargo run -p argus-examples --bin sumcheck_commit
 cargo run -p argus-examples --bin composition
+cargo run -p argus-examples --bin preprocessed_lookup
 cargo run -p argus-examples --bin warp_accumulate
 ```
 
-Run only WARP tests:
+## First Protocol Shape
 
-```bash
-cargo test -p warp
-```
-
-Build local rustdoc:
-
-```bash
-cargo doc --workspace --no-deps
-```
-
-## Implementing a protocol
-
-1. Define the public instance and private witness types.
-2. Write one macro authoring block with `ia_core::impl_interactive_argument!`
-   or `ia_core::impl_interactive_reduction!`.
-3. Use only the channel API inside protocol code.
-4. Optionally implement `ArgumentSecurity` or `ReductionSecurity`.
-5. Run through `spongefish::dsfs` or `live-channel`.
-
-For example, a plain argument author writes:
+Most protocols start as an interactive argument:
 
 ```rust
 ia_core::impl_interactive_argument! {
@@ -62,7 +51,9 @@ ia_core::impl_interactive_argument! {
             instance: &Self::Instance,
             witness: &Self::Witness,
         ) {
-            /* send prover messages, read verifier challenges */
+            ch.send_prover_message(/* ... */);
+            let challenge = ch.read_verifier_message();
+            /* continue the protocol */
         }
 
         fn verify<V: VerifierChannel<Unit = u8>>(
@@ -70,34 +61,45 @@ ia_core::impl_interactive_argument! {
             ch: &mut V,
             instance: &Self::Instance,
         ) -> VerificationResult<()> {
-            /* read prover messages, send verifier challenges */
+            let message = ch.read_prover_message()?;
+            let challenge = ch.send_verifier_message();
+            /* check the transcript */
             Ok(())
         }
     }
 }
 ```
 
-The macro expands to `ProtocolCore`, `ArgumentCore`, and `InteractiveArgument`
-impls. Manual impls are still supported for low-level adapters and tests.
+The protocol body should read like the mathematical protocol. It should not
+instantiate sponges, absorb public input, derive Fiat-Shamir challenges, or
+inspect proof bytes.
 
-DSFS construction is explicit:
+## Compile with DSFS
 
 ```rust
-let nia = spongefish_dsfs::plain_non_interactive_argument(body, spongefish_dsfs::Keccak::default());
+use ia_core::NonInteractiveArgument;
+use spongefish_dsfs as dsfs;
+
+let nia = dsfs::plain_non_interactive_argument(
+    MyProtocol,
+    dsfs::Keccak::default(),
+);
+
 let proof = nia.prove(&session, &instance, &witness);
 nia.verify(&session, &instance, &proof)?;
 ```
 
-For preprocessed protocols, use `ia_core::impl_preprocessing_argument!` or
-`ia_core::impl_preprocessing_reduction!`. The block adds `Index`, `ProverKey`,
-`VerifierKey`, and `preprocess(ix) -> (pk, vk)`. The DSFS wrapper is stateless;
-run preprocessing once, then pass keys into proving and verification:
+For preprocessing protocols, the compiled object stores no keys:
 
 ```rust
-let nia = spongefish_dsfs::preprocessing_non_interactive_argument(preprocessing_protocol, sponge);
-let (pk, vk) = nia.preprocess(&index);
-let proof = nia.prove(&pk, &session, &instance, &witness);
-nia.verify(&vk, &session, &instance, &proof)?;
+let pnia = dsfs::preprocessing_non_interactive_argument(
+    MyPreprocessedProtocol,
+    dsfs::Keccak::default(),
+);
+
+let (pk, vk) = pnia.preprocess(&index);
+let proof = pnia.prove(&pk, &session, &instance, &witness);
+pnia.verify(&vk, &session, &instance, &proof)?;
 ```
 
-Protocol code must never instantiate sponges or perform Fiat-Shamir logic.
+Next: [Author Guide](author-guide/overview.md).

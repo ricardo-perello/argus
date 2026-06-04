@@ -1,49 +1,64 @@
 # `ia-core`
 
 `ia-core` is the protocol-facing API crate. Protocol authors should be able to
-implement a protocol using this crate alone: no transcript internals, sponge
-APIs, or DSFS-specific state.
+implement a protocol using this crate alone: no transcript internals, no sponge
+APIs, and no DSFS-specific state.
 
-## Core Tree
+## Core Traits
 
-Argus uses explicit core traits as an inheritance spine:
+The common trait spine is:
 
 ```text
 ProtocolCore
 ├── ArgumentCore
-│   ├── InteractiveArgument
-│   └── PreprocessingInteractiveArgument
-└── ReductionCore
-    ├── InteractiveReduction
-    └── PreprocessingInteractiveReduction
+├── ReductionCore
+└── PreprocessingCore
 ```
 
-`ProtocolCore` owns `protocol_id(&self)`. `ArgumentCore` owns `Instance` and
-`Witness`. `ReductionCore` owns source/target instance and witness types.
+`ProtocolCore` provides:
 
-`PreprocessingCore` is the preprocessing capability:
+```rust
+fn protocol_id(&self) -> impl AsRef<[u8]>;
+```
 
-- `Index`
-- `ProverKey: CommittedIndex`
-- `VerifierKey: CommittedIndex`
-- `preprocess(ix) -> (pk, vk)`
+`ArgumentCore` provides `Instance` and `Witness`.
 
-Plain execution traits only contain channel logic. Preprocessing execution traits
-receive `pk` or `vk` explicitly.
+`ReductionCore` provides `SourceInstance`, `SourceWitness`,
+`TargetInstance`, and `TargetWitness`.
 
-## Authoring Macros
+`PreprocessingCore` provides:
 
-Most protocol authors should write one macro block:
+```rust
+type Index;
+type ProverKey: CommittedIndex;
+type VerifierKey: CommittedIndex;
+
+fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey);
+```
+
+Preprocessing execution traits receive keys explicitly. They do not assume keys
+live inside the protocol object.
+
+## Interactive Leaves
+
+Protocol authors normally implement one of these:
+
+- `InteractiveArgument`,
+- `InteractiveReduction`,
+- `PreprocessingInteractiveArgument`,
+- `PreprocessingInteractiveReduction`.
+
+Most authors use the macro surface:
 
 ```rust
 ia_core::impl_interactive_argument! {
-    impl InteractiveArgument for Schnorr {
+    impl InteractiveArgument for MyProtocol {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
-            ia_core::pad_protocol_id(b"schnorr")
+            ia_core::pad_protocol_id(b"my-protocol")
         }
 
-        type Instance = SchnorrInstance;
-        type Witness = SchnorrWitness;
+        type Instance = MyInstance;
+        type Witness = MyWitness;
 
         fn prove<P: ProverChannel<Unit = u8>>(
             &self,
@@ -51,7 +66,7 @@ ia_core::impl_interactive_argument! {
             instance: &Self::Instance,
             witness: &Self::Witness,
         ) {
-            /* channel-only protocol logic */
+            /* channel-only prover logic */
         }
 
         fn verify<V: VerifierChannel<Unit = u8>>(
@@ -59,7 +74,7 @@ ia_core::impl_interactive_argument! {
             ch: &mut V,
             instance: &Self::Instance,
         ) -> VerificationResult<()> {
-            /* channel-only protocol logic */
+            /* channel-only verifier logic */
             Ok(())
         }
     }
@@ -73,140 +88,82 @@ Available macros:
 - `impl_preprocessing_argument!`
 - `impl_preprocessing_reduction!`
 
-The macros expand to normal impl blocks for `ProtocolCore`,
-`ArgumentCore`/`ReductionCore`, `PreprocessingCore` when needed, and the
-executable leaf trait. They support generic impl headers, optional `where`
-clauses, and attributes on methods or associated types. Manual impls remain
-part of the API.
+Manual impls are part of the API when adapters or tests need them.
 
-## Core Traits
+## Channels
 
-- `ProtocolCore`: protocol identity for domain separation.
-- `ArgumentCore`: statement/witness shape for accept/reject protocols.
-- `ReductionCore`: source/target relation shape for reductions.
-- `PreprocessingCore`: preprocessing key-generation capability.
-- `InteractiveArgument`: public-coin argument with accept/reject verifier.
-- `InteractiveReduction`: public-coin reduction with verifier-produced target
-  instance.
-- `PreprocessingInteractiveArgument`: keyed/preprocessed argument authoring surface.
-- `PreprocessingInteractiveReduction`: keyed/preprocessed reduction authoring surface.
-- `ProverChannel`: prover-side channel interface.
-- `VerifierChannel`: verifier-side channel interface.
+Protocol implementations use:
 
-## Preprocessing Keys as Inputs
+- `ProverChannel`,
+- `VerifierChannel`.
 
-Preprocessing protocols stay keyed all the way through the interactive and
-non-interactive APIs. `PreprocessingCore::preprocess(&ix)` deterministically
-derives a prover key and verifier key:
+The byte-oriented DSFS path usually appears as:
 
 ```rust
-let (pk, vk) = body.preprocess(&ix);
+fn prove<P: ProverChannel<Unit = u8>>(...)
+fn verify<V: VerifierChannel<Unit = u8>>(...)
 ```
 
-Both key types implement `CommittedIndex`, so a backend can bind the same public
-committed index from whichever key it receives:
+`Unit` is the channel alphabet. The concrete message type is chosen at each
+send/read call.
+
+## Non-Interactive Vocabulary
+
+`ia-core` owns the abstract NARG vocabulary:
+
+- `NargProof`,
+- `NonInteractiveArgument`,
+- `NonInteractiveReduction`,
+- `PreprocessingNonInteractiveArgument`,
+- `PreprocessingNonInteractiveReduction`.
+
+Concrete proof construction is backend-owned. In this workspace,
+`spongefish-dsfs` implements the DSFS compiler backend.
+
+## Preprocessing Public Input
+
+`CommittedIndex` gives a backend canonical public bytes for an indexed relation:
 
 ```rust
-let prover_commit = pk.committed_index();
-let verifier_commit = vk.committed_index();
-assert_eq!(prover_commit, verifier_commit);
+pub trait CommittedIndex {
+    fn committed_index(&self) -> CommittedIndexBytes;
+}
 ```
 
-`preprocess_checked(&ix)` is the provided helper used by compiled backends; it
-debug-asserts that the two keys agree on `committed_index()`.
+Both preprocessing keys implement it. For matching keys produced by
+`preprocess(ix)`, the committed-index bytes should agree. The
+`preprocess_checked` helper debug-asserts that agreement.
 
-## Indexed Public Input
-
-`CommittedIndexBytes` is the canonical public byte string for a verifier key.
-`IndexedInstance<I>` and `IndexedInstanceRef<'_, I>` encode:
-
-```text
-tag || committed_index.encode()
-    || u64_le(len(instance.encode())) || instance.encode()
-```
-
-DSFS uses `IndexedInstanceRef` internally so stateless preprocessing
-non-interactive wrappers can accept bare instances without cloning them while
-absorbing `committed_index || instance` before the first challenge.
-
-## Proof Vocabulary
-
-`ia-core` owns the abstract non-interactive vocabulary:
-
-- `NargProof`
-- `NonInteractiveArgument: ArgumentCore`
-- `NonInteractiveReduction: ReductionCore`
-- `PreprocessingNonInteractiveArgument`
-- `PreprocessingNonInteractiveReduction`
-
-The non-interactive traits inherit their statement/witness shape and
-`protocol_id` from the same core tree as interactive protocols. They add only
-`Session`, `prove`, and `verify`.
-
-Concrete compilation to proof bytes is backend-owned.
-
-## Source Layout
-
-The crate is organized by layer:
-
-```text
-src/
-  channel.rs
-  core.rs
-  interactive/
-    argument.rs
-    reduction.rs
-    preprocessing.rs
-    macros.rs
-    composition/
-      plain.rs
-      preprocessing.rs
-    adapters/
-      plain_to_preprocessing.rs
-  noninteractive/
-    argument.rs
-    reduction.rs
-    preprocessing.rs
-    proof.rs
-    adapters/
-      narg_to_interactive.rs
-  preprocessing/
-  security/
-```
-
-`lib.rs` keeps the public imports flat, so consumers can continue importing
-traits and helpers directly from `ia_core`.
+`IndexedInstance` and `IndexedInstanceRef` are backend-facing wrappers that pair
+committed-index bytes with the ordinary instance before transcript absorption.
+Protocol code should not construct them manually.
 
 ## Composition
 
 Use:
 
-- `ChainedReduction` for `IR -> IR`
-- `ReducedArgument` for `IR -> IA`
+- `ChainedReduction` for `IR -> IR`,
+- `ReducedArgument` for `IR -> IA`,
+- `TrivialIndexedArgument` and `TrivialIndexedReduction` for explicit
+  plain-to-preprocessing composition.
 
-Composition derives protocol IDs and security metadata from the components.
-Preprocessing composition is available when both components use preprocessing;
-mixed composition uses `TrivialIndexedArgument` or `TrivialIndexedReduction`
-explicitly.
+Composition also derives protocol IDs and security metadata from the component
+protocols.
 
 ## Security Metadata
 
-- `ArgumentSecurity`
-- `ReductionSecurity`
-- `PreprocessingArgumentSecurity`
-- `PreprocessingReductionSecurity`
+Security traits are opt-in:
 
-The preprocessing variants separate index-derived security information from
-per-instance security information.
+- `ArgumentSecurity`,
+- `ReductionSecurity`,
+- `PreprocessingArgumentSecurity`,
+- `PreprocessingReductionSecurity`.
+
+The preprocessing variants separate index-derived information from per-instance
+information.
 
 ## Protocol Implementation Rule
 
-Inside protocol code, use only:
-
-- `send_prover_message`
-- `read_prover_message`
-- `send_verifier_message`
-- `read_verifier_message`
-
-Do not instantiate sponges, derive challenges manually, or absorb public inputs
-inside protocol implementations.
+Inside protocol code, use only the channel API. Do not instantiate sponges,
+derive challenges manually, absorb public inputs, or depend on proof byte
+layout.

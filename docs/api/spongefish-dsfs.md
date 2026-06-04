@@ -1,12 +1,10 @@
-# `spongefish::dsfs`
+# `spongefish-dsfs`
 
-`spongefish::dsfs` is the DSFS compiler backend used by Argus. It compiles the
-same IA/IR channel programs into non-interactive proof artifacts.
+`spongefish-dsfs` is the DSFS compiler backend used by Argus. It compiles
+interactive arguments and reductions into non-interactive proof artifacts while
+owning all transcript mechanics.
 
-The public API now uses semantic constructors: the call names the
-non-interactive object being constructed.
-
-## Arguments
+## Plain Arguments
 
 ```rust
 let nia = spongefish_dsfs::plain_non_interactive_argument(
@@ -18,13 +16,12 @@ let proof = nia.prove(&session, &instance, &witness);
 nia.verify(&session, &instance, &proof)?;
 ```
 
-The concrete wrapper is `DsfsArgument<IA, S, DS, SALT_LEN>`, but most callers
-interact with it through `ia_core::NonInteractiveArgument`.
+The returned value implements `ia_core::NonInteractiveArgument`.
 
 Use `plain_non_interactive_argument_with_salt` when the proof layout includes an
 explicit prover salt.
 
-## Reductions
+## Plain Reductions
 
 ```rust
 let nir = spongefish_dsfs::plain_non_interactive_reduction(
@@ -39,55 +36,50 @@ let verified_target =
     nir.verify(&session, &source_instance, &proof)?;
 ```
 
-The concrete wrapper is `DsfsReduction<IR, S, DS, SALT_LEN>`.
+The returned value implements `ia_core::NonInteractiveReduction`.
 
-## Preprocessing Arguments and Reductions
+## Preprocessing
 
-For preprocessing cores, construct the stateless DSFS wrapper, run preprocessing
-to obtain keys, and pass the relevant key into each call:
+Preprocessing wrappers store the protocol body and sponge configuration, but no
+keys:
 
 ```rust
-let nia = spongefish_dsfs::preprocessing_non_interactive_argument(
+let pnia = spongefish_dsfs::preprocessing_non_interactive_argument(
     preprocessing_argument,
     spongefish_dsfs::Keccak::default(),
 );
 
-let (pk, vk) = nia.preprocess(&index);
-let proof = nia.prove(&pk, &session, &instance, &witness);
-nia.verify(&vk, &session, &instance, &proof)?;
+let (pk, vk) = pnia.preprocess(&index);
+let proof = pnia.prove(&pk, &session, &instance, &witness);
+pnia.verify(&vk, &session, &instance, &proof)?;
+```
 
-let nir = spongefish_dsfs::preprocessing_non_interactive_reduction(
+Reductions use the same pattern:
+
+```rust
+let pnir = spongefish_dsfs::preprocessing_non_interactive_reduction(
     preprocessing_reduction,
     spongefish_dsfs::Keccak::default(),
 );
 
-let (pk, vk) = nir.preprocess(&index);
+let (pk, vk) = pnir.preprocess(&index);
 let (proof, target, target_witness) =
-    nir.prove(&pk, &session, &source_instance, &source_witness);
-let verified_target = nir.verify(&vk, &session, &source_instance, &proof)?;
+    pnir.prove(&pk, &session, &source_instance, &source_witness);
+let verified_target = pnir.verify(&vk, &session, &source_instance, &proof)?;
 ```
 
-The second constructor parameter is named `duplex_sponge` in the API; the
-corresponding type parameter is `DS`.
+Internally the backend derives `pk.committed_index()` on the prover side and
+`vk.committed_index()` on the verifier side. It absorbs those bytes paired with
+the ordinary instance before the first verifier challenge, then calls keyed
+protocol execution with the bare instance.
 
-Preprocessing wrappers store the protocol body and sponge, but no keys. They
-accept bare per-claim instances. Internally the backend derives
-`pk.committed_index()` on the prover side and `vk.committed_index()` on the
-verifier side, then absorbs:
+## Sponge Choice
 
-```text
-IndexedInstanceRef { committed_index, instance }
-```
+The Argus standard DSFS path uses `Keccak`.
 
-before any verifier challenge is squeezed, then calls keyed protocol execution:
-
-```text
-prove(ch, pk, instance, witness)
-verify(ch, vk, instance)
-```
-
-Applications that persist preprocessing keys pass those keys directly to
-`prove` and `verify`; no wrapper stores keys.
+`StdHash` is available for explicit compatibility paths. Treat sponge choice as
+part of the compiled proof format: changing it requires reviewing protocol id,
+domain separation, and test vectors.
 
 ## Security Helpers
 
@@ -109,12 +101,6 @@ The `_with` variants take explicit `SpongeParams`.
 
 ## Transcript Ownership
 
-DSFS owns transcript mechanics. It must absorb public inputs before the first
-challenge, absorb prover messages before challenge derivation, replay
-deterministically, and reject malformed proof byte streams.
-
-Plain protocols absorb the ordinary instance. Preprocessing protocols absorb
-the committed index plus the ordinary instance. Protocol code never performs
-either absorption itself.
-
-See [Transcript Invariants](../security/transcript-invariants.md).
+DSFS owns public-input absorption, prover-message absorption, challenge
+derivation, proof byte serialization, deterministic replay, and malformed-proof
+rejection. Protocol code should not duplicate any of that logic.

@@ -1,51 +1,57 @@
 # Backends
 
-Backends execute protocol channel programs.
+Backends execute Argus channel programs.
 
-## `spongefish::dsfs`
+## `spongefish-dsfs`
 
-The DSFS backend compiles an `InteractiveArgument` into a non-interactive
-argument and an `InteractiveReduction` into a non-interactive reduction.
-
-Constructors name the compiled object:
+`spongefish-dsfs` compiles interactive arguments and reductions into
+non-interactive proof artifacts.
 
 ```rust
 let nia = spongefish_dsfs::plain_non_interactive_argument(argument, sponge);
 let nir = spongefish_dsfs::plain_non_interactive_reduction(reduction, sponge);
 ```
 
-For preprocessing cores, use the symmetric preprocessing constructors:
-`preprocessing_non_interactive_argument` or
-`preprocessing_non_interactive_reduction`. They return a stateless compiled
-handle that implements the preprocessing non-interactive traits. Call
-`.preprocess(&ix)` to obtain `(pk, vk)`, then pass `&pk` to `prove` and `&vk` to
-`verify`.
+For preprocessing protocols, the compiled wrapper remains stateless with
+respect to keys:
 
-It is responsible for:
+```rust
+let pnia = spongefish_dsfs::preprocessing_non_interactive_argument(body, sponge);
+let (pk, vk) = pnia.preprocess(&index);
 
-- deriving the domain separator,
-- absorbing public inputs before the first challenge,
+let proof = pnia.prove(&pk, &session, &instance, &witness);
+pnia.verify(&vk, &session, &instance, &proof)?;
+```
+
+The DSFS backend is responsible for:
+
+- deriving the transcript domain separator,
+- absorbing protocol/session/public-input data before the first challenge,
 - absorbing committed-index bytes for preprocessing protocols,
-- absorbing prover messages before challenges,
+- absorbing prover messages before challenge derivation,
 - squeezing verifier challenges,
-- serializing prover messages into proof bytes,
-- deterministic verifier replay,
-- checking that verification consumes the expected proof bytes.
+- serializing proof bytes,
+- replaying verification deterministically,
+- rejecting malformed or trailing proof bytes.
 
-The Argus standard DSFS sponge is Keccak. `StdHash` is used only when explicitly
-selected for compatibility with spongefish or `sigma-proofs` layouts.
+The Argus standard DSFS sponge is Keccak. `StdHash` is available for explicit
+compatibility paths, especially existing spongefish or `sigma-proofs` layouts.
+Changing sponge choice, salt policy, proof layout, or transcript initialization
+requires a protocol-id/domain-separation review.
 
 ## `live-channel`
 
-The live backend runs prover and verifier code in separate threads using `mpsc`.
-It preserves the same channel interface while using actual verifier-sampled
-coins instead of Fiat-Shamir challenges.
+`live-channel` runs prover and verifier code in separate threads using `mpsc`.
+The verifier samples public coins and sends them to the prover. It is useful for
+checking that a protocol really has a public-coin interaction shape before it is
+compiled with DSFS.
 
-Use it to sanity-check the interactive behavior of a protocol.
+The live backend produces no NARG proof. It is an execution backend, not a proof
+serialization backend.
 
-## Backend Boundary
+## Future Backends
 
-Protocol code depends on `ia-core`, not on transcript internals. If a change
-affects sponge choice, salt policy, proof layout, absorb/squeeze order, or
-domain separation, it belongs in the backend layer and should be reviewed
-against the transcript invariants.
+The channel interface is intentionally backend-agnostic. A future backend could
+use a different transport, a different transcript implementation, or a compiler
+that emits IA/IR channel programs from another formalism. The stable rule is
+that transcript mechanics stay outside protocol code.

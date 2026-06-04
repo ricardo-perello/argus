@@ -1,6 +1,20 @@
-# Schnorr Example
+# Schnorr
 
-The Schnorr example is the smallest end-to-end IA in the workspace.
+The Schnorr example is the smallest end-to-end interactive argument in the
+workspace.
+
+It proves knowledge of `x` such that:
+
+```text
+X = x * G
+```
+
+The plain relation is:
+
+```text
+Instance = (G, X)
+Witness  = x
+```
 
 Run it non-interactively through DSFS:
 
@@ -16,13 +30,11 @@ cargo run -p argus-examples --bin schnorr -- --live
 
 ## What It Demonstrates
 
-- Writing one `ia_core::impl_interactive_argument!` block.
-- Expanding that block into `ProtocolCore`, `ArgumentCore`, and
-  `InteractiveArgument`.
-- Using only channel calls inside protocol code.
-- Compiling the IA with `spongefish_dsfs::plain_non_interactive_argument`.
-- Running the same IA with `live-channel`.
-- Implementing constant-error `ArgumentSecurity`.
+- one `ia_core::impl_interactive_argument!` block,
+- channel-only prover and verifier logic,
+- DSFS compilation with `spongefish_dsfs::plain_non_interactive_argument`,
+- live execution with `live-channel`,
+- constant-error `ArgumentSecurity`.
 
 The security metadata uses:
 

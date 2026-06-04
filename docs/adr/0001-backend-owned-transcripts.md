@@ -18,7 +18,7 @@ Protocol code uses only the `ia-core` channel traits.
 
 Transcript mechanics are backend-owned. In particular, sponge operations,
 Fiat-Shamir challenge derivation, public-input absorption, salt handling, and
-proof byte replay live in `spongefish::dsfs`.
+proof byte replay live in `spongefish-dsfs`.
 
 ## Consequences
 

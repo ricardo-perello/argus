@@ -2,9 +2,9 @@
 
 The same `InteractiveArgument` can run with a live backend.
 
-In live mode, prover and verifier execute in separate threads over channels. The
-verifier samples public coins and sends them to the prover instead of deriving
-them with Fiat-Shamir.
+In live mode, prover and verifier execute in separate threads over channels.
+The verifier samples public coins and sends them to the prover instead of
+deriving them with Fiat-Shamir.
 
 ```rust
 let (mut prover_ch, mut verifier_ch) = live_channel::channel_pair();
@@ -21,7 +21,7 @@ prover_handle.join().unwrap();
 verifier_handle.join().unwrap()?;
 ```
 
-The full Schnorr example exposes both modes:
+Run the example both ways:
 
 ```bash
 cargo run -p argus-examples --bin schnorr
@@ -30,22 +30,13 @@ cargo run -p argus-examples --bin schnorr -- --live
 
 ## Why Use Live Mode
 
-Live execution is useful while authoring because it checks the protocol as an
-actual public-coin conversation:
+Live execution is useful while authoring because it checks that the protocol
+really has a public-coin interaction shape:
 
-- The prover and verifier agree on message order.
-- The verifier can produce each challenge from its local view.
-- The protocol body does not rely on proof serialization.
-- The DSFS path is not hiding an interaction bug.
+- prover and verifier agree on message order,
+- each verifier challenge can be produced from the verifier's public view,
+- protocol code does not depend on proof serialization,
+- DSFS is not hiding an interaction bug.
 
-Once live execution is correct, DSFS should be able to compile the same channel
-program into a NARG without changing the protocol body.
-
-## What Stays Backend-Owned
-
-Even live mode does not give protocol code direct access to transport internals.
-The protocol still sends and receives typed messages through `ProverChannel` and
-`VerifierChannel`.
-
-That is the design point: the protocol describes the conversation, not the
-mechanism.
+Live mode is deliberately simple. It is in-process, uses `mpsc`, and produces no
+proof artifact.

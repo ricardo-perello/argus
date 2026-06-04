@@ -3,46 +3,52 @@
 This directory preserves design history that should remain readable without
 requiring Git archaeology.
 
-## Policy
+Stable documentation lives in `architecture/`, `author-guide/`, `security/`,
+`api/`, and `protocols/`. Historical files can be corrected for broken links,
+but their original design intent should not be rewritten into current-state
+documentation.
 
-- Stable, current documentation lives in top-level topic directories such as
-  `architecture/`, `security/`, `api/`, and `protocols/`.
-- Versioned design docs such as `iarg-interface-v1.md` and
-  `iarg-interface-v6.md` live here.
-- ADRs in `docs/adr/` record decisions that should be easy to cite.
-- Historical files can be corrected for broken links, but their original design
-  intent should not be rewritten into current-state documentation.
+ADRs in `docs/adr/` record accepted decisions. The files here are broader:
+iterations, abandoned approaches, review memos, and implementation snapshots.
 
-## Current history map
+## Map
 
-- `interface/` — IA/IR trait and composition design iterations.
-- `security/` — security profile refactors and theorem bookkeeping.
-- `domain-separation/` — domain-separation redesign notes.
-- `backends/` — DSFS ownership and backend integration notes.
-- `protocols/` — WARP and sigma-bridge historical notes.
+- `docs/history/interface/`: IA/IR trait and composition iterations.
+- `docs/history/security/`: security profile refactors and theorem bookkeeping.
+- `docs/history/domain-separation/`: domain-separation redesign notes.
+- `docs/history/backends/`: DSFS ownership and backend integration notes.
+- `docs/history/protocols/`: protocol-specific historical notes.
+- `docs/history/plans/`: internal design notes and review presentations that
+  are useful archive material but not part of the stable public guide.
 
-## Interface History
+## Rendered Archive Pages
 
-- [IA interface v1](interface/iarg-interface-v1.md)
-- [IA interface v2](interface/iarg-interface-v2.md)
-- [IA interface v3](interface/iarg-interface-v3.md)
-- [IA interface v4](interface/iarg-interface-v4.md)
-- [IA interface v5](interface/iarg-interface-v5.md)
-- [IA interface v6](interface/iarg-interface-v6.md)
-- [Interactive reduction v1](interface/interactive-reduction-v1.md)
-- [Interactive reduction v2](interface/interactive-reduction-v2.md)
+- [WARP implementation notes](protocols/warp-implementation-notes.md)
 
-## Backend and Domain-Separation History
+## Other Archived Files
 
-- [DSFS ownership options](backends/dsfs-ownership-options.md)
-- [DSFS v2](backends/dsfs-v2.md)
-- [Domain-separation refactor summary](domain-separation/domain-sep-refactor-summary.md)
-- [Domain-separation April 2026 plan](domain-separation/domain-separation-redesign-2026-04-plan.md)
+These files are kept in the repository but are not rendered as mdBook chapters:
 
-## Protocol and Security History
-
-- [Examples vs WARP](protocols/examples-vs-warp.md)
-- [sigma-bridge v1](protocols/sigma-bridge-v1.md)
-- [sigma-bridge v2](protocols/sigma-bridge-v2.md)
-- [sigma-bridge v3](protocols/sigma-bridge-v3.md)
-- [Security profile RBR refactor](security/security-profile-rbr-refactor.md)
+- `docs/history/interface/iarg-interface-v1.md`
+- `docs/history/interface/iarg-interface-v2.md`
+- `docs/history/interface/iarg-interface-v3.md`
+- `docs/history/interface/iarg-interface-v4.md`
+- `docs/history/interface/iarg-interface-v5.md`
+- `docs/history/interface/iarg-interface-v6.md`
+- `docs/history/interface/interactive-reduction-v1.md`
+- `docs/history/interface/interactive-reduction-v2.md`
+- `docs/history/backends/dsfs-ownership-options.md`
+- `docs/history/backends/dsfs-v2.md`
+- `docs/history/domain-separation/domain-sep-refactor-summary.md`
+- `docs/history/domain-separation/domain-separation-redesign-2026-04-plan.md`
+- `docs/history/protocols/examples-vs-warp.md`
+- `docs/history/protocols/sigma-bridge-v1.md`
+- `docs/history/protocols/sigma-bridge-v2.md`
+- `docs/history/protocols/sigma-bridge-v3.md`
+- `docs/history/security/security-profile-rbr-refactor.md`
+- `docs/history/plans/protocol-core-dsfs-presentation.md`
+- `docs/history/plans/keys-as-inputs-preprocessing-presentation.md`
+- `docs/history/plans/preprocessing-indexed-relations.md`
+- `docs/history/plans/preprocessing-indexed-relations-v2.md`
+- `docs/history/plans/argument-prover-verifier-trait-split.md`
+- `docs/history/plans/report-notes.md`

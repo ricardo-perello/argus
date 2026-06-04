@@ -1,53 +1,70 @@
 # Channel Model
 
-An Argus protocol is a channel program. This is both an authoring model and a
-compilation target: a protocol author can write an IA/IR directly, or another
-compiler can output an IA/IR channel program.
+An Argus protocol is a channel program.
 
-The prover side writes prover messages and reads public verifier messages:
+The prover side can send prover messages and receive public verifier messages:
 
 ```rust
 ch.send_prover_message(&message);
 let challenge = ch.read_verifier_message();
 ```
 
-The verifier side reads prover messages and sends public verifier messages:
+The verifier side can receive prover messages and produce public verifier
+messages:
 
 ```rust
 let message = ch.read_prover_message()?;
-ch.send_verifier_message(&challenge);
+let challenge = ch.send_verifier_message();
 ```
 
-The same calls mean different things depending on the backend.
+Those four calls are the protocol boundary. They describe the public-coin
+conversation without saying how it is transported or how public coins are
+derived.
 
-That bidirectionality is important for the long-term BCS direction. DSFS
-consumes an IA and produces a NARG; an iBCS compiler would consume an IOP plus a
-commitment scheme and produce an IA that uses the same channel interface.
+## Backend Meaning
 
-## DSFS Backend
+In `spongefish-dsfs`, a prover message is both proof data and transcript input:
+it is appended to the NARG and absorbed before the next challenge. A verifier
+message is squeezed from the sponge. During verification, the same prover
+messages are read from proof bytes, absorbed in the same order, and used to
+replay the same challenges.
 
-In `spongefish::dsfs`, prover messages are appended to the NARG string and
-absorbed into the sponge. Verifier messages are squeezed from the sponge. During
-verification, prover messages are read from proof bytes and absorbed in the same
-order before the verifier squeezes the matching challenges.
+In `live-channel`, the verifier samples public coins and sends them to the
+prover through an in-process channel. There is no proof artifact.
 
-This backend owns the transcript. Protocol code must not call sponge APIs or
-derive Fiat-Shamir challenges directly.
+The protocol body does not change between these executions.
 
-## Live Backend
+## Public-Coin Branching
 
-In `live-channel`, prover and verifier run as interactive parties. The verifier
-samples public coins and sends them to the prover. This is useful for checking
-that an IA/IR really is a public-coin protocol before compiling it with DSFS.
+The verifier may inspect a prover message before deciding which public coin type
+comes next:
 
-## Protocol Rule
+```rust
+let commitment: Commitment = ch.read_prover_message()?;
 
-Protocol implementations should be readable as the mathematical protocol:
+if commitment.uses_small_domain() {
+    let c: SmallChallenge = ch.send_verifier_message();
+    /* continue */
+} else {
+    let c: LargeChallenge = ch.send_verifier_message();
+    /* continue */
+}
+```
+
+This is still a public-coin protocol when the branch and challenge distribution
+are deterministic public functions of the instance and transcript so far. It
+does not fit the Argus/DSFS model if the challenge distribution depends on
+hidden verifier state or on manual transcript operations performed by protocol
+code.
+
+## Rule
+
+Protocol implementations should read like the mathematical protocol:
 
 - send all prover messages for the round,
-- read or send the verifier challenge,
-- continue to the next round,
-- return accept/reject for an argument, or a target instance for a reduction.
+- read or send the public challenge,
+- continue,
+- return accept/reject for an argument or a target instance for a reduction.
 
-Transcript ordering constraints are enforced by the backend boundary. See
-[Transcript Invariants](../security/transcript-invariants.md).
+Transcript ordering is a backend obligation. If protocol code needs direct
+access to transcript state, the abstraction boundary is leaking.

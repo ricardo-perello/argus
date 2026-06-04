@@ -1,8 +1,67 @@
-# IA, IR, Preprocessing, and Composition
+# Protocol Shapes
 
-Argus now uses a small inheritance-style core tree. The root traits carry
-protocol identity and relation shape; the leaf traits add executable protocol
-logic.
+Argus covers a small matrix of public-coin protocol shapes:
+
+| Axis | Choices |
+| --- | --- |
+| Verifier output | argument or reduction |
+| Execution view | interactive or non-interactive |
+| Static setup | plain or preprocessing |
+
+Together these choices give eight combinations. The API is designed so the type
+system exposes the capability a value actually has: a plain interactive argument
+does not have preprocessing methods, while a preprocessing reduction carries
+source/target relation types and keyed execution.
+
+## Arguments and Reductions
+
+An argument proves membership in one relation:
+
+```text
+R subset X x W
+prover input:   x, w
+verifier input: x
+verifier output: accept/reject
+```
+
+A reduction transforms a source claim into a target claim:
+
+```text
+R0 -> R1
+prover input:   x0, w0
+prover output:  x1, w1
+verifier input: x0
+verifier output: x1
+```
+
+The verifier output is the important distinction. An argument is done when it
+accepts. A reduction produces the next instance that another protocol may need
+to prove or reduce.
+
+## Plain and Preprocessing
+
+Plain protocols receive all public statement data as the ordinary instance.
+
+Preprocessing protocols split static relation data from per-claim data:
+
+```text
+preprocess(index) -> (prover_key, verifier_key)
+prove(pk, instance, witness)
+verify(vk, instance, proof)
+```
+
+The compiled preprocessing object is stateless with respect to keys. It stores
+the protocol body and backend configuration, but it does not store a prover key
+or verifier key. This keeps setup material explicit and prevents APIs from
+quietly smuggling prover-only data into verifier-only code.
+
+Both keys implement `CommittedIndex`. For keys derived from the same index,
+their committed-index bytes must agree. DSFS binds those bytes together with the
+ordinary instance before the first challenge.
+
+## Trait Shape
+
+The trait tree is bottom-up and capability-oriented:
 
 ```text
 ProtocolCore
@@ -14,246 +73,44 @@ ProtocolCore
     └── PreprocessingInteractiveReduction
 ```
 
-`PreprocessingCore` is a sibling capability used by preprocessing leaves. It carries
-`Index`, `ProverKey`, `VerifierKey`, and the deterministic `preprocess(ix)` method.
+`PreprocessingCore` is the shared setup capability used by preprocessing leaves.
+It provides `Index`, `ProverKey`, `VerifierKey`, and `preprocess`.
 
-## Authoring Surface
-
-Protocol authors normally write one macro block. For a plain argument:
-
-```rust
-ia_core::impl_interactive_argument! {
-    impl InteractiveArgument for Schnorr {
-        fn protocol_id(&self) -> impl AsRef<[u8]> {
-            ia_core::pad_protocol_id(b"schnorr")
-        }
-
-        type Instance = SchnorrInstance;
-        type Witness = SchnorrWitness;
-
-        fn prove<P: ProverChannel<Unit = u8>>(
-            &self,
-            ch: &mut P,
-            instance: &Self::Instance,
-            witness: &Self::Witness,
-        ) {
-            /* channel-only prover logic */
-        }
-
-        fn verify<V: VerifierChannel<Unit = u8>>(
-            &self,
-            ch: &mut V,
-            instance: &Self::Instance,
-        ) -> VerificationResult<()> {
-            /* channel-only verifier logic */
-            Ok(())
-        }
-    }
-}
-```
-
-For preprocessing arguments and reductions, use
-`impl_preprocessing_argument!` or `impl_preprocessing_reduction!`; those blocks
-also include `Index`, `ProverKey`, `VerifierKey`, and `preprocess(ix)`.
-
-The macros expand to the core tree below. The split traits are real API, not a
-macro illusion, so backend and composition code can reason about capabilities
-precisely while authors avoid three or four repetitive impl blocks.
-
-## Core Traits
-
-Every protocol core has a protocol identifier:
-
-```rust
-pub trait ProtocolCore {
-    fn protocol_id(&self) -> impl AsRef<[u8]>;
-}
-```
-
-Arguments add statement and witness types:
-
-```rust
-pub trait ArgumentCore: ProtocolCore {
-    type Instance;
-    type Witness;
-}
-```
-
-Reductions add source and target relation types:
-
-```rust
-pub trait ReductionCore: ProtocolCore {
-    type SourceInstance;
-    type TargetInstance;
-    type SourceWitness;
-    type TargetWitness;
-}
-```
-
-Preprocessing cores add preprocessing:
-
-```rust
-pub trait PreprocessingCore: ProtocolCore {
-    type Index;
-    type ProverKey: CommittedIndex;
-    type VerifierKey: CommittedIndex;
-
-    fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey);
-
-    fn preprocess_checked(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
-        /* calls preprocess, then debug-asserts matching committed_index() bytes */
-    }
-}
-```
-
-## Executable Leaves
-
-Plain arguments and reductions only contain channel execution methods. Their
-identity and associated types come from the core traits.
-
-```rust
-pub trait InteractiveArgument: ArgumentCore {
-    fn prove<P: ProverChannel<Unit = u8>>(
-        &self,
-        ch: &mut P,
-        instance: &Self::Instance,
-        witness: &Self::Witness,
-    );
-
-    fn verify<V: VerifierChannel<Unit = u8>>(
-        &self,
-        ch: &mut V,
-        instance: &Self::Instance,
-    ) -> VerificationResult<()>;
-}
-```
-
-```rust
-pub trait InteractiveReduction: ReductionCore {
-    fn prove<P: ProverChannel<Unit = u8>>(
-        &self,
-        ch: &mut P,
-        instance: &Self::SourceInstance,
-        witness: &Self::SourceWitness,
-    ) -> (Self::TargetInstance, Self::TargetWitness);
-
-    fn verify<V: VerifierChannel<Unit = u8>>(
-        &self,
-        ch: &mut V,
-        instance: &Self::SourceInstance,
-    ) -> VerificationResult<Self::TargetInstance>;
-}
-```
-
-Preprocessing leaves combine the argument/reduction body shape with `PreprocessingCore`.
-Their execution methods receive keys explicitly:
-
-```rust
-pub trait PreprocessingInteractiveArgument: ArgumentCore + PreprocessingCore {
-    fn prove<P: ProverChannel<Unit = u8>>(
-        &self,
-        ch: &mut P,
-        pk: &Self::ProverKey,
-        instance: &Self::Instance,
-        witness: &Self::Witness,
-    );
-
-    fn verify<V: VerifierChannel<Unit = u8>>(
-        &self,
-        ch: &mut V,
-        vk: &Self::VerifierKey,
-        instance: &Self::Instance,
-    ) -> VerificationResult<()>;
-}
-```
-
-`PreprocessingInteractiveReduction` is the same idea for reductions.
-
-## Preprocessing Keys as Inputs
-
-Preprocessing cores are executable only with keys. The same body exposes:
-
-```text
-preprocess(ix) -> (ProverKey, VerifierKey)
-prove(ch, &ProverKey, instance, witness)
-verify(ch, &VerifierKey, instance)
-```
-
-Both key types implement `CommittedIndex`. The compiled backend derives
-`pk.committed_index()` on the prover side and `vk.committed_index()` on the
-verifier side. `preprocess_checked(&ix)` catches mismatched key commitments in
-debug/test builds while both keys are in hand.
-
-## DSFS Constructors
-
-The DSFS API names the non-interactive object being built:
-
-```rust
-let nia = dsfs::plain_non_interactive_argument(body, dsfs::Keccak::default());
-let nir = dsfs::plain_non_interactive_reduction(body, dsfs::Keccak::default());
-```
-
-For plain bodies, the returned wrapper immediately implements
-`NonInteractiveArgument` or `NonInteractiveReduction`.
-
-For preprocessing cores, the returned wrapper is stateless and implements
-`PreprocessingNonInteractiveArgument` or `PreprocessingNonInteractiveReduction`.
-Call `.preprocess(&ix)` to obtain keys, then pass the relevant key into
-`prove` or `verify`:
-
-```rust
-let nia = dsfs::preprocessing_non_interactive_argument(preprocessing_protocol, dsfs::Keccak::default());
-let (pk, vk) = nia.preprocess(&ix);
-let proof = nia.prove(&pk, &session, &instance, &witness);
-nia.verify(&vk, &session, &instance, &proof)?;
-```
-
-Internally DSFS absorbs `IndexedInstanceRef { committed_index, instance }`
-before the first challenge, then calls keyed protocol execution with the bare
-instance.
+This design was chosen over a single maximal protocol type that degenerates into
+the simpler cases. The maximal type would reduce some generic machinery, but it
+would also make irrelevant operations visible. In Argus, a plain protocol does
+not pretend to be indexed, and a reduction is not forced to look like an
+argument with a dummy output.
 
 ## Composition
 
-`ChainedReduction<First, Second>` composes two reductions:
+Reductions compose sequentially when the target type of the first component
+matches the source type of the second:
 
 ```text
-IR1: R0 -> R1
-IR2: R1 -> R2
-IR2 after IR1: R0 -> R2
+R0 -> R1 -> R2
 ```
 
-`ReducedArgument<Reduction, Argument>` composes a reduction with a final
-argument:
+`ReducedArgument` composes a reduction with a final argument:
 
 ```text
-IR: R0 -> R1
-IA: proves R1
-IR followed by IA: proves R0
+R0 -> R1, then prove R1
 ```
 
-Composition derives protocol IDs using injective length-prefixed encoding, so
-nested protocols remain domain-separated.
+Preprocessing composition pairs indexes and keys structurally:
 
-Preprocessing composition is implemented when both components use preprocessing. The
-composed index/key shape is a pair:
-
-```rust
-type Index = (First::Index, Second::Index);
-type ProverKey = (First::ProverKey, Second::ProverKey);
-type VerifierKey = (First::VerifierKey, Second::VerifierKey);
+```text
+Index       = (First::Index, Second::Index)
+ProverKey   = (First::ProverKey, Second::ProverKey)
+VerifierKey = (First::VerifierKey, Second::VerifierKey)
 ```
 
-Mixed plain/preprocessing composition is explicit through `TrivialIndexedArgument`
-and `TrivialIndexedReduction`. There is no blanket conversion that silently
-turns plain protocols into preprocessing protocols.
+The actual implementation pairs the first and second component types. The point
+is that composition must route each sub-key to the corresponding component and
+must bind a combined committed index before challenges. Mixed plain and
+preprocessing composition is explicit through trivial-index adapters.
 
-## Security Composition
+## Where Exact Signatures Live
 
-Plain security metadata remains on `ArgumentSecurity` and `ReductionSecurity`.
-Indexed security metadata lives on `PreprocessingArgumentSecurity` and
-`PreprocessingReductionSecurity`, with index-derived params/bounds separated from
-per-instance params/bounds.
-
-For composed protocols, security bounds are threaded through intermediate
-relations. See [RBR and SR Soundness](../security/rbr-and-sr.md) and
-[Instance-Aware Security](../security/instance-aware-security.md).
+This page explains the shape. Exact trait signatures, macro syntax, and source
+layout are documented in [ia-core](../api/ia-core.md).

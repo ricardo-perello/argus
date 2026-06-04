@@ -1,135 +1,86 @@
 # Argus
 
-Argus’s main contribution is a **clean interface for public-coin interactive protocols**:
+Argus is a Rust interface layer for public-coin interactive protocols.
 
-- **Interactive Arguments (IA)**: verifiers output accept/reject.
-- **Interactive Reductions (IOR / IR)**: verifiers output a reduced (target) instance.
+Its core contribution is not a new transcript primitive. It is a clean way to
+describe an interactive argument or reduction as a reusable protocol object,
+without putting sponge calls or transcript logic inside the protocol itself.
 
-Protocols are written **once**, against a **generic channel** interface. Then, in a modular way,
-you choose a backend:
+Protocol authors write a conversation once against typed channels. Backends then
+decide how to execute that conversation:
 
-- **`spongefish::dsfs`**: compile the IA/IR into a **non-interactive proof (NARG)** via the
-  **Duplex-Sponge Fiat–Shamir (DSFS)** transformation (Construction 4.3 of
-  _“A Fiat–Shamir Transformation from Duplex Sponges”_ (Chiesa & Orrù, 2025)).
-- **`live-channel`**: run the *same* protocol **interactively** between two parties (threads via `mpsc`).
+- `spongefish-dsfs` compiles the protocol into a non-interactive proof using the
+  Duplex-Sponge Fiat-Shamir transformation.
+- `live-channel` runs the same protocol interactively with verifier-sampled
+  public coins.
+- Future compiler work can target the same interface, for example by compiling
+  an `IOP + commitment scheme` into an IA channel program before DSFS turns it
+  into a NARG.
 
-This structure ensures **protocol code never touches transcript internals**: transcript mechanics
-(absorb/squeeze ordering, domain separation, deterministic replay) live in the backend.
+This makes the IA layer three things at once: an authoring interface, a backend
+input, and a target for richer protocol compilers.
 
-## Project status
+## Status
 
-Argus is a research prototype. It is intended for protocol design, experimentation,
-and security-model engineering; it has not received production cryptographic
-review.
+Argus is a research prototype for protocol design and security-model
+experimentation. It has not received production cryptographic review.
 
-## Architecture
+## Model
 
-Argus aims to make the IA/IR channel layer usable in both directions:
+Argus represents two protocol families:
 
-- As a **source** for backends: **DSFS[IA]** compiles a public-coin
-  Interactive Argument (IA) into a non-interactive proof.
-- As a **target** for higher-level compilers: future iBCS work should compile
-  **IOP + Merkle-tree commitment** material into an IA, so
-  **BCS[IOP, MT] = DSFS[IA]** where **IA = IBCS[IOP, MT]**.
+- Interactive arguments: the verifier outputs accept or reject.
+- Interactive reductions: the verifier outputs a reduced target instance.
 
-The key invariants (enforced by the backend, not by protocol code) are:
+Both are written as channel programs. Protocol code may call only:
 
-- **All prover messages are absorbed before any challenge is squeezed.**
-- **Public inputs are absorbed before the first challenge.**
-- **Replay is deterministic.**
-- **No sponge operations outside DSFS.**
+```rust
+ch.send_prover_message(&message);
+let challenge = ch.read_verifier_message();
 
-## The model: “protocol as a channel program”
-
-An IA/IR implementation is just code that exchanges typed messages with a channel:
-
-- Prover side: `send_prover_message`, `read_verifier_message`
-- Verifier side: `read_prover_message`, `send_verifier_message`
-
-Swapping the channel swaps the execution model (DSFS-compiled vs truly
-interactive) without changing the protocol. The same channel surface can also be
-the output of another compiler: for example, an iBCS compiler can produce an IA
-channel program from an IOP before DSFS turns that IA into a NARG.
-
-## Crate map
-
-- **`crates/ia-core`**: the **IA/IR interface layer**.
-  - Channel traits: `ProverChannel`, `VerifierChannel`
-  - NARG traits and proof artifact: `NonInteractiveArgument`, `NonInteractiveReduction`, `NargProof`
-  - Protocol traits:
-    - root/core traits: `ProtocolCore`, `ArgumentCore`, `ReductionCore`, `PreprocessingCore`
-    - IA: `InteractiveArgument` and `PreprocessingInteractiveArgument`
-    - IOR/IR: `InteractiveReduction` and `PreprocessingInteractiveReduction`
-    - Security: `ArgumentSecurity` / `ReductionSecurity` (opt-in; instance-aware DSFS bound evaluation)
-  - Composition:
-    - `ChainedReduction` (IR ∘ IR → IR)
-    - `ReducedArgument` (IR ∘ IA → IA)
-- **`spongefish::dsfs`**: a **backend** that compiles IA/IR into NARGs using DSFS.
-  - `plain_non_interactive_argument(body, sponge)` constructs a plain `NonInteractiveArgument`
-  - `plain_non_interactive_reduction(body, sponge)` constructs a plain `NonInteractiveReduction`
-  - `preprocessing_non_interactive_argument(body, sponge)` constructs a stateless preprocessing NARG wrapper; call `.preprocess(&ix)` to obtain `(pk, vk)`, then pass `&pk` to `prove` and `&vk` to `verify`
-  - `preprocessing_non_interactive_reduction(body, sponge)` does the same for preprocessing reductions
-  - DSFS security bound evaluation (Theorems 1 & 2 style bounds)
-- **`crates/live-channel`**: a **backend** that runs IA/IR interactively (prover/verifier in threads via `mpsc`).
-- **`crates/warp`**: a WARP (ePrint 2025/753) implementation expressed as:
-  - `WarpReduction` (a `PreprocessingInteractiveReduction`)
-  - `WarpDecider` (a `PreprocessingInteractiveArgument`)
-  - `FullWarp` (a single-index preprocessing argument built from the reduction and decider)
-- **`crates/argus-examples`**: runnable examples (e.g. Schnorr).
-
-## Documentation index
-
-The documentation is organized as an mdBook-compatible tree:
-
-- **Start here**: `docs/index.md` and `docs/getting-started.md`
-- **Architecture**: `docs/architecture/overview.md`, `docs/architecture/channel-model.md`,
-  `docs/architecture/ia-ir.md`, `docs/architecture/backends.md`
-- **Security**: `docs/security/overview.md`, `docs/security/transcript-invariants.md`,
-  `docs/security/instance-aware-security.md`, `docs/security/rbr-and-sr.md`,
-  `docs/security/dsfs-bounds.md`, `docs/security/domain-separation.md`
-- **API**: `docs/api/ia-core.md`, `docs/api/spongefish-dsfs.md`, `docs/api/live-channel.md`
-- **Protocols**: `docs/protocols/schnorr.md`, `docs/protocols/sumcheck.md`,
-  `docs/protocols/warp.md`, `docs/protocols/sigma-bridge.md`
-- **Decisions and history**: `docs/adr/README.md` and `docs/history/README.md`
-- **Contribution process**: `CONTRIBUTING.md`
-
-Versioned design notes such as `iarg-interface-v1.md` through
-`iarg-interface-v6.md` are preserved under `docs/history/` so design history is
-readable without Git archaeology.
-
-For API-level documentation, prefer rustdoc on the crate that owns the API:
-
-```bash
-cargo doc --workspace --no-deps
+let message = ch.read_prover_message()?;
+let challenge = ch.send_verifier_message();
 ```
+
+The backend owns transcript mechanics: public-input binding, prover-message
+absorption, challenge derivation, deterministic replay, proof byte layout, and
+domain separation. Protocol code never instantiates a sponge or derives a
+Fiat-Shamir challenge directly.
+
+## Workspace
+
+- `crates/ia-core`: protocol-facing traits, channel traits, preprocessing
+  traits, non-interactive vocabulary, composition, and security metadata.
+- `spongefish-dsfs`: DSFS backend used by Argus. In this workspace it is exposed
+  through the patched spongefish dependency and imported as `spongefish_dsfs`.
+- `crates/live-channel`: in-process interactive backend built on `mpsc`.
+- `crates/argus-examples`: runnable Schnorr, sumcheck, composition, lookup, and
+  WARP examples.
+- `crates/warp`: WARP expressed as preprocessing reductions plus a final
+  argument.
+- `crates/sigma-bridge`: compatibility bridge for selected `sigma-proofs`
+  layouts and vectors.
 
 ## Quickstart
 
-Build everything:
-
 ```bash
 cargo build
-```
-
-Run the full test suite (includes WARP integration tests):
-
-```bash
 cargo test
 ```
 
-Run Schnorr via DSFS (non-interactive proof):
+Run Schnorr as a DSFS-compiled non-interactive proof:
 
 ```bash
 cargo run -p argus-examples --bin schnorr
 ```
 
-Run Schnorr interactively (live prover/verifier threads):
+Run the same protocol interactively:
 
 ```bash
 cargo run -p argus-examples --bin schnorr -- --live
 ```
 
-Run a few other runnable examples:
+Other useful examples:
 
 ```bash
 cargo run -p argus-examples --bin sumcheck
@@ -144,37 +95,18 @@ Run only WARP tests:
 cargo test -p warp
 ```
 
-## How to implement a new protocol
+## Documentation
 
-At a high level:
+- [mdBook home](docs/index.md)
+- [Getting started](docs/getting-started.md)
+- [Architecture overview](docs/architecture/overview.md)
+- [Author guide](docs/author-guide/overview.md)
+- [Transcript invariants](docs/security/transcript-invariants.md)
+- [API reference notes](docs/api/ia-core.md)
+- [Final report](docs/final-report.md)
 
-1. Define your statement/witness types in some crate.
-2. Use `ia_core::impl_interactive_argument!` or
-   `ia_core::impl_interactive_reduction!` to write one authoring block.
-3. Put only channel operations inside `prove`/`verify`.
-4. Compile it non-interactively with `spongefish_dsfs::plain_non_interactive_argument(body, sponge)` or `spongefish_dsfs::plain_non_interactive_reduction(body, sponge)`.
+Build rustdoc with:
 
-For preprocessing protocols, use
-`spongefish_dsfs::preprocessing_non_interactive_argument(body, sponge)` or
-`spongefish_dsfs::preprocessing_non_interactive_reduction(body, sponge)`, then
-run `.preprocess(&ix)` once to obtain `(prover_key, verifier_key)`. The compiled
-object stores no keys; `prove` takes `&ProverKey`, and `verify` takes
-`&VerifierKey`.
-
-The macros expand to the explicit inheritance tree underneath:
-`ProtocolCore` plus `ArgumentCore`/`ReductionCore`, then the executable
-`Interactive*` trait. Manual impls still work when tests or low-level adapters
-are clearer that way.
-
-For a preprocessed protocol, use `ia_core::impl_preprocessing_argument!` or
-`ia_core::impl_preprocessing_reduction!`. Those blocks include `Index`,
-`ProverKey`, `VerifierKey`, and `preprocess(ix) -> (pk, vk)`.
-
-Protocol code should only ever call:
-
-- `ch.send_prover_message(...)`
-- `ch.read_prover_message(...)`
-- `ch.send_verifier_message(...)`
-- `ch.read_verifier_message(...)`
-
-…never sponge operations directly.
+```bash
+cargo doc --workspace --no-deps
+```

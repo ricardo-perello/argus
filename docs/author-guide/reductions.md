@@ -1,24 +1,23 @@
-# Reductions
+# Reductions and Composition
 
 An argument ends in accept or reject. A reduction ends in a new instance.
 
-Use a reduction when a protocol step transforms one claim into another claim:
+Use a reduction when a protocol step transforms one claim into another:
 
 ```text
-source relation R0
-source instance x
-source witness  w
-
+source instance + source witness
+        |
+        v
 interactive reduction
-
-target relation R1
-target instance y
-target witness  v
+        |
+        v
+target instance + target witness
 ```
 
-The verifier computes `y`; the prover computes both `y` and `v`.
+The verifier computes the target instance. The prover computes both the target
+instance and target witness.
 
-## Reduction Trait Shape
+## Trait Shape
 
 ```rust
 ia_core::impl_interactive_reduction! {
@@ -38,7 +37,7 @@ ia_core::impl_interactive_reduction! {
             instance: &Source,
             witness: &SourceWitness,
         ) -> (Target, TargetWitness) {
-            /* send messages, read challenges, compute target + target witness */
+            /* channel-only reduction logic */
         }
 
         fn verify<V: VerifierChannel<Unit = u8>>(
@@ -46,59 +45,27 @@ ia_core::impl_interactive_reduction! {
             ch: &mut V,
             instance: &Source,
         ) -> VerificationResult<Target> {
-            /* read messages, send challenges, compute target */
+            /* compute the target instance */
         }
     }
 }
 ```
 
-The verifier output is the target instance, not `()`.
-
-## Example: Folding
-
-The `composition` example has a toy reduction `FoldPairs`:
-
-```text
-(c0, c1, c2, c3, ...)
-        |
-        | random r
-        v
-(c0 + r c1, c2 + r c3, ...)
-```
-
-The prover sends witness values, receives the random challenge, and folds its
-witness in the same way. The verifier reads the committed values, sends the
-challenge, and folds the public claims.
-
-The source relation and target relation have the same shape, but fewer claims.
-Other reductions can change relation shape completely.
-
-## Compile a Reduction with DSFS
-
-```rust
-use ia_core::NonInteractiveReduction;
-
-let nir = spongefish_dsfs::plain_non_interactive_reduction(
-    FoldPairs,
-    spongefish_dsfs::Keccak::default(),
-);
-
-let (proof, target_instance, target_witness) =
-    nir.prove(&session, &source_instance, &source_witness);
-
-let verified_target =
-    nir.verify(&session, &source_instance, &proof)?;
-```
-
 ## Compose Reductions
 
-`ChainedReduction<First, Second>` composes two reductions:
+`ChainedReduction<First, Second>` composes two reductions when the target of the
+first is the source of the second:
 
 ```text
 First:  R0 -> R1
 Second: R1 -> R2
 Chain:  R0 -> R2
 ```
+
+You can chain reductions as far as the types line up. The mathematical limit is
+only that the composition is a finite sequential protocol; the practical Rust
+limit is type size and readability. If a deeply nested type becomes unwieldy,
+introduce named aliases or a protocol-specific wrapper.
 
 `ReducedArgument<Reduction, Argument>` runs a reduction and then proves the
 target instance with an argument:
@@ -109,66 +76,50 @@ Argument:  proves R1
 Combined:  proves R0
 ```
 
-In the example:
+The full protocol is an argument even though most of its work may be reductions.
+
+## Preprocessing Composition
+
+For preprocessing protocols, composition must combine more than execution. It
+also combines indexes, prover keys, verifier keys, and committed-index bytes.
+
+For two preprocessing components, the composed setup shape is structural:
 
 ```rust
-type TwoFolds = ChainedReduction<FoldPairs, FoldPairs>;
-type FoldAndAccumulate = ChainedReduction<TwoFolds, Accumulate>;
-type FullProtocol = ReducedArgument<FoldAndAccumulate, EqualityCheck>;
+type Index = (First::Index, Second::Index);
+type ProverKey = (First::ProverKey, Second::ProverKey);
+type VerifierKey = (First::VerifierKey, Second::VerifierKey);
 ```
 
-Under the hood, composition is exactly the mathematical pipeline. The composed
-prover runs the first protocol, then feeds its output into the second:
+During execution, each sub-key is routed to the corresponding component:
 
 ```rust
-fn prove<P: ProverChannel<Unit = u8>>(
-    &self,
-    ch: &mut P,
-    x0: &R0::SourceInstance,
-    w0: &R0::SourceWitness,
-) -> (R1::TargetInstance, R1::TargetWitness) {
-    let (x1, w1) = self.first.prove(ch, x0, w0);
-    self.second.prove(ch, &x1, &w1)
-}
+let (x1, w1) = self.first.prove(ch, &pk.0, x0, w0);
+self.second.prove(ch, &pk.1, &x1, &w1)
 ```
 
-The composed verifier does the same thing, but it only carries instances:
+The verifier mirrors this with `vk.0` and `vk.1`. The composed key commitment is
+encoded as a tagged pair, so DSFS binds the combined indexed relation before the
+first challenge.
 
-```rust
-fn verify<V: VerifierChannel<Unit = u8>>(
-    &self,
-    ch: &mut V,
-    x0: &R0::SourceInstance,
-) -> VerificationResult<R1::TargetInstance> {
-    let x1 = self.first.verify(ch, x0)?;
-    self.second.verify(ch, &x1)
-}
+Mixed plain/preprocessing composition uses `TrivialIndexedArgument` or
+`TrivialIndexedReduction`. The empty index is explicit at the call site instead
+of being introduced by a blanket conversion.
+
+## Example
+
+The `composition` example includes a toy `FoldPairs` reduction:
+
+```text
+(c0, c1, c2, c3, ...)
+        |
+        | random r
+        v
+(c0 + r c1, c2 + r c3, ...)
 ```
 
-For `ReducedArgument`, the final step is an argument instead of another
-reduction:
+Run it with:
 
-```rust
-fn prove<P: ProverChannel<Unit = u8>>(&self, ch: &mut P, x0: &X0, w0: &W0) {
-    let (x1, w1) = self.reduction.prove(ch, x0, w0);
-    self.argument.prove(ch, &x1, &w1);
-}
-
-fn verify<V: VerifierChannel<Unit = u8>>(
-    &self,
-    ch: &mut V,
-    x0: &X0,
-) -> VerificationResult<()> {
-    let x1 = self.reduction.verify(ch, x0)?;
-    self.argument.verify(ch, &x1)
-}
+```bash
+cargo run -p argus-examples --bin composition
 ```
-
-The full protocol is an argument even though most of its work is reductions.
-
-## Theory Note
-
-Reductions are how Argus represents accumulation and folding systems. The
-verifier does not merely check that a transcript is valid; it computes the next
-claim. This lets the type system distinguish "I am done" from "I produced the
-next instance that some later protocol must decide."

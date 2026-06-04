@@ -1,53 +1,45 @@
-# What Argus Provides
+# Author Guide
 
-Argus is the interface layer for public-coin protocols.
+Protocol authors should start from the interactive protocol, not from the proof
+bytes.
 
-A protocol author writes the conversation once, against abstract prover and
-verifier channels. A backend then decides how that conversation is executed:
-
-- `spongefish::dsfs` compiles it into a non-interactive proof by Fiat-Shamir.
-- `live-channel` runs the same conversation interactively with verifier-sampled
-  public coins.
-- Future backends can reuse the same author-facing protocol code.
-
-That separation is the main contribution. Protocol code describes the
-mathematical protocol; backend code owns transcripts, replay, domain separation,
-transport, sponge operations, and proof serialization.
+In Argus, the author writes a public-coin conversation against abstract
+channels. The backend decides whether that conversation is run live or compiled
+with DSFS.
 
 ```text
 author protocol
-  prove(ch, instance, witness)
-  verify(ch, instance)
+  prove(channel, instance, witness)
+  verify(channel, instance)
         |
         v
-abstract channels
+ia-core channel traits
         |
-        +--> DSFS backend: transcript + proof bytes
+        +-- spongefish-dsfs: transcript + proof bytes
         |
-        +--> live backend: interactive messages
+        +-- live-channel: interactive messages
 ```
 
-Protocol code should not know whether a challenge was sampled by a live verifier
-or squeezed from a sponge. It only says, "the verifier sends a challenge here."
-The backend gives that sentence concrete meaning.
+The protocol body should not know whether a challenge came from a live verifier
+or from a sponge. It should only express the next public coin in the
+conversation.
 
-## What Authors Implement
+## Pick the Shape
 
-Most authors implement one of four interactive protocol shapes:
+Most authors implement one of four interactive shapes:
 
-- A plain interactive argument: the verifier accepts or rejects a statement.
-- A plain interactive reduction: the verifier outputs a reduced statement.
-- A preprocessing interactive argument: setup derives prover and verifier keys.
-- A preprocessing interactive reduction: keyed setup plus reduction output.
+- `InteractiveArgument`: plain accept/reject protocol.
+- `InteractiveReduction`: plain protocol that outputs a target instance.
+- `PreprocessingInteractiveArgument`: keyed accept/reject protocol.
+- `PreprocessingInteractiveReduction`: keyed reduction.
 
-The non-interactive traits are usually not implemented directly by protocol
-authors. They are what a backend returns after compiling an interactive body.
-For example, DSFS turns an `InteractiveArgument` into a
+The non-interactive traits are usually backend results. For example,
+`spongefish-dsfs` turns an `InteractiveArgument` into a
 `NonInteractiveArgument`.
 
-## The Rule of the Boundary
+## Keep the Boundary Clean
 
-Inside protocol code, use only the channel methods:
+Inside protocol code, use only:
 
 ```rust
 ch.send_prover_message(&msg);
@@ -58,14 +50,11 @@ let challenge = ch.send_verifier_message();
 ```
 
 Do not instantiate a sponge, absorb public input, squeeze a challenge, parse
-transcript bytes, or perform Fiat-Shamir logic in the protocol body.
+transcript bytes, or perform Fiat-Shamir logic in the protocol body. Those jobs
+belong to the backend.
 
-That rule keeps the security invariants centralized:
+That rule is what lets the same protocol run through DSFS, run live, compose
+with reductions, and remain a possible target for future compiler work.
 
-- Public inputs are bound before the first challenge.
-- Prover messages are absorbed before the corresponding challenge.
-- Verification replay is deterministic.
-- The same protocol can be executed by multiple backends.
-
-The next chapter gives the full type matrix before we build a concrete
-argument.
+Start with [Protocol Types](protocol-types.md), then implement the Schnorr-style
+example in [First Argument](first-argument.md).
