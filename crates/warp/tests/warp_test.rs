@@ -382,6 +382,138 @@ fn proof_rejects_with_wrong_verifier_key_same_dimensions() {
 }
 
 #[test]
+fn proof_rejects_with_wrong_source_instance_same_index() {
+    // A proof generated against one WarpInstance must not verify against a
+    // *different* source instance under the same index/verifier key.
+    //
+    // `WarpReduction::verify` ignores its `instance` argument and reconstructs
+    // the source claims from prover messages, so this binding does NOT come from
+    // the reduction's verify logic. It comes from the DSFS layer absorbing
+    // `WarpInstance::encode()` as public input before the first challenge: a
+    // different source instance yields different Fiat-Shamir challenges, which
+    // makes the prover's sumcheck messages fail to verify.
+    let (r1cs, code, instances_a, witnesses_a) = setup();
+    // `setup()` derives r1cs/code deterministically but samples fresh random
+    // instances, so this is the same index with a different source instance.
+    let (_, _, instances_b, _) = setup();
+    assert_ne!(instances_a, instances_b, "source instances must differ");
+
+    let (instance_a, witness_a) = warp_statement(instances_a, witnesses_a);
+    let (instance_b, _) = warp_statement(instances_b, vec![]);
+    let ix = warp_index(r1cs, code, 4, 4);
+
+    let session = spongefish::session!("warp wrong source instance test");
+    let nir = dsfs::preprocessing_non_interactive_reduction(
+        WarpReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new(),
+        Keccak::default(),
+    );
+    let (pk, vk) = nir.preprocess(&ix);
+
+    let (proof, _, _) = nir.prove(&pk, &session, &instance_a, &witness_a);
+    assert!(
+        nir.verify(&vk, &session, &instance_b, &proof).is_err(),
+        "proof for instance_a must reject when verified against instance_b",
+    );
+}
+
+/// One WARP step on `instances` with empty accumulators (l2 = 0) yields a single
+/// accumulator (instance + witness), produced by the honest prover.
+fn build_accumulator(
+    r1cs: &R1CS<Fp>,
+    code: &ReedSolomon<Fp>,
+    instances: Vec<Vec<Fp>>,
+    witnesses: Vec<Vec<Fp>>,
+) -> (AccumulatorInstances<Fp, MT>, AccumulatorWitnesses<Fp, MT>) {
+    let l1 = instances.len();
+    let (empty_inst, empty_wit) = empty_acc();
+    let instance = WarpInstance {
+        instances,
+        acc_instances: empty_inst,
+    };
+    let witness = WarpWitness {
+        witnesses,
+        acc_witnesses: empty_wit,
+    };
+    let ix = warp_index(r1cs.clone(), code.clone(), l1, l1); // l = l1, l2 = 0
+    let session = spongefish::session!("warp accumulator build");
+    let nir = dsfs::preprocessing_non_interactive_reduction(
+        WarpReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new(),
+        Keccak::default(),
+    );
+    let (pk, _vk) = nir.preprocess(&ix);
+    let (_proof, target, target_w) = nir.prove(&pk, &session, &instance, &witness);
+    (target.acc_instance, target_w)
+}
+
+fn concat_acc_instances(
+    a: AccumulatorInstances<Fp, MT>,
+    b: AccumulatorInstances<Fp, MT>,
+) -> AccumulatorInstances<Fp, MT> {
+    let (mut ar, mut aa, mut am, (mut at, mut ax), mut ae) = a;
+    let (br, ba, bm, (bt, bx), be) = b;
+    ar.extend(br);
+    aa.extend(ba);
+    am.extend(bm);
+    at.extend(bt);
+    ax.extend(bx);
+    ae.extend(be);
+    (ar, aa, am, (at, ax), ae)
+}
+
+fn concat_acc_witnesses(
+    a: AccumulatorWitnesses<Fp, MT>,
+    b: AccumulatorWitnesses<Fp, MT>,
+) -> AccumulatorWitnesses<Fp, MT> {
+    let (mut at, mut ac, mut aw) = a;
+    let (bt, bc, bw) = b;
+    at.extend(bt);
+    ac.extend(bc);
+    aw.extend(bw);
+    (at, ac, aw)
+}
+
+#[test]
+fn warp_reduction_accumulation_l2_nonzero() {
+    // Exercises the accumulation path (l2 > 0): the verifier sources the
+    // accumulators from `instance.acc_instances` (the change under test) rather
+    // than the channel. Build two accumulators from two l2 = 0 steps, fold them
+    // in a final l = 4, l1 = 2, l2 = 2 step.
+    let (r1cs, code, insts, wits) = setup();
+    let acc_a = build_accumulator(&r1cs, &code, insts[0..2].to_vec(), wits[0..2].to_vec());
+    let acc_b = build_accumulator(&r1cs, &code, insts[2..4].to_vec(), wits[2..4].to_vec());
+
+    let (_, _, insts2, wits2) = setup();
+    let fresh_insts = insts2[0..2].to_vec();
+    let fresh_wits = wits2[0..2].to_vec();
+
+    let acc_instances = concat_acc_instances(acc_a.0, acc_b.0);
+    let acc_witnesses = concat_acc_witnesses(acc_a.1, acc_b.1);
+
+    let instance = WarpInstance {
+        instances: fresh_insts,
+        acc_instances,
+    };
+    let witness = WarpWitness {
+        witnesses: fresh_wits,
+        acc_witnesses,
+    };
+
+    let ix = warp_index(r1cs, code, 4, 2); // l = 4, l1 = 2 -> l2 = 2
+    let session = spongefish::session!("warp l2 accumulation test");
+    let nir = dsfs::preprocessing_non_interactive_reduction(
+        WarpReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new(),
+        Keccak::default(),
+    );
+    let (pk, vk) = nir.preprocess(&ix);
+    let (proof, target_p, _) = nir.prove(&pk, &session, &instance, &witness);
+    let target = nir
+        .verify(&vk, &session, &instance, &proof)
+        .expect("l2 > 0 reduction verification failed");
+    assert_eq!(target.acc_instance.0, target_p.acc_instance.0);
+    assert_eq!(target.acc_instance.0.len(), 1, "should produce one root");
+}
+
+#[test]
 fn warp_instance_encoding_excludes_static_index_material() {
     let (r1cs, code, instances, witnesses) = setup();
     let changed_r1cs = changed_relation_same_dimensions(&r1cs);

@@ -212,11 +212,11 @@ where
         &self,
         ch: &mut Ch,
         vk: &Self::VerifierKey,
-        _instance: &Self::SourceInstance,
+        instance: &Self::SourceInstance,
     ) -> VerificationResult<DeciderInstance<F, MT>> {
         let result = vk
             .material
-            .verify_reduction_transcript(ch, vk)
+            .verify_reduction_transcript(ch, vk, instance)
             .map_err(|_| ia_core::VerificationError)?;
 
         Ok(DeciderInstance {

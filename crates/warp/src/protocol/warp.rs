@@ -333,15 +333,12 @@ where
         let n = self.code.code_len();
         let log_n = log2(n) as usize;
 
-        // absorb instances
-        for inst in instances {
-            for x in inst {
-                ch.send_prover_message(x);
-            }
-        }
-
-        // absorb accumulated instances
-        self.absorb_acc_instances_prover(ch, acc_instances);
+        // The source statement (l1 instances + accumulators) is public input:
+        // DSFS binds it via `WarpInstance::encode()` before the first challenge,
+        // so it is not also streamed as prover messages. The verifier reads it
+        // from its own `instance` argument instead. (Construction 4.3: public
+        // input is still fixed before the first challenge; this only removes a
+        // redundant in-transcript copy of the statement.)
 
         // ---- Phase 2: PESAT Reduction ----
         let (codewords, leaves) = build_codeword_leaves(&self.code, witnesses, l1);
@@ -560,13 +557,14 @@ where
         Ok((new_acc_instance, new_acc_witness, proof_data))
     }
 
-    /// Transcript-only IOR verifier: reads all messages, performs sumcheck
-    /// checks, and **computes** the target `AccumulatorInstances` instead of
-    /// receiving it as an argument.
+    /// IOR verifier: reads the prover's transcript messages, performs the
+    /// sumcheck checks, and **computes** the target `AccumulatorInstances`.
     ///
-    /// Shift-query answers are read from the channel (the prover sends them
-    /// after the batching sumcheck).  Merkle auth-path verification is NOT
-    /// performed here -- that belongs to the BCS oracle layer.
+    /// The source statement is taken from the `instance` argument (public input,
+    /// bound by DSFS via `WarpInstance::encode()`), not re-read from the
+    /// transcript. Shift-query answers are read from the channel (the prover
+    /// sends them after the batching sumcheck). Merkle auth-path verification is
+    /// NOT performed here -- that belongs to the BCS oracle layer.
     ///
     /// Returns the target accumulator instance plus auxiliary data needed
     /// by the BCS oracle layer (source roots, shift query indexes).
@@ -574,6 +572,7 @@ where
         &self,
         ch: &mut Ch,
         vk: &WarpVerifierKey<F, P, C, MT>,
+        instance: &WarpInstance<F, MT>,
     ) -> Result<ReductionTranscriptResult<F, MT>, WARPVerifierError>
     where
         F: ia_core::Deserialize,
@@ -588,18 +587,31 @@ where
         let n = self.code.code_len();
         let log_n = log2(n) as usize;
 
-        // ---- Phase 1: Parse statement ----
-        let mut l1_xs = vec![vec![F::default(); N - k]; l1];
-        for inst in l1_xs.iter_mut() {
-            for x in inst.iter_mut() {
-                *x = ch
-                    .read_prover_message()
-                    .map_err(|_| WARPVerifierError::SumcheckRound)?;
-            }
+        // ---- Phase 1: take the statement from the public-input instance ----
+        // The source statement is the verifier's own `instance` argument (bound
+        // by DSFS as public input), not re-read from the transcript. Validate
+        // its shape against the index dimensions.
+        if instance.instances.len() != l1
+            || instance.instances.iter().any(|xs| xs.len() != N - k)
+        {
+            return Err(WARPVerifierError::SumcheckRound);
         }
+        let l1_xs = instance.instances.clone();
 
-        let (l2_roots, l2_alphas, l2_mus, l2_taus, l2_xs, l2_etas) =
-            self.read_acc_instances_verifier(ch, l2, log_n, log_M, N - k)?;
+        let (l2_roots, l2_alphas, l2_mus, l2_taus, l2_xs, l2_etas) = {
+            let (roots, alphas, mus, (taus, xs), etas) = &instance.acc_instances;
+            if roots.len() != l2 {
+                return Err(WARPVerifierError::SumcheckRound);
+            }
+            (
+                roots.clone(),
+                alphas.clone(),
+                mus.clone(),
+                taus.clone(),
+                xs.clone(),
+                etas.clone(),
+            )
+        };
 
         // ---- Phase 2: Derive randomness ----
         let rt_0: MT::InnerDigest = self.read_digest(ch)?;
@@ -823,112 +835,6 @@ where
             *b = byte[0];
         }
         Ok(digest.into())
-    }
-
-    fn absorb_acc_instances_prover<Ch: ProverChannel<Unit = u8>>(
-        &self,
-        ch: &mut Ch,
-        acc: &AccumulatorInstances<F, MT>,
-    ) {
-        for digest in &acc.0 {
-            self.send_digest(ch, digest);
-        }
-        for alpha in &acc.1 {
-            for a in alpha {
-                ch.send_prover_message(a);
-            }
-        }
-        for mu in &acc.2 {
-            ch.send_prover_message(mu);
-        }
-        for tau in &acc.3 .0 {
-            for t in tau {
-                ch.send_prover_message(t);
-            }
-        }
-        for x in &acc.3 .1 {
-            for v in x {
-                ch.send_prover_message(v);
-            }
-        }
-        for eta in &acc.4 {
-            ch.send_prover_message(eta);
-        }
-    }
-
-    #[allow(clippy::type_complexity)]
-    fn read_acc_instances_verifier<Ch: VerifierChannel<Unit = u8>>(
-        &self,
-        ch: &mut Ch,
-        l2: usize,
-        log_n: usize,
-        log_m: usize,
-        instance_len: usize,
-    ) -> Result<
-        (
-            Vec<MT::InnerDigest>,
-            Vec<Vec<F>>,
-            Vec<F>,
-            Vec<Vec<F>>,
-            Vec<Vec<F>>,
-            Vec<F>,
-        ),
-        WARPVerifierError,
-    >
-    where
-        F: ia_core::Deserialize,
-    {
-        if l2 == 0 {
-            return Ok((vec![], vec![], vec![], vec![], vec![], vec![]));
-        }
-
-        let mut roots = Vec::with_capacity(l2);
-        for _ in 0..l2 {
-            roots.push(self.read_digest(ch)?);
-        }
-
-        let mut alphas = vec![vec![F::default(); log_n]; l2];
-        for alpha in alphas.iter_mut() {
-            for a in alpha.iter_mut() {
-                *a = ch
-                    .read_prover_message()
-                    .map_err(|_| WARPVerifierError::SumcheckRound)?;
-            }
-        }
-
-        let mut mus = vec![F::default(); l2];
-        for mu in mus.iter_mut() {
-            *mu = ch
-                .read_prover_message()
-                .map_err(|_| WARPVerifierError::SumcheckRound)?;
-        }
-
-        let mut taus = vec![vec![F::default(); log_m]; l2];
-        for tau in taus.iter_mut() {
-            for t in tau.iter_mut() {
-                *t = ch
-                    .read_prover_message()
-                    .map_err(|_| WARPVerifierError::SumcheckRound)?;
-            }
-        }
-
-        let mut xs = vec![vec![F::default(); instance_len]; l2];
-        for x in xs.iter_mut() {
-            for v in x.iter_mut() {
-                *v = ch
-                    .read_prover_message()
-                    .map_err(|_| WARPVerifierError::SumcheckRound)?;
-            }
-        }
-
-        let mut etas = vec![F::default(); l2];
-        for e in etas.iter_mut() {
-            *e = ch
-                .read_prover_message()
-                .map_err(|_| WARPVerifierError::SumcheckRound)?;
-        }
-
-        Ok((roots, alphas, mus, taus, xs, etas))
     }
 }
 
