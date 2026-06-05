@@ -17,70 +17,66 @@ use ia_core::{
 
 use crate::protocol::commitment::committed_index_for;
 use crate::protocol::warp::{
-    DeciderInstance, DeciderWitness, WarpDimensions, WarpIndex, WarpInstance, WarpProverKey,
-    WarpStaticMaterial, WarpVerifierKey, WarpWitness,
+    DeciderInstance, DeciderWitness, WarpIndex, WarpInstance, WarpProverKey, WarpStaticMaterial,
+    WarpVerifierKey, WarpWitness,
 };
+use crate::protocol::WarpMerkle;
 use crate::relations::r1cs::R1CSConstraints;
 use crate::relations::BundledPESAT;
 use crate::utils::poly::{eq_poly, Hypercube};
 
 fn indexed_material<F, P, C, MT>(
     ix: &WarpIndex<F, P, C, MT>,
-) -> (Arc<WarpStaticMaterial<F, P, C, MT>>, WarpDimensions)
+) -> Arc<WarpStaticMaterial<F, P, C, MT>>
 where
     F: Field,
     P: Clone + BundledPESAT<F, Config = (usize, usize, usize)>,
     C: LinearCode<F> + Clone,
-    MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
+    MT: WarpMerkle<F>,
 {
-    let (m, n, k) = ix.relation.config();
-    let dimensions = WarpDimensions::new(m, n, k);
-    let material = Arc::new(WarpStaticMaterial::new(
+    Arc::new(WarpStaticMaterial::new(
         ix.config.clone(),
         ix.code.clone(),
         ix.relation.clone(),
         ix.merkle_params.clone(),
-    ));
-    (material, dimensions)
+    ))
 }
 
 fn prover_key<F, P, C, MT>(
     material: Arc<WarpStaticMaterial<F, P, C, MT>>,
-    dimensions: WarpDimensions,
 ) -> WarpProverKey<F, P, C, MT>
 where
     F: Field,
-    P: BundledPESAT<F>,
-    C: LinearCode<F> + Clone,
-    MT: Config,
+    P: BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
+    C: LinearCode<F> + Clone + CanonicalSerialize,
+    MT: WarpMerkle<F>,
 {
+    let commitment = committed_index_for(&material);
     WarpProverKey {
         material,
-        dimensions,
+        commitment,
     }
 }
 
 fn verifier_key<F, P, C, MT>(
     material: Arc<WarpStaticMaterial<F, P, C, MT>>,
-    dimensions: WarpDimensions,
 ) -> WarpVerifierKey<F, P, C, MT>
 where
     F: Field,
     P: BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
     C: LinearCode<F> + Clone + CanonicalSerialize,
-    MT: Config<Leaf = [F]>,
-    <MT::LeafHash as ark_crypto_primitives::crh::CRHScheme>::Parameters: CanonicalSerialize,
-    <MT::TwoToOneHash as ark_crypto_primitives::crh::TwoToOneCRHScheme>::Parameters:
-        CanonicalSerialize,
+    MT: WarpMerkle<F>,
 {
-    let commitment = committed_index_for(&material, dimensions);
+    let commitment = committed_index_for(&material);
     WarpVerifierKey {
         material,
-        dimensions,
         commitment,
     }
 }
 
+// Both keys cache the index commitment computed once at `preprocess` time, so
+// `pk.committed_index() == vk.committed_index()` by construction and the compiled
+// PNIA can derive the transcript digest from whichever key it is handed.
 impl<F, P, C, MT> CommittedIndex for WarpVerifierKey<F, P, C, MT>
 where
     F: Field,
@@ -93,23 +89,15 @@ where
     }
 }
 
-// The prover key recomputes the same commitment from its `material` +
-// `dimensions` (the verifier key caches it). Both go through
-// `committed_index_for`, so `pk.committed_index() == vk.committed_index()` by
-// construction — the compiled PNIA derives the transcript digest from whichever
-// key it is handed.
 impl<F, P, C, MT> CommittedIndex for WarpProverKey<F, P, C, MT>
 where
     F: Field,
-    P: BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
-    C: LinearCode<F> + Clone + CanonicalSerialize,
-    MT: Config<Leaf = [F]>,
-    <MT::LeafHash as ark_crypto_primitives::crh::CRHScheme>::Parameters: CanonicalSerialize,
-    <MT::TwoToOneHash as ark_crypto_primitives::crh::TwoToOneCRHScheme>::Parameters:
-        CanonicalSerialize,
+    P: BundledPESAT<F>,
+    C: LinearCode<F> + Clone,
+    MT: Config,
 {
     fn committed_index(&self) -> CommittedIndexBytes {
-        committed_index_for(&self.material, self.dimensions)
+        self.commitment.clone()
     }
 }
 
@@ -177,10 +165,7 @@ where
         + ia_core::Deserialize,
     P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
     C: LinearCode<F> + Clone + CanonicalSerialize,
-    MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
-    <MT::LeafHash as ark_crypto_primitives::crh::CRHScheme>::Parameters: CanonicalSerialize,
-    <MT::TwoToOneHash as ark_crypto_primitives::crh::TwoToOneCRHScheme>::Parameters:
-        CanonicalSerialize,
+    MT: WarpMerkle<F>,
 {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"argus::warp::reduction")
@@ -196,11 +181,8 @@ where
     type VerifierKey = WarpVerifierKey<F, P, C, MT>;
 
     fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
-        let (material, dimensions) = indexed_material(ix);
-        (
-            prover_key(material.clone(), dimensions),
-            verifier_key(material, dimensions),
-        )
+        let material = indexed_material(ix);
+        (prover_key(material.clone()), verifier_key(material))
     }
 
     fn prove<Ch: ProverChannel<Unit = u8>>(
@@ -255,10 +237,7 @@ where
         + ia_core::Deserialize,
     P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
     C: LinearCode<F> + Clone + CanonicalSerialize,
-    MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
-    <MT::LeafHash as ark_crypto_primitives::crh::CRHScheme>::Parameters: CanonicalSerialize,
-    <MT::TwoToOneHash as ark_crypto_primitives::crh::TwoToOneCRHScheme>::Parameters:
-        CanonicalSerialize,
+    MT: WarpMerkle<F>,
 {
     type IndexParams = WarpSecurityParams;
     type IndexBound = WarpSecurityBound;
@@ -286,6 +265,10 @@ where
 
     fn index_bound_for_index_params(&self, params: &Self::IndexParams) -> Self::IndexBound {
         params.clone()
+    }
+
+    fn offline_binding_error(&self, _ix_params: &Self::IndexParams) -> SecurityErrorBound {
+        warp_offline_binding_error()
     }
 
     fn source_security_params(
@@ -406,6 +389,41 @@ fn warp_security_profile(params: &WarpSecurityParams) -> SecurityProfile {
     }
 }
 
+/// Offline index-binding error for WARP (CY24 §32.7 COS, §32.8.1).
+///
+/// **Currently zero.** WARP's verifier key holds the *full* index material and
+/// re-derives the code/relation locally (see [`WarpDecider::verify`]), so the
+/// verifier is **non-succinct**:
+/// - there is no committed encoded index `rt_0` for a prover to equivocate, so
+///   the Merkle binding term `E1` is zero; and
+/// - the 256-bit blake3 digest of the index (`committed_index_for`) is absorbed
+///   purely for Fiat–Shamir domain separation. A digest collision is **not
+///   load-bearing**: the verifier still runs the real material's algebraic
+///   checks, so a colliding transcript cannot make a false statement pass. The
+///   `rho_0 = f_0(i)` collision term `E2` is therefore moot — CY24 §32.7 fn. 3
+///   notes `rho_0` may be omitted exactly when the verifier hashes the full
+///   instance. Any residual transcript collision is already the online sponge
+///   term `25 t^2 / |Sigma|^c`.
+///
+/// When WARP gains a **succinct/holographic** verifier index (a Merkle
+/// commitment `rt_0` to the encoded index of length `l_0`, opened by the prover),
+/// this turns on:
+///
+/// ```text
+///   eps_offline(t) = (t + 2*l_0)^2 / 2^(lambda+1)   // E1: binding of rt_0
+///                  +  t^2          / 2^(lambda+1)    // E2: collision in f_0
+/// ```
+///
+/// with `l_0` = encoded-index length (`WarpSecurityParams::n`) and `lambda` the
+/// commitment's collision resistance (256 for blake3). It is added once to the
+/// NARG soundness and knowledge bounds, never to zero knowledge (§32.8.4).
+fn warp_offline_binding_error() -> SecurityErrorBound {
+    // Non-succinct verifier (holds the full index material): no offline
+    // commitment to break. See the doc above for the term that activates once
+    // WARP has a succinct/holographic verifier index.
+    SecurityErrorBound::zero()
+}
+
 // -----------------------------------------------------------------------
 // WarpDecider: the decider as an PreprocessingInteractiveArgument
 //
@@ -435,10 +453,7 @@ where
         + ia_core::Deserialize,
     P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
     C: LinearCode<F> + Clone + CanonicalSerialize,
-    MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
-    <MT::LeafHash as ark_crypto_primitives::crh::CRHScheme>::Parameters: CanonicalSerialize,
-    <MT::TwoToOneHash as ark_crypto_primitives::crh::TwoToOneCRHScheme>::Parameters:
-        CanonicalSerialize,
+    MT: WarpMerkle<F>,
 {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"argus::warp::decider")
@@ -452,8 +467,8 @@ where
     type VerifierKey = WarpVerifierKey<F, P, C, MT>;
 
     fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
-        let (material, dimensions) = indexed_material(ix);
-        ((), verifier_key(material, dimensions))
+        let material = indexed_material(ix);
+        ((), verifier_key(material))
     }
 
     fn prove<Ch: ProverChannel<Unit = u8>>(
@@ -545,10 +560,7 @@ where
         + ia_core::Deserialize,
     P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
     C: LinearCode<F> + Clone + CanonicalSerialize,
-    MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
-    <MT::LeafHash as ark_crypto_primitives::crh::CRHScheme>::Parameters: CanonicalSerialize,
-    <MT::TwoToOneHash as ark_crypto_primitives::crh::TwoToOneCRHScheme>::Parameters:
-        CanonicalSerialize,
+    MT: WarpMerkle<F>,
 {
     type IndexParams = ();
     type IndexBound = ();
@@ -558,6 +570,14 @@ where
     fn index_security_params(&self, _ix: &Self::Index) -> Self::IndexParams {}
 
     fn index_bound_for_index_params(&self, _params: &Self::IndexParams) -> Self::IndexBound {}
+
+    fn offline_binding_error(&self, _ix_params: &Self::IndexParams) -> SecurityErrorBound {
+        // The decider's verifier key holds the full index material and performs a
+        // deterministic local check (no challenges, no rounds, no separate index
+        // commitment a prover could equivocate). All index binding is accounted
+        // by the reduction's `offline_binding_error`.
+        SecurityErrorBound::zero()
+    }
 
     fn instance_security_params(
         &self,
@@ -650,10 +670,7 @@ where
         + ia_core::Deserialize,
     P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
     C: LinearCode<F> + Clone + CanonicalSerialize,
-    MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
-    <MT::LeafHash as ark_crypto_primitives::crh::CRHScheme>::Parameters: CanonicalSerialize,
-    <MT::TwoToOneHash as ark_crypto_primitives::crh::TwoToOneCRHScheme>::Parameters:
-        CanonicalSerialize,
+    MT: WarpMerkle<F>,
 {
     type Index = WarpIndex<F, P, C, MT>;
     type ProverKey = WarpProverKey<F, P, C, MT>;
@@ -675,10 +692,7 @@ where
         + ia_core::Deserialize,
     P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
     C: LinearCode<F> + Clone + CanonicalSerialize,
-    MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
-    <MT::LeafHash as ark_crypto_primitives::crh::CRHScheme>::Parameters: CanonicalSerialize,
-    <MT::TwoToOneHash as ark_crypto_primitives::crh::TwoToOneCRHScheme>::Parameters:
-        CanonicalSerialize,
+    MT: WarpMerkle<F>,
 {
     fn prove<Ch: ProverChannel<Unit = u8>>(
         &self,

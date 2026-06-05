@@ -193,13 +193,39 @@ impl SecurityProfile {
         self.rbr_soundness_errors.len()
     }
 
-    /// Derive SR soundness error at adversary query budget `t`.
+    /// Derive the state-restoration soundness error at query budget `t`:
     ///
-    /// Uses the tighter heterogeneous form of CY24 Theorem 31.2.1:
-    ///   epsilon^sr(t) <= t * max_i epsilon_i^rbr(t) + sum_i epsilon_i^rbr(t)
+    /// ```text
+    ///   eps^sr(t)  <=  t * max_i eps_i^rbr  +  sum_i eps_i^rbr
+    /// ```
     ///
-    /// The `t` adversarial SR moves each target the worst-case round;
-    /// the k protocol completion moves each contribute their own per-round error.
+    /// # Grounding (CY24 Ch. 31, checked against the primary text)
+    ///
+    /// This is a *refinement of the proof* of CY24 Theorem 31.2.1, **not** the
+    /// theorem's stated bound. The theorem *states* the uniform form
+    /// `eps^sr <= (t + k) * eps^rbr`, where `eps^rbr = max_i eps_i^rbr` and the
+    /// per-round errors `(eps_i^rbr)_{i in [k]}` are Definition 31.1.2. Its proof
+    /// upper-bounds the doom-escape probability by a union bound over the `t + k`
+    /// moves of `tr^sr_full`: the `t` state-restoration moves, plus `k`
+    /// "completion" moves that are deterministically one-per-round. Charging the
+    /// `k` completion moves at their own per-round error (Eq. 31.2, *before* the
+    /// book relaxes each term to `max`) and the `t` adversarial moves at `max`
+    /// yields exactly `t * max_i eps_i + sum_i eps_i`, which is `<= (t + k) * max`
+    /// for all inputs. So this is a valid upper bound, strictly tighter than the
+    /// stated theorem whenever the per-round errors are heterogeneous (e.g. WARP).
+    ///
+    /// Two endpoints anchor it: at `t = 0` it equals `sum_i eps_i^rbr`, the exact
+    /// standard-soundness bound of Claim 31.1.3; at `k = 1` it equals
+    /// `(t + 1) * max` — the stated theorem (so a one-round protocol such as
+    /// Schnorr sits on the theorem and cannot exercise the refinement).
+    ///
+    /// Note on the `t` argument: CY24's per-round errors are functions of the
+    /// *instance size n*, not of `t` (which only counts moves). The refinement
+    /// above assumes the per-round [`SecurityErrorBound`]s are `t`-independent —
+    /// capture instance/code parameters in the closures, not `t`. A genuinely
+    /// `t`-dependent RBR term would place `t` both as the multiplier here and
+    /// inside `eps_i(t)`, which is not what the proof gives.
+    ///
     /// Returns 0.0 for protocols with no rounds.
     pub fn sr_soundness_error(&self, t: u64) -> f64 {
         if self.rbr_soundness_errors.is_empty() {
@@ -215,12 +241,20 @@ impl SecurityProfile {
         (t as f64) * max_rbr + sum_rbr
     }
 
-    /// Derive SR knowledge soundness error at adversary query budget `t`.
+    /// Derive the state-restoration knowledge soundness error at query budget `t`:
     ///
-    /// Uses the tighter heterogeneous form of CY24 Theorem 31.3.1:
-    ///   kappa^sr(t) <= t * max_i kappa_i^rbr(t) + sum_i kappa_i^rbr(t)
+    /// ```text
+    ///   kappa^sr(t)  <=  t * max_i kappa_i^rbr  +  sum_i kappa_i^rbr
+    /// ```
     ///
-    /// Returns 0.0 for protocols with no rounds.
+    /// The knowledge analogue of [`Self::sr_soundness_error`]: a refinement of the
+    /// proof of CY24 Theorem 31.3.1 (per-round errors are Definition 31.1.6), with
+    /// the identical `t + k` move-counting argument. The book's extractor is
+    /// *straightline* (Construction 31.3.2 just runs the round-by-round extractor
+    /// on the prover messages), so the extraction time carries through unchanged —
+    /// it is not modeled here, only the error. Same `t`-vs-`n` caveat as
+    /// [`Self::sr_soundness_error`] applies. Returns 0.0 for protocols with no
+    /// rounds.
     pub fn sr_knowledge_soundness_error(&self, t: u64) -> f64 {
         if self.rbr_knowledge_soundness_errors.is_empty() {
             return 0.0;

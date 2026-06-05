@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use ark_codes::traits::LinearCode;
 use ark_crypto_primitives::{
     crh::{CRHScheme, TwoToOneCRHScheme},
@@ -15,12 +13,12 @@ use ia_core::{CommittedIndexBytes, ProverChannel, VerifierChannel};
 
 use crate::config::WarpConfig;
 use crate::crypto::merkle::{build_codeword_leaves, compute_auth_paths};
-use crate::errors::{WARPDeciderError, WARPError, WARPVerifierError};
-use crate::protocol::{batching_sumcheck, twin_sumcheck};
+use crate::errors::WARPVerifierError;
+use crate::protocol::{batching_sumcheck, twin_sumcheck, WarpMerkle};
 use crate::relations::r1cs::R1CSConstraints;
 use crate::relations::BundledPESAT;
 use crate::types::{AccumulatorInstances, AccumulatorWitnesses};
-use crate::utils::poly::{compute_hypercube_eq_evals, eq_poly, eq_poly_non_binary, Hypercube};
+use crate::utils::poly::{compute_hypercube_eq_evals, eq_poly, eq_poly_non_binary};
 use crate::utils::{
     binary_field_elements_to_usize, byte_to_binary_field_array, concat_slices, scale_and_sum,
     BoolResult, FastMap,
@@ -89,7 +87,6 @@ pub(crate) struct WarpStaticMaterial<
     C: LinearCode<F> + Clone,
     MT: Config,
 > {
-    _f: PhantomData<F>,
     pub config: WarpConfig<F, P>,
     pub code: C,
     pub relation: P,
@@ -100,7 +97,7 @@ impl<
         F: Field,
         P: Clone + BundledPESAT<F, Config = (usize, usize, usize)>,
         C: LinearCode<F> + Clone,
-        MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
+        MT: WarpMerkle<F>,
     > WarpStaticMaterial<F, P, C, MT>
 {
     pub fn new(
@@ -110,7 +107,6 @@ impl<
         merkle_params: WarpMerkleParams<MT>,
     ) -> Self {
         Self {
-            _f: PhantomData,
             config,
             code,
             relation,
@@ -160,29 +156,40 @@ where
 #[derive(Clone)]
 pub struct WarpProverKey<F: Field, P: BundledPESAT<F>, C: LinearCode<F> + Clone, MT: Config> {
     pub(crate) material: std::sync::Arc<WarpStaticMaterial<F, P, C, MT>>,
-    pub(crate) dimensions: WarpDimensions,
+    pub(crate) commitment: CommittedIndexBytes,
 }
 
-impl<F: Field, P: BundledPESAT<F>, C: LinearCode<F> + Clone, MT: Config>
-    WarpProverKey<F, P, C, MT>
+impl<
+        F: Field,
+        P: BundledPESAT<F, Config = (usize, usize, usize)>,
+        C: LinearCode<F> + Clone,
+        MT: Config,
+    > WarpProverKey<F, P, C, MT>
 {
+    /// Problem dimensions `(m, n, k)`, derived from the indexed relation.
     pub fn dimensions(&self) -> WarpDimensions {
-        self.dimensions
+        let (m, n, k) = self.material.relation.config();
+        WarpDimensions::new(m, n, k)
     }
 }
 
 #[derive(Clone)]
 pub struct WarpVerifierKey<F: Field, P: BundledPESAT<F>, C: LinearCode<F> + Clone, MT: Config> {
     pub(crate) material: std::sync::Arc<WarpStaticMaterial<F, P, C, MT>>,
-    pub(crate) dimensions: WarpDimensions,
     pub(crate) commitment: CommittedIndexBytes,
 }
 
-impl<F: Field, P: BundledPESAT<F>, C: LinearCode<F> + Clone, MT: Config>
-    WarpVerifierKey<F, P, C, MT>
+impl<
+        F: Field,
+        P: BundledPESAT<F, Config = (usize, usize, usize)>,
+        C: LinearCode<F> + Clone,
+        MT: Config,
+    > WarpVerifierKey<F, P, C, MT>
 {
+    /// Problem dimensions `(m, n, k)`, derived from the indexed relation.
     pub fn dimensions(&self) -> WarpDimensions {
-        self.dimensions
+        let (m, n, k) = self.material.relation.config();
+        WarpDimensions::new(m, n, k)
     }
 }
 
@@ -198,15 +205,6 @@ pub struct WarpInstance<F: Field, MT: Config> {
 pub struct WarpWitness<F: Field, MT: Config> {
     pub witnesses: Vec<Vec<F>>,
     pub acc_witnesses: AccumulatorWitnesses<F, MT>,
-}
-
-pub struct WarpTargetInstance<F: Field, MT: Config> {
-    pub acc_instance: AccumulatorInstances<F, MT>,
-    pub proof: WarpProofData<F, MT>,
-}
-
-pub struct WarpTargetWitness<F: Field, MT: Config> {
-    pub acc_witness: AccumulatorWitnesses<F, MT>,
 }
 
 // -----------------------------------------------------------------------
@@ -297,7 +295,7 @@ impl<
         F: Field + PrimeField + Send + Sync,
         P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
         C: LinearCode<F> + Clone,
-        MT: Config<Leaf = [F], InnerDigest: AsRef<[u8]> + From<[u8; 32]>>,
+        MT: WarpMerkle<F>,
     > WarpStaticMaterial<F, P, C, MT>
 where
     F: spongefish::Encoding + spongefish::Decoding,
@@ -329,7 +327,7 @@ where
 
         // ---- Phase 1: Parsing ----
         #[allow(non_snake_case)]
-        let (M, N, k) = pk.dimensions.as_tuple();
+        let (M, N, k) = pk.dimensions().as_tuple();
         #[allow(non_snake_case)]
         let (log_M, log_l) = (log2(M) as usize, log2(l) as usize);
         let n = self.code.code_len();
@@ -584,7 +582,7 @@ where
         let l2 = l - l1;
 
         #[allow(non_snake_case)]
-        let (M, N, k) = vk.dimensions.as_tuple();
+        let (M, N, k) = vk.dimensions().as_tuple();
         #[allow(non_snake_case)]
         let (log_M, log_l) = (log2(M) as usize, log2(l) as usize);
         let n = self.code.code_len();
@@ -799,133 +797,6 @@ where
             l2_roots,
             shift_queries_indexes,
         })
-    }
-
-    /// Full WARP verifier: runs `verify_reduction_transcript` to compute the
-    /// target accumulator, compares it to the provided `acc_instance`, then
-    /// checks Merkle auth paths from `proof`.
-    #[allow(dead_code)]
-    pub fn verify_with_channel<Ch: VerifierChannel<Unit = u8>>(
-        &self,
-        ch: &mut Ch,
-        vk: &WarpVerifierKey<F, P, C, MT>,
-        acc_instance: &AccumulatorInstances<F, MT>,
-        proof: &WarpProofData<F, MT>,
-    ) -> Result<(), WARPVerifierError>
-    where
-        F: ia_core::Deserialize,
-    {
-        let result = self.verify_reduction_transcript(ch, vk)?;
-
-        (acc_instance.1[0] == result.target.1[0])
-            .ok_or_err(WARPVerifierError::CodeEvaluationPoint)?;
-        let expected_beta = concat_slices(&acc_instance.3 .0[0], &acc_instance.3 .1[0]);
-        let computed_beta = concat_slices(&result.target.3 .0[0], &result.target.3 .1[0]);
-        (expected_beta == computed_beta).ok_or_err(WARPVerifierError::CircuitEvaluationPoint)?;
-
-        self.verify_merkle_paths(proof, &result)?;
-        Ok(())
-    }
-
-    /// Checks Merkle auth paths from proof data against the roots derived
-    /// from the transcript.  This is the BCS oracle layer, separate from
-    /// the IOR transcript verification.
-    #[allow(dead_code)]
-    pub fn verify_merkle_paths(
-        &self,
-        proof: &WarpProofData<F, MT>,
-        transcript_result: &ReductionTranscriptResult<F, MT>,
-    ) -> Result<(), WARPVerifierError> {
-        let (l1, l) = (self.config.l1, self.config.l);
-        let l2 = l - l1;
-
-        (proof.shift_queries_answers.len() == self.config.t)
-            .ok_or_err(WARPVerifierError::NumShiftQueries)?;
-
-        for (i, path) in proof.auth_0.iter().enumerate() {
-            (path.leaf_index == transcript_result.shift_queries_indexes[i])
-                .ok_or_err(WARPVerifierError::ShiftQueryIndex)?;
-            let is_valid = path
-                .verify(
-                    &self.merkle_params.leaf_hash,
-                    &self.merkle_params.two_to_one_hash,
-                    &transcript_result.rt_0,
-                    &proof.shift_queries_answers[i][l2..],
-                )
-                .map_err(|_| WARPVerifierError::ShiftQuery)?;
-            is_valid.ok_or_err(WARPVerifierError::ShiftQuery)?;
-        }
-
-        (proof.auth.len() == l2).ok_or_err(WARPVerifierError::NumL2Instances)?;
-        for (i, paths) in proof.auth.iter().enumerate() {
-            (paths.len() == self.config.t).ok_or_err(WARPVerifierError::NumShiftQueries)?;
-            let root = &transcript_result.l2_roots[i];
-            for (j, path) in paths.iter().enumerate() {
-                (path.leaf_index == transcript_result.shift_queries_indexes[j])
-                    .ok_or_err(WARPVerifierError::ShiftQueryIndex)?;
-                let is_valid = path
-                    .verify(
-                        &self.merkle_params.leaf_hash,
-                        &self.merkle_params.two_to_one_hash,
-                        root,
-                        [proof.shift_queries_answers[j][i]],
-                    )
-                    .map_err(|_| WARPVerifierError::ShiftQuery)?;
-                is_valid.ok_or_err(WARPVerifierError::ShiftQuery)?;
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Decider: checks the final accumulator instance/witness consistency.
-    #[allow(dead_code)]
-    pub fn decide(
-        &self,
-        acc_witness: &AccumulatorWitnesses<F, MT>,
-        acc_instance: &AccumulatorInstances<F, MT>,
-    ) -> Result<(), WARPError>
-    where
-        F: PrimeField,
-    {
-        let (mt, f, w) = acc_witness;
-        let (rt, alpha, mu, beta, eta) = acc_instance;
-
-        let computed_mt = MerkleTree::<MT>::new(
-            &self.merkle_params.leaf_hash,
-            &self.merkle_params.two_to_one_hash,
-            f[0].chunks(1).collect::<Vec<_>>(),
-        )?;
-        (rt[0] == computed_mt.root()).ok_or_err(WARPDeciderError::MerkleRoot)?;
-        (mt[0].root() == computed_mt.root()).ok_or_err(WARPDeciderError::MerkleTrapDoor)?;
-        // ark-crypto-primitives 0.6 made `MerkleTree::leaf_nodes` private.
-        // The previous leaf-equality check was redundant: equal roots already
-        // imply equal leaves under collision resistance, and prover/verifier
-        // trees here share both hash parameters and leaf inputs.
-
-        let f_hat = DenseMultilinearExtension::from_evaluations_slice(
-            log2(self.code.code_len()) as usize,
-            &f[0],
-        );
-        (f_hat.evaluate(&alpha[0]) == mu[0]).ok_or_err(WARPDeciderError::MLExtensionEvaluation)?;
-
-        let tau_val = &beta.0[0];
-        let tau_zero_evader: Vec<F> = Hypercube::new(tau_val.len())
-            .map(|index| eq_poly(tau_val, index))
-            .collect();
-
-        let mut z = beta.1[0].clone();
-        z.extend(w[0].clone());
-        let computed_eta = self
-            .relation
-            .evaluate_bundled(&tau_zero_evader, &z)
-            .unwrap();
-        (computed_eta == eta[0]).ok_or_err(WARPDeciderError::BundledEvaluation)?;
-
-        let computed_f = self.code.encode(&w[0]);
-        (f[0] == computed_f).ok_or_err(WARPDeciderError::EncodedWitness)?;
-
-        Ok(())
     }
 
     // ---- Helper methods for digest serialization ----

@@ -37,9 +37,65 @@ Question to discuss with Giacomo/Chiesa:
 - If `Encoding`/`Decoding` are re-exported from spongefish, is that fine as
   shared codec vocabulary, or should `ia-core` own a smaller codec abstraction?
 
+### What would change to absorb field elements (non-byte alphabet)?
+
+Concrete question that came up: a protocol sends an EC point with
+`ch.send_prover_message(&point)`, and the DSFS sponge absorbs *bytes*. What if we
+wanted the sponge to absorb *field elements* (an algebraic sponge like Poseidon,
+`Unit = F`) — e.g. for recursion, where an in-circuit verifier should not pay for
+byte decomposition? Which layer changes?
+
+Finding (from reading the code): **the channel is already alphabet-generic, but
+the compiler and proof artifact are byte-pinned.** It is not "just swap the
+sponge."
+
+- **`ia-core` channel traits — no change.** `type Unit` and
+  `Encoding<[Self::Unit]>` / `Decoding<[Self::Unit]>` are already generic over the
+  alphabet; the traits never assume bytes.
+- **`ia-core` proof artifact — changes.** `NargProof(Vec<u8>)`
+  (`noninteractive/proof.rs`, doc'd "Byte-oriented proof artifact") is hard
+  byte-typed. A field-native NARG needs this to carry units (or a sibling type).
+- **`spongefish-dsfs` channel — already generic.** `SpongeProver<DS>` /
+  `SpongeVerifier<DS>` use `type Unit = DS::U` (`channel.rs`). Whoever wrote it
+  anticipated non-byte alphabets at the channel layer.
+- **`spongefish-dsfs` compiler / params — the main work, byte-pinned.** Three
+  `U = u8` pins reject a field sponge at compile time:
+  `ByteDuplexSponge: DuplexSpongeInterface<U = u8>` (`compile.rs:28`),
+  `TranscriptSponge: DuplexSpongeInterface<U = u8>` (`channel.rs:23`),
+  `SpongeInfo: ByteDuplexSponge` (`params.rs:42`); plus the NARG is serialized as
+  bytes (`compile.rs:503`, `NargProof::from_bytes(... narg_string().to_vec())`).
+  You literally cannot pass a Poseidon (`U = F`) sponge to
+  `plain_non_interactive_argument` today.
+- **Codecs — need field-targeted impls.** `Encoding<[F]>` for a point ("express
+  as field elements") and `Decoding<[F]>` for a challenge ("uniform scalar from
+  squeezed field elements"). Today the ark codecs target `[u8]`.
+- **An actual algebraic sponge.** `Keccak` and `StdHash` are both byte sponges; a
+  `DuplexSpongeInterface<U = F>` (Poseidon-style) is needed.
+- **Protocol code — one line.** `ProverChannel<Unit = u8>` becomes `Unit = F` (or
+  generic); the send/read *body* is unchanged. That portability is the payoff.
+
+Notes for the report:
+
+- The abstraction is **half-plumbed** for field units: the channel layer is
+  generic, the compiler / NARG artifact / sponge-params / codecs are byte-
+  specialized. This is the concrete content behind the open
+  "should `ia-core` own a smaller codec abstraction?" bullet above — a non-byte
+  backend forces the codec + `NargProof` genericization.
+- **Live mode is nearly free; DSFS is the work.** Interactive execution has no
+  NARG to serialize, so the byte assumption is concentrated in the non-interactive
+  path — which is unfortunate, since the recursion motivation is specifically
+  about the *non-interactive* proof being field-native.
+- **Cycle-of-curves subtlety:** "express an EC point as field elements" only
+  typechecks when the point's coordinate field aligns with the sponge field `F`.
+  That alignment is cryptographic content the `Encoding<[F]>` impl encodes, not a
+  free serialization choice.
+
+(Line numbers are against the pinned `ricardo-perello/spongefish` checkout and may
+drift; the load-bearing identifiers are the trait/type names.)
+
 ## Public-Coin Branching After Commitments
 
-Question:
+Question:z
 
 > Is it always correct to say that the verifier just reads a commitment and the
 > backend handles absorption before the challenge?

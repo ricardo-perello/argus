@@ -17,10 +17,11 @@ use ark_std::rand::Rng;
 use rand::thread_rng;
 
 use ia_core::{
-    CommittedIndex, Encoding, PreprocessingCore, PreprocessingNonInteractiveArgument,
-    PreprocessingNonInteractiveReduction, PreprocessingReductionSecurity,
+    CommittedIndex, Encoding, PreprocessingArgumentSecurity, PreprocessingCore,
+    PreprocessingNonInteractiveArgument, PreprocessingNonInteractiveReduction,
+    PreprocessingReductionSecurity, SecurityErrorBound,
 };
-use spongefish_dsfs::{self as dsfs, Keccak};
+use spongefish_dsfs::{self as dsfs, Keccak, NargSecurity, STD_SPONGE_PARAMS};
 use warp::{
     config::WarpConfig,
     crypto::merkle::{blake3::Blake3MerkleTreeParams, parameters::MerkleTreeParams},
@@ -255,6 +256,72 @@ fn warp_commitment_changes_when_constraints_change() {
     let ix_b = warp_index(changed_r1cs, code, 4, 4);
 
     assert_ne!(committed_index(&ix_a), committed_index(&ix_b));
+}
+
+// --- Offline index-binding error (CY24 §32.7 COS, §32.8.1) ------------------
+
+#[test]
+fn warp_reduction_offline_binding_is_zero_while_nonsuccinct() {
+    // WARP's verifier holds the full index material (non-succinct): there is no
+    // committed index a prover can equivocate, and the absorbed index digest is
+    // pure FS domain separation (not load-bearing). So the offline binding error
+    // is zero. The (t+2*l0)^2/2^257 + t^2/2^257 term (CY24 §32.8.1) activates
+    // only once WARP has a succinct/holographic verifier index.
+    let (r1cs, code, _, _) = setup();
+    let ix = warp_index(r1cs, code, 4, 4);
+    let ir = WarpReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
+    let offline = ir.offline_binding_error(&ir.index_security_params(&ix));
+    for &t in &[0u64, 1 << 20, 1 << 40] {
+        assert_eq!(offline.evaluate(t), 0.0);
+    }
+}
+
+#[test]
+fn warp_decider_has_no_offline_binding() {
+    // The decider holds the full verifier key and runs a deterministic local
+    // check: no index commitment for a prover to equivocate.
+    let decider = WarpDecider::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default();
+    let offline = decider.offline_binding_error(&());
+    for &t in &[0u64, 1 << 20, 1 << 40] {
+        assert_eq!(offline.evaluate(t), 0.0);
+    }
+}
+
+#[test]
+fn offline_binding_convention_adds_to_soundness_and_knowledge_not_zk() {
+    // Documents the NARG combination convention (CY24 §32.8.1–§32.8.4): an
+    // offline binding term is added once to soundness and knowledge, never to
+    // ZK. WARP's current term is zero (non-succinct verifier), so we use a
+    // synthetic succinct-verifier term to exercise the convention.
+    let (r1cs, code, instances, _) = setup();
+    let (instance, _) = warp_statement(instances, vec![]);
+    let ix = warp_index(r1cs, code, 4, 4);
+    let ir = WarpReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
+    let profile = ir.profile_for_concrete_source(&ix, &instance);
+
+    let narg = NargSecurity {
+        ia: profile,
+        sponge: STD_SPONGE_PARAMS,
+    };
+
+    // Synthetic succinct-index term: (t + 2*l0)^2 / 2^257 + t^2 / 2^257.
+    let l0 = 1u64 << 4; // illustrative encoded-index length
+    let offline = SecurityErrorBound::new(move |t| {
+        let (t, l0) = (t as f64, l0 as f64);
+        ((t + 2.0 * l0).powi(2) + t * t) * 2f64.powi(-257)
+    });
+
+    let t = 1u64 << 30;
+    let off = offline.evaluate(t);
+    assert!(off > 0.0);
+
+    let final_soundness = narg.soundness_error(t) + off;
+    let final_knowledge = narg.knowledge_soundness_error(t) + off;
+    assert!((final_soundness - narg.soundness_error(t) - off).abs() <= off * 1e-9);
+    assert!((final_knowledge - narg.knowledge_soundness_error(t) - off).abs() <= off * 1e-9);
+    // The offline term is never added to ZK (structural: it is simply not part
+    // of the zk_error accounting, which depends only on the sponge and hvzk).
+    let _zk = narg.zk_error(t);
 }
 
 #[test]

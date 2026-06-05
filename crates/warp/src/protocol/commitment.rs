@@ -1,10 +1,10 @@
 use ark_codes::traits::LinearCode;
-use ark_crypto_primitives::merkle_tree::Config;
 use ark_ff::Field;
 use ark_serialize::CanonicalSerialize;
 use ia_core::CommittedIndexBytes;
 
-use crate::protocol::warp::{WarpDimensions, WarpStaticMaterial};
+use crate::protocol::warp::WarpStaticMaterial;
+use crate::protocol::WarpMerkle;
 use crate::relations::r1cs::R1CSConstraints;
 use crate::relations::BundledPESAT;
 
@@ -68,22 +68,21 @@ fn update_commit_constraints<F: Field>(
 
 pub(crate) fn committed_index_for<F, P, C, MT>(
     material: &WarpStaticMaterial<F, P, C, MT>,
-    dimensions: WarpDimensions,
 ) -> CommittedIndexBytes
 where
     F: Field,
     P: BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
     C: LinearCode<F> + Clone + CanonicalSerialize,
-    MT: Config<Leaf = [F]>,
-    <MT::LeafHash as ark_crypto_primitives::crh::CRHScheme>::Parameters: CanonicalSerialize,
-    <MT::TwoToOneHash as ark_crypto_primitives::crh::TwoToOneCRHScheme>::Parameters:
-        CanonicalSerialize,
+    MT: WarpMerkle<F>,
 {
+    // Dimensions (M, N, k) are derived from the relation, not passed in — they
+    // are the same `(m, n, k)` the indexer reads from `relation.config()`.
+    let (m, n, k) = material.relation.config();
     let mut hasher = blake3::Hasher::new();
     update_commit_bytes(&mut hasher, b"tag", WARP_VK_COMMIT_MATERIAL_TAG);
-    update_commit_usize(&mut hasher, b"vk.m", dimensions.m);
-    update_commit_usize(&mut hasher, b"vk.n", dimensions.n);
-    update_commit_usize(&mut hasher, b"vk.k", dimensions.k);
+    update_commit_usize(&mut hasher, b"vk.m", m);
+    update_commit_usize(&mut hasher, b"vk.n", n);
+    update_commit_usize(&mut hasher, b"vk.k", k);
     update_commit_usize(&mut hasher, b"config.l", material.config.l);
     update_commit_usize(&mut hasher, b"config.l1", material.config.l1);
     update_commit_usize(&mut hasher, b"config.s", material.config.s);

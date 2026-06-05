@@ -6,7 +6,10 @@
 //! many per-claim instances without recomputing the index portion of the
 //! security profile.
 
-use crate::{PreprocessingInteractiveArgument, PreprocessingInteractiveReduction, SecurityProfile};
+use crate::{
+    PreprocessingInteractiveArgument, PreprocessingInteractiveReduction, SecurityErrorBound,
+    SecurityProfile,
+};
 
 /// Index-aware security metadata for an [`PreprocessingInteractiveArgument`].
 ///
@@ -28,6 +31,46 @@ pub trait PreprocessingArgumentSecurity: PreprocessingInteractiveArgument {
     fn index_security_params(&self, ix: &Self::Index) -> Self::IndexParams;
 
     fn index_bound_for_index_params(&self, params: &Self::IndexParams) -> Self::IndexBound;
+
+    /// One-time soundness error from binding a proof to the committed index (the
+    /// offline/preprocessing phase), as a function of the query budget `t`.
+    ///
+    /// **Added once** to the compiled NARG soundness and knowledge-soundness
+    /// bounds; **not** part of the per-round state-restoration budget, and
+    /// **not** part of zero knowledge (the offline phase does not affect ZK —
+    /// CY24 §32.8.4).
+    ///
+    /// # Grounding (CY24 §32.7 COS transformation, §32.8.1)
+    ///
+    /// In COS the verifier index key is `vik = (rt_0, rho_0)`: a Merkle
+    /// commitment `rt_0` to the encoded verifier index `i_v` (length `l_0`) and a
+    /// hash `rho_0 = f_0(i)` of the raw index (Construction 32.3.1). COS soundness
+    /// is the underlying error plus a small additive offline term (§32.8.1):
+    ///
+    /// ```text
+    ///   eps_offline  =  (t_MT0 + 2*l_0)^2 / 2^(lambda+1)   // E1: binding of rt_0
+    ///                +  t_0^2          / 2^(lambda+1)       // E2: collision in f_0
+    /// ```
+    ///
+    /// Two regimes, both expressible here:
+    /// - **Verifier holds the full authentic index** (non-succinct): return
+    ///   [`SecurityErrorBound::zero`]. There is no committed index a prover can
+    ///   equivocate (`E1 = 0`), and any index digest absorbed for domain
+    ///   separation is not load-bearing — the verifier checks against the real
+    ///   material — so it is covered by the FS transcript soundness rather than a
+    ///   separate term (`E2` moot; CY24 §32.7 fn. 3).
+    /// - **Succinct (Merkle-committed, prover-opened) verifier index**: return
+    ///   the full `E1 + E2` term, reading `l_0` from `ix_params`.
+    ///
+    /// This method is **required** (no default): a zero default would let a future
+    /// succinct-verifier protocol silently report zero offline error — the unsafe
+    /// direction. Protocols whose verifier holds the full index return
+    /// [`SecurityErrorBound::zero`] *explicitly*.
+    ///
+    /// The duplex-sponge instantiation replaces `1/2^lambda` with the
+    /// commitment's collision resistance; this is an analogy to the
+    /// random-oracle bound above, not a separately proven DSFS-COS theorem.
+    fn offline_binding_error(&self, ix_params: &Self::IndexParams) -> SecurityErrorBound;
 
     fn instance_security_params(
         &self,
@@ -80,6 +123,14 @@ pub trait PreprocessingReductionSecurity: PreprocessingInteractiveReduction {
     fn index_security_params(&self, ix: &Self::Index) -> Self::IndexParams;
 
     fn index_bound_for_index_params(&self, params: &Self::IndexParams) -> Self::IndexBound;
+
+    /// One-time offline index-binding soundness error, added once to the compiled
+    /// NARG soundness and knowledge bounds (not to the SR budget, not to ZK). See
+    /// [`PreprocessingArgumentSecurity::offline_binding_error`] for the full
+    /// grounding (CY24 §32.7 / §32.8.1). Required (no default) for the same
+    /// safety reason; verifiers that hold the full authentic index return
+    /// [`SecurityErrorBound::zero`] explicitly.
+    fn offline_binding_error(&self, ix_params: &Self::IndexParams) -> SecurityErrorBound;
 
     fn source_security_params(
         &self,
