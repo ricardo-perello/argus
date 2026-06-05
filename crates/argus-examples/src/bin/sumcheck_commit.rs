@@ -20,8 +20,9 @@ use rand::rngs::OsRng;
 
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
+use ia_core::prelude::*;
 use ia_core::{
-    ArgumentSecurity, InteractiveArgument, NonInteractiveArgument, ProverChannel,
+    ArgumentSecurity, ProverChannel,
     SecurityErrorBound, SecurityProfile, VerificationError, VerificationResult, VerifierChannel,
 };
 

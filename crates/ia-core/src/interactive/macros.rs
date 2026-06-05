@@ -1,4 +1,51 @@
 //! Authoring macros for the protocol trait hierarchy.
+//!
+//! Each `impl_*` macro lets an author write `prove` and `verify` in one block but
+//! emits them into the two **role half-traits** (`…Prover` / `…Verifier`) so the
+//! same body can be compiled prover-only or verifier-only. The split is performed
+//! by [`__ia_core_emit_prover_verifier!`], which partitions the method blob at the
+//! first top-level `fn verify`.
+
+/// Internal: emit a leaf `{ fn prove … fn verify … }` method blob as two impls —
+/// the prover trait gets everything up to `fn verify`, the verifier trait gets
+/// `fn verify` (with any attributes that precede it) and the rest.
+///
+/// Standard tt-muncher: the accumulator lives in the `[ … ]` group so it cannot
+/// run past `fn verify`. Authoring order is always prove-then-verify, matching
+/// every `impl_*` macro's documented shape. `fn verify` cannot appear at the top
+/// level of `prove` (its body is a single token tree), so the split is robust.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __ia_core_emit_prover_verifier {
+    // Terminator: remaining tokens begin with (optional attrs then) `fn verify`.
+    (
+        [$($g:tt)*] [$ty:ty] [$($w:tt)*]
+        [$ptrait:path] [$vtrait:path]
+        [$($prove:tt)*]
+        $(#[$vattr:meta])* fn verify $($vrest:tt)*
+    ) => {
+        impl $($g)* $ptrait for $ty where $($w)* {
+            $($prove)*
+        }
+        impl $($g)* $vtrait for $ty where $($w)* {
+            $(#[$vattr])* fn verify $($vrest)*
+        }
+    };
+    // Munch one token from the unprocessed tail into the prove accumulator.
+    (
+        [$($g:tt)*] [$ty:ty] [$($w:tt)*]
+        [$ptrait:path] [$vtrait:path]
+        [$($prove:tt)*]
+        $next:tt $($rest:tt)*
+    ) => {
+        $crate::__ia_core_emit_prover_verifier! {
+            [$($g)*] [$ty] [$($w)*]
+            [$ptrait] [$vtrait]
+            [$($prove)* $next]
+            $($rest)*
+        }
+    };
+}
 
 /// Implement a plain interactive argument using one author-facing impl block.
 #[macro_export]
@@ -49,9 +96,10 @@ macro_rules! __ia_core_parse_interactive_argument {
             type Witness = $witness;
         }
 
-        impl $($impl_generics)* $crate::InteractiveArgument for $ty
-        $(where $($where_clause)+)?
-        {
+        $crate::__ia_core_emit_prover_verifier! {
+            [$($impl_generics)*] [$ty] [$($($where_clause)+)?]
+            [$crate::InteractiveArgumentProver] [$crate::InteractiveArgumentVerifier]
+            []
             $($methods)*
         }
     };
@@ -102,9 +150,10 @@ macro_rules! __ia_core_parse_interactive_argument_where {
             type Witness = $witness;
         }
 
-        impl $($impl_generics)* $crate::InteractiveArgument for $ty
-        where $($where_clause)*
-        {
+        $crate::__ia_core_emit_prover_verifier! {
+            [$($impl_generics)*] [$ty] [$($where_clause)*]
+            [$crate::InteractiveArgumentProver] [$crate::InteractiveArgumentVerifier]
+            []
             $($methods)*
         }
     };
@@ -181,9 +230,10 @@ macro_rules! __ia_core_parse_interactive_reduction {
             type TargetWitness = $target_witness;
         }
 
-        impl $($impl_generics)* $crate::InteractiveReduction for $ty
-        $(where $($where_clause)+)?
-        {
+        $crate::__ia_core_emit_prover_verifier! {
+            [$($impl_generics)*] [$ty] [$($($where_clause)+)?]
+            [$crate::InteractiveReductionProver] [$crate::InteractiveReductionVerifier]
+            []
             $($methods)*
         }
     };
@@ -246,9 +296,10 @@ macro_rules! __ia_core_parse_interactive_reduction_where {
             type TargetWitness = $target_witness;
         }
 
-        impl $($impl_generics)* $crate::InteractiveReduction for $ty
-        where $($where_clause)*
-        {
+        $crate::__ia_core_emit_prover_verifier! {
+            [$($impl_generics)*] [$ty] [$($where_clause)*]
+            [$crate::InteractiveReductionProver] [$crate::InteractiveReductionVerifier]
+            []
             $($methods)*
         }
     };
@@ -353,9 +404,11 @@ macro_rules! __ia_core_parse_preprocessing_argument {
                 $preprocess_body
         }
 
-        impl $($impl_generics)* $crate::PreprocessingInteractiveArgument for $ty
-        $(where $($where_clause)+)?
-        {
+        $crate::__ia_core_emit_prover_verifier! {
+            [$($impl_generics)*] [$ty] [$($($where_clause)+)?]
+            [$crate::PreprocessingInteractiveArgumentProver]
+            [$crate::PreprocessingInteractiveArgumentVerifier]
+            []
             $($methods)*
         }
     };
@@ -436,9 +489,11 @@ macro_rules! __ia_core_parse_preprocessing_argument_where {
                 $preprocess_body
         }
 
-        impl $($impl_generics)* $crate::PreprocessingInteractiveArgument for $ty
-        where $($where_clause)*
-        {
+        $crate::__ia_core_emit_prover_verifier! {
+            [$($impl_generics)*] [$ty] [$($where_clause)*]
+            [$crate::PreprocessingInteractiveArgumentProver]
+            [$crate::PreprocessingInteractiveArgumentVerifier]
+            []
             $($methods)*
         }
     };
@@ -555,9 +610,11 @@ macro_rules! __ia_core_parse_preprocessing_reduction {
                 $preprocess_body
         }
 
-        impl $($impl_generics)* $crate::PreprocessingInteractiveReduction for $ty
-        $(where $($where_clause)+)?
-        {
+        $crate::__ia_core_emit_prover_verifier! {
+            [$($impl_generics)*] [$ty] [$($($where_clause)+)?]
+            [$crate::PreprocessingInteractiveReductionProver]
+            [$crate::PreprocessingInteractiveReductionVerifier]
+            []
             $($methods)*
         }
     };
@@ -650,9 +707,11 @@ macro_rules! __ia_core_parse_preprocessing_reduction_where {
                 $preprocess_body
         }
 
-        impl $($impl_generics)* $crate::PreprocessingInteractiveReduction for $ty
-        where $($where_clause)*
-        {
+        $crate::__ia_core_emit_prover_verifier! {
+            [$($impl_generics)*] [$ty] [$($where_clause)*]
+            [$crate::PreprocessingInteractiveReductionProver]
+            [$crate::PreprocessingInteractiveReductionVerifier]
+            []
             $($methods)*
         }
     };
@@ -671,10 +730,11 @@ macro_rules! __ia_core_parse_preprocessing_reduction_where {
 #[cfg(test)]
 mod tests {
     use crate::{
-        CommittedIndex, CommittedIndexBytes, Decoding, Encoding, InteractiveArgument,
-        InteractiveReduction, NargSerialize, PreprocessingCore, PreprocessingInteractiveArgument,
-        ProverChannel, ReducedArgument, VerificationError, VerificationResult, VerifierChannel,
-        pad_protocol_id,
+        CommittedIndex, CommittedIndexBytes, Decoding, Encoding, InteractiveArgumentProver,
+        InteractiveArgumentVerifier, InteractiveReductionProver, InteractiveReductionVerifier,
+        NargSerialize, PreprocessingCore, PreprocessingInteractiveArgumentProver,
+        PreprocessingInteractiveArgumentVerifier, ProverChannel, ReducedArgument,
+        VerificationError, VerificationResult, VerifierChannel, pad_protocol_id,
     };
     use alloc::vec::Vec;
     use core::marker::PhantomData;

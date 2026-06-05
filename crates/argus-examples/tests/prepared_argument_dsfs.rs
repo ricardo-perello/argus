@@ -7,9 +7,9 @@
 
 use spongefish_dsfs as dsfs;
 
+use ia_core::prelude::*;
 use ia_core::{
-    ArgumentCore, CommittedIndex, CommittedIndexBytes, PreprocessingCore,
-    PreprocessingInteractiveArgument, PreprocessingNonInteractiveArgument, ProtocolCore,
+    ArgumentCore, CommittedIndex, CommittedIndexBytes, PreprocessingCore, ProtocolCore,
     ProverChannel, VerificationError, VerificationResult, VerifierChannel,
 };
 
@@ -48,7 +48,7 @@ impl PreprocessingCore for ChallengeEchoArgument {
     }
 }
 
-impl PreprocessingInteractiveArgument for ChallengeEchoArgument {
+impl PreprocessingInteractiveArgumentProver for ChallengeEchoArgument {
     fn prove<P: ProverChannel<Unit = u8>>(
         &self,
         ch: &mut P,
@@ -60,7 +60,9 @@ impl PreprocessingInteractiveArgument for ChallengeEchoArgument {
         let challenge: [u8; 8] = ch.read_verifier_message();
         ch.send_prover_message(&challenge);
     }
+}
 
+impl PreprocessingInteractiveArgumentVerifier for ChallengeEchoArgument {
     fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,

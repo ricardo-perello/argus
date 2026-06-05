@@ -1,12 +1,14 @@
 //! Trivial preprocessing adapters for plain protocols in mixed compositions.
 
 use crate::{
-    ArgumentCore, InteractiveArgument, InteractiveReduction, PreprocessingCore,
-    PreprocessingInteractiveArgument, PreprocessingInteractiveReduction, ProtocolCore,
-    ProverChannel, ReductionCore, VerificationResult, VerifierChannel,
+    ArgumentCore, InteractiveArgumentProver, InteractiveArgumentVerifier,
+    InteractiveReductionProver, InteractiveReductionVerifier, PreprocessingCore,
+    PreprocessingInteractiveArgumentProver, PreprocessingInteractiveArgumentVerifier,
+    PreprocessingInteractiveReductionProver, PreprocessingInteractiveReductionVerifier,
+    ProtocolCore, ProverChannel, ReductionCore, VerificationResult, VerifierChannel,
 };
 
-/// Wraps a plain [`InteractiveArgument`] as an [`PreprocessingInteractiveArgument`]
+/// Wraps a plain interactive argument as a preprocessing interactive argument
 /// with unit index and unit keys (empty committed index).
 ///
 /// Intended for the *inner* slot of a heterogeneous preprocessing composition so that
@@ -16,20 +18,24 @@ use crate::{
 /// transcript absorbs `IndexedInstance { committed_index: empty, instance: x }`
 /// instead of the bare `x`. Use the plain DSFS path for top-level plain
 /// protocols.
+///
+/// The core impls only need [`ArgumentCore`], and each leaf half only needs the
+/// matching inner half, so wrapping a prover-only (or verifier-only) inner
+/// protocol yields a prover-only (or verifier-only) adapter.
 pub struct TrivialIndexedArgument<A>(pub A);
 
-impl<A: InteractiveArgument> ProtocolCore for TrivialIndexedArgument<A> {
+impl<A: ProtocolCore> ProtocolCore for TrivialIndexedArgument<A> {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         self.0.protocol_id()
     }
 }
 
-impl<A: InteractiveArgument> ArgumentCore for TrivialIndexedArgument<A> {
+impl<A: ArgumentCore> ArgumentCore for TrivialIndexedArgument<A> {
     type Instance = A::Instance;
     type Witness = A::Witness;
 }
 
-impl<A: InteractiveArgument> PreprocessingCore for TrivialIndexedArgument<A> {
+impl<A: ArgumentCore> PreprocessingCore for TrivialIndexedArgument<A> {
     type Index = ();
     type ProverKey = ();
     type VerifierKey = ();
@@ -39,7 +45,9 @@ impl<A: InteractiveArgument> PreprocessingCore for TrivialIndexedArgument<A> {
     }
 }
 
-impl<A: InteractiveArgument> PreprocessingInteractiveArgument for TrivialIndexedArgument<A> {
+impl<A: InteractiveArgumentProver> PreprocessingInteractiveArgumentProver
+    for TrivialIndexedArgument<A>
+{
     fn prove<P: ProverChannel<Unit = u8>>(
         &self,
         ch: &mut P,
@@ -49,7 +57,11 @@ impl<A: InteractiveArgument> PreprocessingInteractiveArgument for TrivialIndexed
     ) {
         self.0.prove(ch, instance, witness)
     }
+}
 
+impl<A: InteractiveArgumentVerifier> PreprocessingInteractiveArgumentVerifier
+    for TrivialIndexedArgument<A>
+{
     fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,
@@ -63,20 +75,20 @@ impl<A: InteractiveArgument> PreprocessingInteractiveArgument for TrivialIndexed
 /// Reduction counterpart to [`TrivialIndexedArgument`].
 pub struct TrivialIndexedReduction<R>(pub R);
 
-impl<R: InteractiveReduction> ProtocolCore for TrivialIndexedReduction<R> {
+impl<R: ProtocolCore> ProtocolCore for TrivialIndexedReduction<R> {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         self.0.protocol_id()
     }
 }
 
-impl<R: InteractiveReduction> ReductionCore for TrivialIndexedReduction<R> {
+impl<R: ReductionCore> ReductionCore for TrivialIndexedReduction<R> {
     type SourceInstance = R::SourceInstance;
     type TargetInstance = R::TargetInstance;
     type SourceWitness = R::SourceWitness;
     type TargetWitness = R::TargetWitness;
 }
 
-impl<R: InteractiveReduction> PreprocessingCore for TrivialIndexedReduction<R> {
+impl<R: ReductionCore> PreprocessingCore for TrivialIndexedReduction<R> {
     type Index = ();
     type ProverKey = ();
     type VerifierKey = ();
@@ -86,7 +98,9 @@ impl<R: InteractiveReduction> PreprocessingCore for TrivialIndexedReduction<R> {
     }
 }
 
-impl<R: InteractiveReduction> PreprocessingInteractiveReduction for TrivialIndexedReduction<R> {
+impl<R: InteractiveReductionProver> PreprocessingInteractiveReductionProver
+    for TrivialIndexedReduction<R>
+{
     fn prove<P: ProverChannel<Unit = u8>>(
         &self,
         ch: &mut P,
@@ -96,7 +110,11 @@ impl<R: InteractiveReduction> PreprocessingInteractiveReduction for TrivialIndex
     ) -> (Self::TargetInstance, Self::TargetWitness) {
         self.0.prove(ch, instance, witness)
     }
+}
 
+impl<R: InteractiveReductionVerifier> PreprocessingInteractiveReductionVerifier
+    for TrivialIndexedReduction<R>
+{
     fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,

@@ -17,10 +17,10 @@ use ark_std::UniformRand;
 use rand::rngs::OsRng;
 use spongefish_dsfs as dsfs;
 
+use ia_core::prelude::*;
 use ia_core::{
-    ArgumentSecurity, ChainedReduction, NonInteractiveArgument, NonInteractiveReduction,
-    ProverChannel, ReducedArgument, ReductionSecurity, SecurityErrorBound, SecurityProfile,
-    VerificationError, VerificationResult, VerifierChannel,
+    ArgumentSecurity, ChainedReduction, ProverChannel, ReducedArgument, ReductionSecurity,
+    SecurityErrorBound, SecurityProfile, VerificationError, VerificationResult, VerifierChannel,
 };
 
 // ---------------------------------------------------------------------------
@@ -383,6 +383,19 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ia_core::{
+        IntoProver, IntoVerifier, NonInteractiveArgument, NonInteractiveArgumentProver,
+        NonInteractiveArgumentVerifier, NonInteractiveReduction, NonInteractiveReductionProver,
+        NonInteractiveReductionVerifier,
+    };
+
+    fn assert_narg_prover<N: NonInteractiveArgumentProver>(_: &N) {}
+
+    fn assert_narg_verifier<N: NonInteractiveArgumentVerifier>(_: &N) {}
+
+    fn assert_nir_prover<N: NonInteractiveReductionProver>(_: &N) {}
+
+    fn assert_nir_verifier<N: NonInteractiveReductionVerifier>(_: &N) {}
 
     #[test]
     fn composition_dsfs_roundtrip() {
@@ -407,5 +420,63 @@ mod tests {
         );
         fn assert_nir<N: NonInteractiveReduction>(_: &N) {}
         assert_nir(&nir);
+    }
+
+    #[test]
+    fn composition_uses_separate_prover_and_verifier_halves() {
+        let n = 8;
+        let values: Vec<Fr> = (0..n as u64).map(Fr::from).collect();
+        let instance = Claims(values.clone());
+        let witness = Values(values);
+
+        let session = spongefish::session!("argus example: composition role split");
+        let prover = dsfs::plain_non_interactive_argument(
+            FullProtocol::default().into_prover(),
+            dsfs::Keccak::default(),
+        );
+        let verifier = dsfs::plain_non_interactive_argument(
+            FullProtocol::default().into_verifier(),
+            dsfs::Keccak::default(),
+        );
+
+        assert_narg_prover(&prover);
+        assert_narg_verifier(&verifier);
+
+        let proof = prover.prove(&session, &instance, &witness);
+        assert!(!proof.is_empty());
+
+        verifier
+            .verify(&session, &instance, &proof)
+            .expect("separate composed verifier accepts prover proof");
+    }
+
+    #[test]
+    fn composed_reduction_uses_separate_prover_and_verifier_halves() {
+        let n = 8;
+        let values: Vec<Fr> = (0..n as u64).map(Fr::from).collect();
+        let instance = Claims(values.clone());
+        let witness = Values(values);
+
+        let session = spongefish::session!("argus example: composition reduction role split");
+        let prover = dsfs::plain_non_interactive_reduction::<_, [u8; 64], _>(
+            TwoFolds::default().into_prover(),
+            dsfs::Keccak::default(),
+        );
+        let verifier = dsfs::plain_non_interactive_reduction::<_, [u8; 64], _>(
+            TwoFolds::default().into_verifier(),
+            dsfs::Keccak::default(),
+        );
+
+        assert_nir_prover(&prover);
+        assert_nir_verifier(&verifier);
+
+        let (proof, target_prover, _) = prover.prove(&session, &instance, &witness);
+        assert!(!proof.is_empty());
+
+        let target_verifier = verifier
+            .verify(&session, &instance, &proof)
+            .expect("separate composed reduction verifier accepts prover proof");
+
+        assert_eq!(target_prover.0, target_verifier.0);
     }
 }

@@ -10,9 +10,10 @@ use ark_std::log2;
 
 use ia_core::{
     ArgumentCore, CommittedIndex, CommittedIndexBytes, PreprocessingArgumentSecurity,
-    PreprocessingCore, PreprocessingInteractiveArgument, PreprocessingInteractiveReduction,
-    PreprocessingReductionSecurity, ProtocolCore, ProverChannel, SecurityErrorBound,
-    SecurityProfile, VerificationResult, VerifierChannel,
+    PreprocessingCore, PreprocessingInteractiveArgumentProver,
+    PreprocessingInteractiveArgumentVerifier, PreprocessingInteractiveReductionProver,
+    PreprocessingInteractiveReductionVerifier, PreprocessingReductionSecurity, ProtocolCore,
+    ProverChannel, SecurityErrorBound, SecurityProfile, VerificationResult, VerifierChannel,
 };
 
 use crate::protocol::commitment::committed_index_for;
@@ -681,7 +682,7 @@ where
     }
 }
 
-impl<F, P, C, MT> PreprocessingInteractiveArgument for FullWarp<F, P, C, MT>
+impl<F, P, C, MT> PreprocessingInteractiveArgumentProver for FullWarp<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -705,7 +706,21 @@ where
         self.decider
             .prove(ch, &(), &target_instance, &target_witness);
     }
+}
 
+impl<F, P, C, MT> PreprocessingInteractiveArgumentVerifier for FullWarp<F, P, C, MT>
+where
+    F: Field
+        + PrimeField
+        + Send
+        + Sync
+        + spongefish::Encoding
+        + spongefish::Decoding
+        + ia_core::Deserialize,
+    P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
+    C: LinearCode<F> + Clone + CanonicalSerialize,
+    MT: WarpMerkle<F>,
+{
     fn verify<Ch: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut Ch,

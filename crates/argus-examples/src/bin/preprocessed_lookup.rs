@@ -38,9 +38,10 @@
 use blake3::{Hash, Hasher};
 use spongefish_dsfs as dsfs;
 
+use ia_core::prelude::*;
 use ia_core::{
-    CommittedIndex, CommittedIndexBytes, PreprocessingCore, PreprocessingNonInteractiveArgument,
-    ProverChannel, VerificationError, VerificationResult, VerifierChannel,
+    CommittedIndex, CommittedIndexBytes, PreprocessingCore, ProverChannel, VerificationError,
+    VerificationResult, VerifierChannel,
 };
 
 // ---------------------------------------------------------------------------
@@ -295,16 +296,24 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ia_core::{
+        IntoProver, IntoVerifier, PreprocessingNonInteractiveArgumentProver,
+        PreprocessingNonInteractiveArgumentVerifier,
+    };
 
     fn sample_table() -> Vec<u32> {
         (0..8u32).map(|i| 1000 + i).collect()
     }
 
+    fn assert_preprocessed_prover<N: PreprocessingNonInteractiveArgumentProver>(_: &N) {}
+
+    fn assert_preprocessed_verifier<N: PreprocessingNonInteractiveArgumentVerifier>(_: &N) {}
+
     #[test]
     fn lookup_roundtrip() {
         let session = spongefish::session!("preprocessed lookup test");
         let table = sample_table();
-        let nia = dsfs::preprocessing_non_interactive_argument(
+        let nia = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
             PreprocessedLookup,
             dsfs::Keccak::default(),
         );
@@ -323,7 +332,7 @@ mod tests {
     fn lookup_rejects_wrong_value() {
         let session = spongefish::session!("preprocessed lookup test");
         let table = sample_table();
-        let nia = dsfs::preprocessing_non_interactive_argument(
+        let nia = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
             PreprocessedLookup,
             dsfs::Keccak::default(),
         );
@@ -354,31 +363,41 @@ mod tests {
 
         // Open table_a at index 5 (unperturbed in both).
         let proof = nia.prove(&pk_a, &session, &(5, table_a[5]), &());
-        assert!(nia
-            .verify(&vk_b, &session, &(5, table_a[5]), &proof)
-            .is_err());
+        assert!(
+            nia.verify(&vk_b, &session, &(5, table_a[5]), &proof)
+                .is_err()
+        );
     }
 
     /// The optional `Prover`/`Verifier` role wrappers compose `(nia, key)` and
     /// round-trip; `Verifier` exposes only `verify`.
     #[test]
-    fn lookup_via_role_wrappers() {
-        use ia_core::{Prover, Verifier};
+    fn lookup_via_separate_prover_and_verifier_views() {
         let session = spongefish::session!("preprocessed lookup wrappers test");
         let table = sample_table();
-        let nia = dsfs::preprocessing_non_interactive_argument(
+        let nia = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
             PreprocessedLookup,
             dsfs::Keccak::default(),
         );
         let (pk, vk) = nia.preprocess(&table);
 
-        let prover = Prover::new(&nia, &pk);
-        let verifier = Verifier::new(&nia, &vk);
+        let prover_nia = dsfs::preprocessing_non_interactive_argument(
+            PreprocessedLookup.into_prover(),
+            dsfs::Keccak::default(),
+        );
+        let verifier_nia = dsfs::preprocessing_non_interactive_argument(
+            PreprocessedLookup.into_verifier(),
+            dsfs::Keccak::default(),
+        );
 
-        let proof = prover.prove(&session, &(3, table[3]), &());
-        verifier
-            .verify(&session, &(3, table[3]), &proof)
-            .expect("role-wrapper round-trip verifies");
+        assert_preprocessed_prover(&prover_nia);
+        assert_preprocessed_verifier(&verifier_nia);
+
+        let proof = prover_nia.prove(&pk, &session, &(3, table[3]), &());
+        assert!(!proof.is_empty());
+        verifier_nia
+            .verify(&vk, &session, &(3, table[3]), &proof)
+            .expect("separate prover/verifier round-trip verifies");
     }
 
     /// Confirms the asymmetry: the proving key holds the full table; the

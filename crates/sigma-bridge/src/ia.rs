@@ -25,8 +25,8 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 use ia_core::{
-    ArgumentCore, InteractiveArgument, ProtocolCore, ProverChannel, VerificationError,
-    VerificationResult, VerifierChannel,
+    ArgumentCore, InteractiveArgumentProver, InteractiveArgumentVerifier, ProtocolCore,
+    ProverChannel, VerificationError, VerificationResult, VerifierChannel,
 };
 use rand_chacha::rand_core::SeedableRng;
 use sigma_proofs::traits::SigmaProtocol;
@@ -60,7 +60,7 @@ where
     type Witness = (S::Witness, [u8; 32]);
 }
 
-impl<S> InteractiveArgument for SigmaIA<S>
+impl<S> InteractiveArgumentProver for SigmaIA<S>
 where
     S: SigmaProtocol,
 {
@@ -93,7 +93,12 @@ where
             ch.send_prover_message(r);
         }
     }
+}
 
+impl<S> InteractiveArgumentVerifier for SigmaIA<S>
+where
+    S: SigmaProtocol,
+{
     fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,

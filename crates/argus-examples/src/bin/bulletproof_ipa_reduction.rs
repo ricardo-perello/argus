@@ -27,8 +27,9 @@ use spongefish_dsfs as dsfs;
 use argus_examples::bulletproofs::{
     inner_product, ipa_round_error, msm, random_statement, IpaInstance, IpaWitness,
 };
+use ia_core::prelude::*;
 use ia_core::{
-    ArgumentSecurity, ChainedReduction, Decoding, Deserialize, Encoding, NonInteractiveArgument,
+    ArgumentSecurity, ChainedReduction, Decoding, Deserialize, Encoding,
     ProverChannel, ReducedArgument, ReductionSecurity, SecurityErrorBound, SecurityProfile,
     VerificationError, VerificationResult, VerifierChannel,
 };

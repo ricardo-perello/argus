@@ -20,10 +20,10 @@ use ark_std::UniformRand;
 use rand::rngs::OsRng;
 use spongefish_dsfs as dsfs;
 
+use ia_core::prelude::*;
 use ia_core::{
-    ArgumentSecurity, Decoding, Deserialize, Encoding, InteractiveArgument, NonInteractiveArgument,
-    ProverChannel, SecurityErrorBound, SecurityProfile, VerificationError, VerificationResult,
-    VerifierChannel,
+    ArgumentSecurity, Decoding, Deserialize, Encoding, ProverChannel, SecurityErrorBound,
+    SecurityProfile, VerificationError, VerificationResult, VerifierChannel,
 };
 
 // ---------------------------------------------------------------------------
@@ -203,12 +203,19 @@ fn main() {
 mod tests {
     use super::*;
     use ark_ff::PrimeField;
-    use ia_core::{ArgumentSecurity, NonInteractiveArgument};
+    use ia_core::{
+        ArgumentSecurity, IntoProver, IntoVerifier, NonInteractiveArgument,
+        NonInteractiveArgumentProver, NonInteractiveArgumentVerifier,
+    };
     use spongefish_dsfs::STD_SPONGE_PARAMS;
     use std::thread;
 
     type G = ark_curve25519::EdwardsProjective;
     type F = ark_curve25519::Fr;
+
+    fn assert_narg_prover<N: NonInteractiveArgumentProver>(_: &N) {}
+
+    fn assert_narg_verifier<N: NonInteractiveArgumentVerifier>(_: &N) {}
 
     #[test]
     fn schnorr_ia_soundness_is_one_over_q() {
@@ -315,6 +322,34 @@ mod tests {
         let narg = nia.prove(&session, &instance, &sk);
         nia.verify(&session, &instance, &narg)
             .expect("dsfs verification failed");
+    }
+
+    #[test]
+    fn schnorr_dsfs_separate_prover_and_verifier_halves_roundtrip() {
+        let generator = G::generator();
+        let sk = F::rand(&mut OsRng);
+        let pk = generator * sk;
+        let instance = [generator, pk];
+
+        let session = spongefish::session!("spongefish examples");
+        let prover = dsfs::plain_non_interactive_argument(
+            Schnorr::<G>::default().into_prover(),
+            dsfs::Keccak::default(),
+        );
+        let verifier = dsfs::plain_non_interactive_argument(
+            Schnorr::<G>::default().into_verifier(),
+            dsfs::Keccak::default(),
+        );
+
+        assert_narg_prover(&prover);
+        assert_narg_verifier(&verifier);
+
+        let proof = prover.prove(&session, &instance, &sk);
+        assert!(!proof.is_empty());
+
+        verifier
+            .verify(&session, &instance, &proof)
+            .expect("separately compiled Schnorr verifier accepted prover proof");
     }
 
     #[test]

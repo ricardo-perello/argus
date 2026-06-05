@@ -5,18 +5,17 @@ use crate::{
     VerifierChannel,
 };
 
-/// Indexed (preprocessed) interactive argument.
+/// Prover half of an indexed (preprocessed) interactive argument.
 ///
 /// Splits the relation into an index and a per-claim instance/witness pair.
 /// The `PreprocessingCore::preprocess` function deterministically derives prover
-/// and verifier keys; [`prove`](Self::prove) / [`verify`](Self::verify) execute
-/// keyed.
+/// and verifier keys; [`prove`](Self::prove) executes keyed.
 ///
-/// There is no blanket implementation from [`crate::InteractiveArgument`] into this
-/// trait. Plain protocols stay plain. A protocol with real preprocessing
+/// There is no blanket implementation from [`crate::InteractiveArgumentProver`] into
+/// this trait. Plain protocols stay plain. A protocol with real preprocessing
 /// implements this trait directly. To use a plain protocol in the *inner* slot
 /// of a preprocessing composition, wrap it in [`crate::TrivialIndexedArgument`].
-pub trait PreprocessingInteractiveArgument: ArgumentCore + PreprocessingCore {
+pub trait PreprocessingInteractiveArgumentProver: ArgumentCore + PreprocessingCore {
     fn prove<P: ProverChannel<Unit = u8>>(
         &self,
         ch: &mut P,
@@ -24,7 +23,10 @@ pub trait PreprocessingInteractiveArgument: ArgumentCore + PreprocessingCore {
         instance: &Self::Instance,
         witness: &Self::Witness,
     );
+}
 
+/// Verifier half of an indexed (preprocessed) interactive argument.
+pub trait PreprocessingInteractiveArgumentVerifier: ArgumentCore + PreprocessingCore {
     fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,
@@ -33,12 +35,24 @@ pub trait PreprocessingInteractiveArgument: ArgumentCore + PreprocessingCore {
     ) -> VerificationResult<()>;
 }
 
-/// Indexed (preprocessed) interactive reduction.
+/// Indexed (preprocessed) interactive argument: both halves. Marker conjunction
+/// of [`PreprocessingInteractiveArgumentProver`] and
+/// [`PreprocessingInteractiveArgumentVerifier`].
+pub trait PreprocessingInteractiveArgument:
+    PreprocessingInteractiveArgumentProver + PreprocessingInteractiveArgumentVerifier
+{
+}
+
+impl<T> PreprocessingInteractiveArgument for T where
+    T: PreprocessingInteractiveArgumentProver + PreprocessingInteractiveArgumentVerifier
+{
+}
+
+/// Prover half of an indexed (preprocessed) interactive reduction.
 ///
-/// Same split as [`PreprocessingInteractiveArgument`], with the standard reduction
-/// shape: prove returns a target instance/witness pair; verify returns the
-/// target instance.
-pub trait PreprocessingInteractiveReduction: ReductionCore + PreprocessingCore {
+/// Same split as [`PreprocessingInteractiveArgumentProver`], with the standard
+/// reduction shape: prove returns a target instance/witness pair.
+pub trait PreprocessingInteractiveReductionProver: ReductionCore + PreprocessingCore {
     fn prove<P: ProverChannel<Unit = u8>>(
         &self,
         ch: &mut P,
@@ -46,13 +60,29 @@ pub trait PreprocessingInteractiveReduction: ReductionCore + PreprocessingCore {
         instance: &Self::SourceInstance,
         witness: &Self::SourceWitness,
     ) -> (Self::TargetInstance, Self::TargetWitness);
+}
 
+/// Verifier half of an indexed (preprocessed) interactive reduction.
+pub trait PreprocessingInteractiveReductionVerifier: ReductionCore + PreprocessingCore {
     fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,
         vk: &Self::VerifierKey,
         instance: &Self::SourceInstance,
     ) -> VerificationResult<Self::TargetInstance>;
+}
+
+/// Indexed (preprocessed) interactive reduction: both halves. Marker conjunction
+/// of [`PreprocessingInteractiveReductionProver`] and
+/// [`PreprocessingInteractiveReductionVerifier`].
+pub trait PreprocessingInteractiveReduction:
+    PreprocessingInteractiveReductionProver + PreprocessingInteractiveReductionVerifier
+{
+}
+
+impl<T> PreprocessingInteractiveReduction for T where
+    T: PreprocessingInteractiveReductionProver + PreprocessingInteractiveReductionVerifier
+{
 }
 // ---------------------------------------------------------------------------
 // Tests
@@ -65,8 +95,8 @@ mod tests {
     use crate::preprocessing::{INDEXED_INSTANCE_TAG, VK_PAIR_TAG};
     use crate::{
         CommittedIndex, CommittedIndexBytes, Decoding, Deserialize, Encoding, IndexedInstance,
-        IndexedInstanceRef, InteractiveArgument, NargSerialize, ProtocolCore, ReducedArgument,
-        TrivialIndexedArgument, VerificationError, pad_protocol_id,
+        IndexedInstanceRef, InteractiveArgumentProver, InteractiveArgumentVerifier, NargSerialize,
+        ProtocolCore, ReducedArgument, TrivialIndexedArgument, VerificationError, pad_protocol_id,
     };
     use alloc::vec;
     use alloc::vec::Vec;
@@ -178,8 +208,11 @@ mod tests {
         type Witness = ();
     }
 
-    impl InteractiveArgument for PlainOk {
+    impl InteractiveArgumentProver for PlainOk {
         fn prove<P: ProverChannel<Unit = u8>>(&self, _: &mut P, _: &(), _: &()) {}
+    }
+
+    impl InteractiveArgumentVerifier for PlainOk {
         fn verify<V: VerifierChannel<Unit = u8>>(
             &self,
             _: &mut V,
@@ -278,7 +311,7 @@ mod tests {
         }
     }
 
-    impl PreprocessingInteractiveReduction for AddPk {
+    impl PreprocessingInteractiveReductionProver for AddPk {
         fn prove<P: ProverChannel<Unit = u8>>(
             &self,
             _: &mut P,
@@ -288,7 +321,9 @@ mod tests {
         ) -> (Self::TargetInstance, Self::TargetWitness) {
             (instance.wrapping_add(pk.0), ())
         }
+    }
 
+    impl PreprocessingInteractiveReductionVerifier for AddPk {
         fn verify<V: VerifierChannel<Unit = u8>>(
             &self,
             _: &mut V,
@@ -333,7 +368,7 @@ mod tests {
         }
     }
 
-    impl PreprocessingInteractiveArgument for EqualsKey {
+    impl PreprocessingInteractiveArgumentProver for EqualsKey {
         fn prove<P: ProverChannel<Unit = u8>>(
             &self,
             _: &mut P,
@@ -342,7 +377,9 @@ mod tests {
             _: &Self::Witness,
         ) {
         }
+    }
 
+    impl PreprocessingInteractiveArgumentVerifier for EqualsKey {
         fn verify<V: VerifierChannel<Unit = u8>>(
             &self,
             _: &mut V,

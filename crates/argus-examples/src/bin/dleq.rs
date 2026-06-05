@@ -45,10 +45,10 @@ use ark_std::UniformRand;
 use rand::rngs::OsRng;
 use spongefish_dsfs as dsfs;
 
+use ia_core::prelude::*;
 use ia_core::{
     CommittedIndex, CommittedIndexBytes, Decoding, Deserialize, Encoding, PreprocessingCore,
-    PreprocessingNonInteractiveArgument, ProverChannel, VerificationError, VerificationResult,
-    VerifierChannel,
+    ProverChannel, VerificationError, VerificationResult, VerifierChannel,
 };
 
 // ---------------------------------------------------------------------------
@@ -223,9 +223,17 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ia_core::{
+        IntoProver, IntoVerifier, PreprocessingNonInteractiveArgumentProver,
+        PreprocessingNonInteractiveArgumentVerifier,
+    };
 
     type G = ark_curve25519::EdwardsProjective;
     type F = ark_curve25519::Fr;
+
+    fn assert_preprocessed_prover<N: PreprocessingNonInteractiveArgumentProver>(_: &N) {}
+
+    fn assert_preprocessed_verifier<N: PreprocessingNonInteractiveArgumentVerifier>(_: &N) {}
 
     fn keygen() -> (G, F, G) {
         let g = G::generator();
@@ -238,7 +246,7 @@ mod tests {
     fn dleq_roundtrip() {
         let session = spongefish::session!("dleq test");
         let (g, x, h) = keygen();
-        let nia = dsfs::preprocessing_non_interactive_argument(
+        let nia = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
             Dleq::<G>::default(),
             dsfs::Keccak::default(),
         );
@@ -249,6 +257,40 @@ mod tests {
         let proof = nia.prove(&pk, &session, &(u, v), &x);
         nia.verify(&vk, &session, &(u, v), &proof)
             .expect("verify under correct key");
+    }
+
+    #[test]
+    fn dleq_via_separate_prover_and_verifier_views() {
+        let session = spongefish::session!("dleq role split test");
+        let (g, x, h) = keygen();
+        let nia = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
+            Dleq::<G>::default(),
+            dsfs::Keccak::default(),
+        );
+        let (pk, vk) = nia.preprocess(&(g, h));
+
+        let prover_nia = dsfs::preprocessing_non_interactive_argument(
+            Dleq::<G>::default().into_prover(),
+            dsfs::Keccak::default(),
+        );
+        let verifier_nia = dsfs::preprocessing_non_interactive_argument(
+            Dleq::<G>::default().into_verifier(),
+            dsfs::Keccak::default(),
+        );
+
+        assert_preprocessed_prover(&prover_nia);
+        assert_preprocessed_verifier(&verifier_nia);
+
+        let u = G::generator() * F::rand(&mut OsRng);
+        let v = u * x;
+        // Keys are passed explicitly on each call; capability separation comes from
+        // the prover-only / verifier-only compiled objects, not a key-binding wrapper.
+        let proof = prover_nia.prove(&pk, &session, &(u, v), &x);
+        assert!(!proof.is_empty());
+
+        verifier_nia
+            .verify(&vk, &session, &(u, v), &proof)
+            .expect("separate DLEQ verifier accepts prover proof");
     }
 
     /// A proof produced under (g, h_alice) cannot be redirected at
@@ -274,9 +316,10 @@ mod tests {
         let proof = nia.prove(&pk_alice, &session, &(u, v_alice), &x_alice);
 
         // Verifying under Bob's key rejects — the bound public key differs.
-        assert!(nia
-            .verify(&vk_bob, &session, &(u, v_alice), &proof)
-            .is_err());
+        assert!(
+            nia.verify(&vk_bob, &session, &(u, v_alice), &proof)
+                .is_err()
+        );
     }
 
     /// Mismatching (u, v) — i.e., v != u^x — must be rejected by the

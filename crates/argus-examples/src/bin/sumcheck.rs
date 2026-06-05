@@ -5,8 +5,9 @@ use rand::rngs::OsRng;
 use spongefish::Encoding;
 use spongefish_dsfs as dsfs;
 
+use ia_core::prelude::*;
 use ia_core::{
-    NonInteractiveArgument, ProverChannel, VerificationError, VerificationResult, VerifierChannel,
+    ProverChannel, VerificationError, VerificationResult, VerifierChannel,
 };
 
 struct Sumcheck;

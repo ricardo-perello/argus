@@ -9,7 +9,8 @@ use curve25519_dalek::{
 };
 use rand_core::SeedableRng;
 
-use ia_core::{NonInteractiveArgument, ProtocolCore};
+use ia_core::prelude::*;
+use ia_core::ProtocolCore;
 use sigma_bridge::{SigmaIA, SigmaProtocol};
 use sigma_proofs::LinearRelation;
 use sigma_proofs::linear_relation::CanonicalLinearRelation;

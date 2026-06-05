@@ -23,8 +23,9 @@ use ark_std::UniformRand;
 use rand::rngs::OsRng;
 use spongefish_dsfs as dsfs;
 
+use ia_core::prelude::*;
 use ia_core::{
-    NonInteractiveReduction, ProverChannel, ReductionSecurity, SecurityErrorBound, SecurityProfile,
+    ProverChannel, ReductionSecurity, SecurityErrorBound, SecurityProfile,
     VerificationError, VerificationResult, VerifierChannel,
 };
 

@@ -6,7 +6,7 @@ use curve25519_dalek::{
 };
 use rand_core::SeedableRng;
 
-use ia_core::NonInteractiveArgument;
+use ia_core::prelude::*;
 use sigma_bridge::SigmaIA;
 use sigma_proofs::composition::{ComposedRelation, ComposedWitness};
 use sigma_proofs::linear_relation::{CanonicalLinearRelation, LinearRelation};

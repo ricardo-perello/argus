@@ -3,14 +3,15 @@
 use super::{ChainedReduction, ReducedArgument};
 use crate::channel::{ProverChannel, VerifierChannel};
 use crate::{
-    ArgumentSecurity, InteractiveArgument, InteractiveReduction, ReductionSecurity,
-    SecurityProfile, VerificationResult,
+    ArgumentSecurity, InteractiveArgument, InteractiveArgumentProver, InteractiveArgumentVerifier,
+    InteractiveReduction, InteractiveReductionProver, InteractiveReductionVerifier,
+    ReductionSecurity, SecurityProfile, VerificationResult,
 };
 
-impl<First, Second> InteractiveReduction for ChainedReduction<First, Second>
+impl<First, Second> InteractiveReductionProver for ChainedReduction<First, Second>
 where
-    First: InteractiveReduction,
-    Second: InteractiveReduction<
+    First: InteractiveReductionProver,
+    Second: InteractiveReductionProver<
             SourceInstance = First::TargetInstance,
             SourceWitness = First::TargetWitness,
         >,
@@ -24,7 +25,16 @@ where
         let (x2, w2) = self.first.prove(ch, instance, witness);
         self.second.prove(ch, &x2, &w2)
     }
+}
 
+impl<First, Second> InteractiveReductionVerifier for ChainedReduction<First, Second>
+where
+    First: InteractiveReductionVerifier,
+    Second: InteractiveReductionVerifier<
+            SourceInstance = First::TargetInstance,
+            SourceWitness = First::TargetWitness,
+        >,
+{
     fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,
@@ -80,10 +90,10 @@ where
     }
 }
 
-impl<R, A> InteractiveArgument for ReducedArgument<R, A>
+impl<R, A> InteractiveArgumentProver for ReducedArgument<R, A>
 where
-    R: InteractiveReduction,
-    A: InteractiveArgument<Instance = R::TargetInstance, Witness = R::TargetWitness>,
+    R: InteractiveReductionProver,
+    A: InteractiveArgumentProver<Instance = R::TargetInstance, Witness = R::TargetWitness>,
 {
     fn prove<P: ProverChannel<Unit = u8>>(
         &self,
@@ -94,7 +104,13 @@ where
         let (x2, w2) = self.reduction.prove(ch, instance, witness);
         self.argument.prove(ch, &x2, &w2);
     }
+}
 
+impl<R, A> InteractiveArgumentVerifier for ReducedArgument<R, A>
+where
+    R: InteractiveReductionVerifier,
+    A: InteractiveArgumentVerifier<Instance = R::TargetInstance, Witness = R::TargetWitness>,
+{
     fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,
@@ -159,7 +175,7 @@ mod tests {
         type TargetWitness = ();
     }
 
-    impl InteractiveReduction for SizedReduction {
+    impl InteractiveReductionProver for SizedReduction {
         fn prove<P: ProverChannel<Unit = u8>>(
             &self,
             _ch: &mut P,
@@ -168,7 +184,9 @@ mod tests {
         ) -> (Self::TargetInstance, Self::TargetWitness) {
             (instance + 7, ())
         }
+    }
 
+    impl InteractiveReductionVerifier for SizedReduction {
         fn verify<V: VerifierChannel<Unit = u8>>(
             &self,
             _ch: &mut V,
@@ -229,7 +247,7 @@ mod tests {
         type Witness = ();
     }
 
-    impl InteractiveArgument for BoundedArgument {
+    impl InteractiveArgumentProver for BoundedArgument {
         fn prove<P: ProverChannel<Unit = u8>>(
             &self,
             _ch: &mut P,
@@ -237,7 +255,9 @@ mod tests {
             _witness: &Self::Witness,
         ) {
         }
+    }
 
+    impl InteractiveArgumentVerifier for BoundedArgument {
         fn verify<V: VerifierChannel<Unit = u8>>(
             &self,
             _ch: &mut V,

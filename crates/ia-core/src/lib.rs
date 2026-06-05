@@ -43,17 +43,50 @@ pub const fn pad_protocol_id(label: &[u8]) -> [u8; 32] {
 pub use channel::{ProverChannel, VerifierChannel};
 pub use core::{ArgumentCore, PreprocessingCore, ProtocolCore, ReductionCore};
 pub use interactive::{
-    ChainedReduction, InteractiveArgument, InteractiveReduction, PreprocessingInteractiveArgument,
-    PreprocessingInteractiveReduction, ReducedArgument, TrivialIndexedArgument,
-    TrivialIndexedReduction,
+    ChainedReduction, CombinedIA, InteractiveArgument, InteractiveArgumentProver,
+    InteractiveArgumentVerifier, InteractiveReduction, InteractiveReductionProver,
+    InteractiveReductionVerifier, IntoProver, IntoVerifier, PreprocessingInteractiveArgument,
+    PreprocessingInteractiveArgumentProver, PreprocessingInteractiveArgumentVerifier,
+    PreprocessingInteractiveReduction, PreprocessingInteractiveReductionProver,
+    PreprocessingInteractiveReductionVerifier, ProverOnly, ReducedArgument, TrivialIndexedArgument,
+    TrivialIndexedReduction, VerifierOnly,
 };
 pub use noninteractive::{
-    NargAsInteractiveArgument, NargProof, NonInteractiveArgument, NonInteractiveReduction,
-    PreprocessingNonInteractiveArgument, PreprocessingNonInteractiveReduction, Prover,
-    ProverReduction, Verifier, VerifierReduction,
+    NargAsInteractiveArgument, NargProof, NonInteractiveArgument, NonInteractiveArgumentProver,
+    NonInteractiveArgumentVerifier, NonInteractiveReduction, NonInteractiveReductionProver,
+    NonInteractiveReductionVerifier, NonInteractiveSession, PreprocessingNonInteractiveArgument,
+    PreprocessingNonInteractiveArgumentProver, PreprocessingNonInteractiveArgumentVerifier,
+    PreprocessingNonInteractiveReduction, PreprocessingNonInteractiveReductionProver,
+    PreprocessingNonInteractiveReductionVerifier,
 };
 pub use preprocessing::{CommittedIndex, CommittedIndexBytes, IndexedInstance, IndexedInstanceRef};
 pub use security::{
     ArgumentSecurity, PreprocessingArgumentSecurity, PreprocessingReductionSecurity,
     ReductionSecurity, SecurityErrorBound, SecurityProfile,
 };
+
+/// Common execution traits for authoring and running protocols.
+///
+/// After the prover/verifier split, calling `.prove()` / `.verify()` needs the
+/// relevant **half-trait** in scope (the conjunction trait is a method-less
+/// marker). Glob-importing this prelude brings every leaf trait — conjunction and
+/// both halves, interactive and non-interactive — plus the core and channel
+/// traits into scope, so a full compiled object's `.prove()` / `.verify()` resolve
+/// without listing each half. Because the conjunctions carry no methods, importing
+/// them alongside the halves never creates method-resolution ambiguity.
+pub mod prelude {
+    pub use crate::{
+        ArgumentCore, InteractiveArgument, InteractiveArgumentProver, InteractiveArgumentVerifier,
+        InteractiveReduction, InteractiveReductionProver, InteractiveReductionVerifier, IntoProver,
+        IntoVerifier, NonInteractiveArgument, NonInteractiveArgumentProver,
+        NonInteractiveArgumentVerifier, NonInteractiveReduction, NonInteractiveReductionProver,
+        NonInteractiveReductionVerifier, NonInteractiveSession, PreprocessingCore,
+        PreprocessingInteractiveArgument, PreprocessingInteractiveArgumentProver,
+        PreprocessingInteractiveArgumentVerifier, PreprocessingInteractiveReduction,
+        PreprocessingInteractiveReductionProver, PreprocessingInteractiveReductionVerifier,
+        PreprocessingNonInteractiveArgument, PreprocessingNonInteractiveArgumentProver,
+        PreprocessingNonInteractiveArgumentVerifier, PreprocessingNonInteractiveReduction,
+        PreprocessingNonInteractiveReductionProver, PreprocessingNonInteractiveReductionVerifier,
+        ProtocolCore, ProverChannel, ReductionCore, VerifierChannel,
+    };
+}

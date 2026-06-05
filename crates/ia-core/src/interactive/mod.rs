@@ -7,8 +7,17 @@ mod macros;
 mod preprocessing;
 mod reduction;
 
-pub use adapters::{TrivialIndexedArgument, TrivialIndexedReduction};
-pub use argument::InteractiveArgument;
+pub use adapters::{
+    CombinedIA, IntoProver, IntoVerifier, ProverOnly, TrivialIndexedArgument,
+    TrivialIndexedReduction, VerifierOnly,
+};
+pub use argument::{InteractiveArgument, InteractiveArgumentProver, InteractiveArgumentVerifier};
 pub use composition::{ChainedReduction, ReducedArgument};
-pub use preprocessing::{PreprocessingInteractiveArgument, PreprocessingInteractiveReduction};
-pub use reduction::InteractiveReduction;
+pub use preprocessing::{
+    PreprocessingInteractiveArgument, PreprocessingInteractiveArgumentProver,
+    PreprocessingInteractiveArgumentVerifier, PreprocessingInteractiveReduction,
+    PreprocessingInteractiveReductionProver, PreprocessingInteractiveReductionVerifier,
+};
+pub use reduction::{
+    InteractiveReduction, InteractiveReductionProver, InteractiveReductionVerifier,
+};

@@ -14,13 +14,19 @@ mod argument;
 mod preprocessing;
 mod proof;
 mod reduction;
-mod roles;
+mod session;
 
 pub use adapters::NargAsInteractiveArgument;
-pub use argument::NonInteractiveArgument;
+pub use argument::{
+    NonInteractiveArgument, NonInteractiveArgumentProver, NonInteractiveArgumentVerifier,
+};
 pub use preprocessing::{
-    PreprocessingNonInteractiveArgument, PreprocessingNonInteractiveReduction,
+    PreprocessingNonInteractiveArgument, PreprocessingNonInteractiveArgumentProver,
+    PreprocessingNonInteractiveArgumentVerifier, PreprocessingNonInteractiveReduction,
+    PreprocessingNonInteractiveReductionProver, PreprocessingNonInteractiveReductionVerifier,
 };
 pub use proof::NargProof;
-pub use reduction::NonInteractiveReduction;
-pub use roles::{Prover, ProverReduction, Verifier, VerifierReduction};
+pub use reduction::{
+    NonInteractiveReduction, NonInteractiveReductionProver, NonInteractiveReductionVerifier,
+};
+pub use session::NonInteractiveSession;

@@ -56,6 +56,12 @@ path to learning the Argus interface.
 | `bulletproof_range` | Range proof built around the shared IPA core. |
 | `warp_accumulate` | Small WARP-style accumulator; the full WARP implementation lives in `crates/warp`. |
 
+## Targeted Tests
+
+| Test | Focus |
+| --- | --- |
+| `tests/asymmetric_compile.rs` | Difference between `into_prover` / `into_verifier` role views over a full body and genuinely prover-only / verifier-only bodies for asymmetric DSFS compilation. |
+
 Run the whole example test set with:
 
 ```bash

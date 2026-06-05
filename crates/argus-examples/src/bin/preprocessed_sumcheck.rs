@@ -56,9 +56,10 @@ use ark_std::UniformRand;
 use rand::rngs::OsRng;
 use spongefish_dsfs as dsfs;
 
+use ia_core::prelude::*;
 use ia_core::{
-    CommittedIndex, CommittedIndexBytes, PreprocessingCore, PreprocessingNonInteractiveReduction,
-    ProverChannel, VerificationError, VerificationResult, VerifierChannel,
+    CommittedIndex, CommittedIndexBytes, PreprocessingCore, ProverChannel, VerificationError,
+    VerificationResult, VerifierChannel,
 };
 
 // ---------------------------------------------------------------------------
@@ -317,6 +318,17 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ia_core::{
+        IntoProver, IntoVerifier, PreprocessingNonInteractiveReductionProver,
+        PreprocessingNonInteractiveReductionVerifier,
+    };
+
+    fn assert_preprocessed_reduction_prover<N: PreprocessingNonInteractiveReductionProver>(_: &N) {}
+
+    fn assert_preprocessed_reduction_verifier<N: PreprocessingNonInteractiveReductionVerifier>(
+        _: &N,
+    ) {
+    }
 
     fn sample_coeffs() -> [Fr; 4] {
         let mut rng = OsRng;
@@ -335,7 +347,7 @@ mod tests {
         let session = spongefish::session!("preprocessed sumcheck test");
         let coeffs = sample_coeffs();
         let t = sum_over_hypercube(&coeffs);
-        let nir = dsfs::preprocessing_non_interactive_reduction(
+        let nir = dsfs::preprocessing_non_interactive_reduction::<_, [u8; 64], _>(
             PreprocessedSumcheck,
             dsfs::Keccak::default(),
         );
@@ -344,6 +356,41 @@ mod tests {
         let (proof, _target_p, ()) = nir.prove(&pk, &session, &t, &());
         let ((r1, r2), v) = nir.verify(&vk, &session, &t, &proof).expect("verify");
 
+        assert_eq!(eval(&coeffs, r1, r2), v, "decider check");
+    }
+
+    #[test]
+    fn sumcheck_via_separate_prover_and_verifier_reduction_views() {
+        let session = spongefish::session!("preprocessed sumcheck role split test");
+        let coeffs = sample_coeffs();
+        let t = sum_over_hypercube(&coeffs);
+        let nir = dsfs::preprocessing_non_interactive_reduction::<_, [u8; 64], _>(
+            PreprocessedSumcheck,
+            dsfs::Keccak::default(),
+        );
+        let (pk, vk) = nir.preprocess(&coeffs);
+
+        let prover_nir = dsfs::preprocessing_non_interactive_reduction(
+            PreprocessedSumcheck.into_prover(),
+            dsfs::Keccak::default(),
+        );
+        let verifier_nir = dsfs::preprocessing_non_interactive_reduction(
+            PreprocessedSumcheck.into_verifier(),
+            dsfs::Keccak::default(),
+        );
+
+        assert_preprocessed_reduction_prover(&prover_nir);
+        assert_preprocessed_reduction_verifier(&verifier_nir);
+
+        let (proof, target_prover, ()) = prover_nir.prove(&pk, &session, &t, &());
+        assert!(!proof.is_empty());
+
+        let target_verifier = verifier_nir
+            .verify(&vk, &session, &t, &proof)
+            .expect("separate sumcheck verifier accepts prover proof");
+
+        assert_eq!(target_prover, target_verifier);
+        let ((r1, r2), v) = target_verifier;
         assert_eq!(eval(&coeffs, r1, r2), v, "decider check");
     }
 
@@ -404,9 +451,10 @@ mod tests {
             dsfs::Keccak::default(),
         );
         let (pk, _vk) = nir.preprocess(&coeffs);
-        assert!(pk
-            .committed_index()
-            .as_bytes()
-            .starts_with(b"preprocessed-sumcheck:vk:v1"));
+        assert!(
+            pk.committed_index()
+                .as_bytes()
+                .starts_with(b"preprocessed-sumcheck:vk:v1")
+        );
     }
 }

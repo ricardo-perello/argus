@@ -1,19 +1,17 @@
 //! Preprocessing interactive composition impls.
 
 use crate::{
-    PreprocessingCore, PreprocessingInteractiveArgument, PreprocessingInteractiveReduction,
-    ProverChannel, VerificationResult, VerifierChannel,
+    PreprocessingCore, PreprocessingInteractiveArgumentProver,
+    PreprocessingInteractiveArgumentVerifier, PreprocessingInteractiveReductionProver,
+    PreprocessingInteractiveReductionVerifier, ProverChannel, VerificationResult, VerifierChannel,
 };
 
 use super::{ChainedReduction, ReducedArgument};
 
 impl<First, Second> PreprocessingCore for ChainedReduction<First, Second>
 where
-    First: PreprocessingInteractiveReduction,
-    Second: PreprocessingInteractiveReduction<
-            SourceInstance = First::TargetInstance,
-            SourceWitness = First::TargetWitness,
-        >,
+    First: PreprocessingCore,
+    Second: PreprocessingCore,
 {
     type Index = (First::Index, Second::Index);
     type ProverKey = (First::ProverKey, Second::ProverKey);
@@ -26,10 +24,10 @@ where
     }
 }
 
-impl<First, Second> PreprocessingInteractiveReduction for ChainedReduction<First, Second>
+impl<First, Second> PreprocessingInteractiveReductionProver for ChainedReduction<First, Second>
 where
-    First: PreprocessingInteractiveReduction,
-    Second: PreprocessingInteractiveReduction<
+    First: PreprocessingInteractiveReductionProver,
+    Second: PreprocessingInteractiveReductionProver<
             SourceInstance = First::TargetInstance,
             SourceWitness = First::TargetWitness,
         >,
@@ -44,7 +42,16 @@ where
         let (x2, w2) = self.first.prove(ch, &pk.0, instance, witness);
         self.second.prove(ch, &pk.1, &x2, &w2)
     }
+}
 
+impl<First, Second> PreprocessingInteractiveReductionVerifier for ChainedReduction<First, Second>
+where
+    First: PreprocessingInteractiveReductionVerifier,
+    Second: PreprocessingInteractiveReductionVerifier<
+            SourceInstance = First::TargetInstance,
+            SourceWitness = First::TargetWitness,
+        >,
+{
     fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,
@@ -58,8 +65,8 @@ where
 
 impl<R, A> PreprocessingCore for ReducedArgument<R, A>
 where
-    R: PreprocessingInteractiveReduction,
-    A: PreprocessingInteractiveArgument<Instance = R::TargetInstance, Witness = R::TargetWitness>,
+    R: PreprocessingCore,
+    A: PreprocessingCore,
 {
     type Index = (R::Index, A::Index);
     type ProverKey = (R::ProverKey, A::ProverKey);
@@ -72,10 +79,13 @@ where
     }
 }
 
-impl<R, A> PreprocessingInteractiveArgument for ReducedArgument<R, A>
+impl<R, A> PreprocessingInteractiveArgumentProver for ReducedArgument<R, A>
 where
-    R: PreprocessingInteractiveReduction,
-    A: PreprocessingInteractiveArgument<Instance = R::TargetInstance, Witness = R::TargetWitness>,
+    R: PreprocessingInteractiveReductionProver,
+    A: PreprocessingInteractiveArgumentProver<
+            Instance = R::TargetInstance,
+            Witness = R::TargetWitness,
+        >,
 {
     fn prove<P: ProverChannel<Unit = u8>>(
         &self,
@@ -87,7 +97,16 @@ where
         let (x2, w2) = self.reduction.prove(ch, &pk.0, instance, witness);
         self.argument.prove(ch, &pk.1, &x2, &w2);
     }
+}
 
+impl<R, A> PreprocessingInteractiveArgumentVerifier for ReducedArgument<R, A>
+where
+    R: PreprocessingInteractiveReductionVerifier,
+    A: PreprocessingInteractiveArgumentVerifier<
+            Instance = R::TargetInstance,
+            Witness = R::TargetWitness,
+        >,
+{
     fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,

@@ -3,8 +3,8 @@
 extern crate alloc;
 
 use crate::{
-    ArgumentCore, InteractiveArgument, NargProof, NonInteractiveArgument, ProtocolCore,
-    ProverChannel, VerificationResult, VerifierChannel,
+    ArgumentCore, InteractiveArgumentProver, InteractiveArgumentVerifier, NargProof,
+    NonInteractiveArgument, ProtocolCore, ProverChannel, VerificationResult, VerifierChannel,
 };
 
 /// Adapter viewing a NARG as a one-message interactive argument.
@@ -47,7 +47,7 @@ where
     type Witness = N::Witness;
 }
 
-impl<N> InteractiveArgument for NargAsInteractiveArgument<N>
+impl<N> InteractiveArgumentProver for NargAsInteractiveArgument<N>
 where
     N: NonInteractiveArgument,
 {
@@ -60,7 +60,12 @@ where
         let proof = self.narg.prove(&self.session, instance, witness);
         ch.send_prover_message(&proof);
     }
+}
 
+impl<N> InteractiveArgumentVerifier for NargAsInteractiveArgument<N>
+where
+    N: NonInteractiveArgument,
+{
     fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,
@@ -77,7 +82,10 @@ mod tests {
     use alloc::vec::Vec;
 
     use super::*;
-    use crate::{Encoding, NargDeserialize, NargSerialize, VerificationError, pad_protocol_id};
+    use crate::{
+        Encoding, NargDeserialize, NargSerialize, NonInteractiveArgumentProver,
+        NonInteractiveArgumentVerifier, NonInteractiveSession, VerificationError, pad_protocol_id,
+    };
 
     #[test]
     fn narg_proof_raw_access_roundtrips() {
@@ -152,9 +160,11 @@ mod tests {
         type Witness = u32;
     }
 
-    impl NonInteractiveArgument for DummyNarg {
+    impl NonInteractiveSession for DummyNarg {
         type Session = ();
+    }
 
+    impl NonInteractiveArgumentProver for DummyNarg {
         fn prove(
             &self,
             _session: &Self::Session,
@@ -163,7 +173,9 @@ mod tests {
         ) -> NargProof {
             NargProof::from_bytes(vec![*instance as u8, *witness as u8])
         }
+    }
 
+    impl NonInteractiveArgumentVerifier for DummyNarg {
         fn verify(
             &self,
             _session: &Self::Session,

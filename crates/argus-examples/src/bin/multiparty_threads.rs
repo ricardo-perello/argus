@@ -30,10 +30,10 @@ use ark_std::UniformRand;
 use rand::rngs::OsRng;
 use spongefish_dsfs as dsfs;
 
+use ia_core::prelude::*;
 use ia_core::{
     CommittedIndex, CommittedIndexBytes, Decoding, Deserialize, Encoding, NargProof,
-    NonInteractiveArgument, PreprocessingCore, Prover, ProverChannel, VerificationError,
-    VerificationResult, Verifier, VerifierChannel,
+    PreprocessingCore, ProverChannel, VerificationError, VerificationResult, VerifierChannel,
 };
 
 // ---------------------------------------------------------------------------
@@ -211,21 +211,25 @@ fn demo_two_machine_plain() {
     // One-way wire: prover -> verifier.
     let (proof_tx, proof_rx) = mpsc::channel::<NargProof>();
 
-    // PROVER machine. Holds the witness `x`. Builds its own compiled NIA from
-    // the public body + sponge config; the verifier independently builds the same.
+    // PROVER machine. Holds the witness `x`. Builds its own prover-only compiled
+    // NIA from the public body + sponge config.
     let prover = thread::spawn(move || {
-        let nia =
-            dsfs::plain_non_interactive_argument(Schnorr::<G>::default(), dsfs::Keccak::default());
+        let nia = dsfs::plain_non_interactive_argument(
+            Schnorr::<G>::default().into_prover(),
+            dsfs::Keccak::default(),
+        );
         let proof = nia.prove(&session, &[g, h], &x);
         let n = proof.as_bytes().len();
         proof_tx.send(proof).expect("ship proof");
         println!("  prover  : built and shipped Schnorr proof ({n} bytes)");
     });
 
-    // VERIFIER machine. Holds no witness. Same body + sponge config => same compiled NIA.
+    // VERIFIER machine. Holds no witness. Same body + sponge config, verifier-only view.
     let verifier = thread::spawn(move || {
-        let nia =
-            dsfs::plain_non_interactive_argument(Schnorr::<G>::default(), dsfs::Keccak::default());
+        let nia = dsfs::plain_non_interactive_argument(
+            Schnorr::<G>::default().into_verifier(),
+            dsfs::Keccak::default(),
+        );
         let proof = proof_rx.recv().expect("recv proof");
         nia.verify(&session, &[g, h], &proof)
             .expect("verifier accepts honest proof");
@@ -274,43 +278,41 @@ fn demo_three_machine_preprocessed() {
         println!("            committed_index = 0x{}", &ci_hex[..32]);
     });
 
-    // PROVER machine. Receives only the proving key. Builds its own pnia and a
-    // role-typed `Prover` wrapper. The wrapper holds the proving key by
-    // reference; there is no path here to ever obtain `vk`.
+    // PROVER machine. Receives only the proving key. Builds its own pnia from a
+    // prover-only body (`into_prover()`), so the compiled object has no verify
+    // method; the proving key is passed explicitly on each `prove` call.
     let prover = thread::spawn(move || {
         let pnia = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
-            Dleq::<G>::default(),
+            Dleq::<G>::default().into_prover(),
             dsfs::Keccak::default(),
         );
         let prover_key = pk_rx.recv().expect("recv prover key");
-        let prover_view = Prover::new(&pnia, &prover_key);
 
         for i in 0..CLAIMS {
             // Per-session blinding: a fresh (u, v = u^x) pair.
             let u = G::generator() * F::rand(&mut OsRng);
             let v = u * x;
-            let proof = prover_view.prove(&session, &(u, v), &x);
+            // The prover key is passed explicitly; `pnia` is a prover-only object.
+            let proof = pnia.prove(&prover_key, &session, &(u, v), &x);
             let n = proof.as_bytes().len();
             proof_tx.send(((u, v), proof)).expect("ship proof");
             println!("  prover  : proof {i} produced and shipped ({n} bytes)");
         }
     });
 
-    // VERIFIER machine. Receives only the verifier key. Builds its own pnia and
-    // a `Verifier` wrapper. The wrapper exposes only `.verify` — there is
-    // literally no `prove` method on this type.
+    // VERIFIER machine. Receives only the verifier key. Builds its own pnia from a
+    // verifier-only body (`into_verifier()`), so the compiled object has no `prove`
+    // method; the verifier key is passed explicitly on each `verify` call.
     let verifier = thread::spawn(move || {
         let pnia = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
-            Dleq::<G>::default(),
+            Dleq::<G>::default().into_verifier(),
             dsfs::Keccak::default(),
         );
         let verifier_key = vk_rx.recv().expect("recv verifier key");
-        let verifier_view = Verifier::new(&pnia, &verifier_key);
 
         for i in 0..CLAIMS {
             let (instance, proof) = proof_rx.recv().expect("recv proof");
-            verifier_view
-                .verify(&session, &instance, &proof)
+            pnia.verify(&verifier_key, &session, &instance, &proof)
                 .expect("verifier accepts honest proof");
             println!("  verifier: accepted proof {i}");
         }
@@ -337,6 +339,18 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ia_core::{
+        IntoProver, IntoVerifier, NonInteractiveArgumentProver, NonInteractiveArgumentVerifier,
+        PreprocessingNonInteractiveArgumentProver, PreprocessingNonInteractiveArgumentVerifier,
+    };
+
+    fn assert_narg_prover<N: NonInteractiveArgumentProver>(_: &N) {}
+
+    fn assert_narg_verifier<N: NonInteractiveArgumentVerifier>(_: &N) {}
+
+    fn assert_preprocessed_prover<N: PreprocessingNonInteractiveArgumentProver>(_: &N) {}
+
+    fn assert_preprocessed_verifier<N: PreprocessingNonInteractiveArgumentVerifier>(_: &N) {}
 
     #[test]
     fn two_machine_plain_runs() {
@@ -346,5 +360,68 @@ mod tests {
     #[test]
     fn three_machine_preprocessed_runs() {
         demo_three_machine_preprocessed();
+    }
+
+    #[test]
+    fn plain_schnorr_uses_separately_compiled_prover_and_verifier() {
+        let g = G::generator();
+        let x = F::rand(&mut OsRng);
+        let h = g * x;
+        let instance = [g, h];
+        let session = spongefish::session!("multiparty / plain schnorr role split");
+
+        let prover = dsfs::plain_non_interactive_argument(
+            Schnorr::<G>::default().into_prover(),
+            dsfs::Keccak::default(),
+        );
+        let verifier = dsfs::plain_non_interactive_argument(
+            Schnorr::<G>::default().into_verifier(),
+            dsfs::Keccak::default(),
+        );
+
+        assert_narg_prover(&prover);
+        assert_narg_verifier(&verifier);
+
+        let proof = prover.prove(&session, &instance, &x);
+        assert!(!proof.is_empty());
+
+        verifier
+            .verify(&session, &instance, &proof)
+            .expect("separate multiparty Schnorr verifier accepts prover proof");
+    }
+
+    #[test]
+    fn preprocessed_dleq_uses_separate_prover_and_verifier_views() {
+        let g = G::generator();
+        let x = F::rand(&mut OsRng);
+        let h = g * x;
+        let session = spongefish::session!("multiparty / preprocessed dleq role split");
+
+        let setup = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
+            Dleq::<G>::default(),
+            dsfs::Keccak::default(),
+        );
+        let (pk, vk) = setup.preprocess(&(g, h));
+
+        let prover_pnia = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
+            Dleq::<G>::default().into_prover(),
+            dsfs::Keccak::default(),
+        );
+        let verifier_pnia = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
+            Dleq::<G>::default().into_verifier(),
+            dsfs::Keccak::default(),
+        );
+
+        assert_preprocessed_prover(&prover_pnia);
+        assert_preprocessed_verifier(&verifier_pnia);
+
+        let u = G::generator() * F::rand(&mut OsRng);
+        let v = u * x;
+        let proof = prover_pnia.prove(&pk, &session, &(u, v), &x);
+        assert!(!proof.is_empty());
+
+        verifier_pnia
+            .verify(&vk, &session, &(u, v), &proof)
+            .expect("separate multiparty DLEQ verifier accepts prover proof");
     }
 }

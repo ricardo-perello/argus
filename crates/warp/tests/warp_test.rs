@@ -16,9 +16,9 @@ use ark_serialize::CanonicalSerialize;
 use ark_std::rand::Rng;
 use rand::thread_rng;
 
+use ia_core::prelude::*;
 use ia_core::{
     CommittedIndex, Encoding, PreprocessingArgumentSecurity, PreprocessingCore,
-    PreprocessingNonInteractiveArgument, PreprocessingNonInteractiveReduction,
     PreprocessingReductionSecurity, SecurityErrorBound,
 };
 use spongefish_dsfs::{self as dsfs, Keccak, NargSecurity, STD_SPONGE_PARAMS};
