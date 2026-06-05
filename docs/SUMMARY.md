@@ -41,6 +41,7 @@
 # Protocols
 
 - [Schnorr](protocols/schnorr.md)
+- [Bulletproofs (IPA + Range)](protocols/bulletproof-ipa.md)
 - [Sumcheck](protocols/sumcheck.md)
 - [WARP](protocols/warp.md)
 - [sigma-bridge](protocols/sigma-bridge.md)
