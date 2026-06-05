@@ -93,6 +93,24 @@ IndexedInstanceRef {
 
 before any challenge. The WARP protocol code itself only uses channel calls.
 
+## Implementation Caveat
+
+WARP is naturally an IOP/BCS-style protocol: the prover commits to codewords,
+the verifier samples query positions, and the prover opens those oracle
+positions with authentication paths. The current Argus workspace does not yet
+have the IOP-to-IA/iBCS compiler layer that would turn those oracle interactions
+into an IA in a principled way.
+
+Because of that, the WARP port has some ad hoc oracle-opening handling. Merkle
+roots, query answers, and opening-related data are represented through ordinary
+channel messages, while the conceptual BCS oracle layer is still protocol-local.
+This is useful as a case study, but it is not the clean final shape for
+WARP-like protocols.
+
+The main architectural lesson is that IA/IR is enough to express the reduction
+and decider structure, but WARP-like protocols should eventually be produced by
+an iBCS/BCS layer that owns oracle commitments and openings.
+
 ## Security Metadata
 
 `WarpReduction` implements preprocessing reduction security metadata. Its bounds

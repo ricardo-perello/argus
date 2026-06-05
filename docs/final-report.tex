@@ -273,9 +273,9 @@ argument.
 \section{Results}
 
 The project produced an executable interface layer with DSFS and live backends,
-examples, and case studies. Schnorr and sumcheck-style protocols show the basic
-authoring model: the same channel code can be compiled through DSFS, and
-Schnorr can also run as a live interactive protocol.
+examples, and case studies. Schnorr, sumcheck-style, and Bulletproofs protocols
+show the basic authoring model: the same channel code can compile through DSFS
+or run live.
 
 The largest case study is WARP, a linear-time accumulation scheme for R1CS,
 modeled as a preprocessing interactive reduction plus a final preprocessing
@@ -284,6 +284,15 @@ Merkle parameters, and relation data belongs to the index and is represented by
 committed-index bytes; per-claim fresh instances and accumulators remain
 ordinary instances. The WARP protocol engine uses channels for messages and
 challenges and does not own a sponge.
+
+Bulletproofs gives a contrasting algebraic case study~\cite{bulletproofs}.
+Unlike WARP, it does not need oracle openings: each round sends group
+commitments and receives a field challenge, which fits the IA channel directly.
+The inner-product argument is implemented both as a monolithic logarithmic
+protocol and as a one-round reduction composed down to a size-one decider; the
+range proof then reduces to the same inner-product core. These examples show
+that Argus composition can reproduce a recursive hand-written protocol, while
+remaining example-grade rather than production implementations.
 
 Argus also includes instance-aware security metadata. Security profiles can be
 derived from concrete instances or explicit instance-family bounds, which is
@@ -298,12 +307,6 @@ sigma-proofs Fiat--Shamir path is already used by other consumers, so the
 bridge remains compatibility-oriented evidence rather than the main
 contribution.
 
-From a submission perspective, the contribution is best understood as a systems
-and interface contribution. Argus is not a new proof system. It is a typed
-argument/reduction layer that makes public-coin protocol descriptions reusable
-across interactive execution, DSFS compilation, preprocessing, composition, and
-future IOP-to-IA compilation.
-
 \section{Limitations and Future Work}
 
 Argus is a research prototype and has not received production cryptographic
@@ -315,50 +318,60 @@ designed so that an iBCS-style compiler can output an IA, but the current
 workspace does not yet implement that compiler. This is the natural next step
 for connecting Argus to the broader arkworks-pq direction.
 
-The codec boundary could also be improved. Today, the abstract channel layer is
-close to spongefish's encoding and NARG serialization vocabulary. This made the
-prototype small, but several details deserve review: whether
-\texttt{NargSerialize} belongs on an abstract interactive channel trait, whether
-verifier reads should consistently use \texttt{NargDeserialize} or the current
-\texttt{Deserialize} abstraction, and whether \texttt{ia-core} should own
-smaller codec traits instead of re-exporting spongefish's
-\texttt{Encoding}/\texttt{Decoding}.
+The codec boundary could also be improved. The current channel layer is close
+to spongefish's encoding and NARG serialization vocabulary. It remains open
+whether \texttt{NargSerialize} belongs on an abstract interactive channel
+trait, whether verifier reads should use \texttt{NargDeserialize} or the
+current \texttt{Deserialize} abstraction, and whether \texttt{ia-core} should
+own smaller codec traits. A related question is the sponge alphabet: channels
+already abstract the alphabet as a \texttt{Unit}, but the DSFS compiler, proof
+artifact, and sponge-parameter machinery remain byte-oriented. Supporting
+field-element transcripts should therefore be a backend extension, not a change
+to the message-flow abstraction.
+
+Another API question is whether prover and verifier capabilities should split
+at the trait level. The current \texttt{InteractiveArgument} surface contains
+both algorithms because protocols are normally specified as complete
+conversations, and prover-only or verifier-only views can be built from a full
+value. This keeps composition small, but IOP, VC, recursion, and iBCS may
+benefit from a type-level split into \texttt{InteractiveArgumentProver} and
+\texttt{InteractiveArgumentVerifier}. We defer that decision until those
+consumers are designed against Argus.
 
 Another open point is public-coin branching. A verifier may inspect a prover
-message and choose which challenge type comes next if the choice is a
-deterministic public function of the instance and transcript so far. This still
-fits the public-coin model. It would not fit Argus if the next challenge
-depended on hidden verifier state or if protocol code manually derived the
-challenge from transcript operations.
+message before choosing the next challenge type, as long as that choice is a
+deterministic public function of the instance and transcript so far. It would
+not fit Argus if the challenge depended on hidden verifier state or manual
+transcript operations.
 
+The WARP port illustrates why the IOP-to-IA compiler is the natural missing
+piece: its oracle commitments and openings are currently handled inside WARP
+with ordinary IA/IR messages, rather than generated by a general iBCS layer.
 Some WARP security terms are intentionally conservative and should be tightened
-against the exact analysis. Composition could also become more ergonomic: the
-current binary composition model is type-safe and expressive for finite
-sequential chains, but deeply nested chains and preprocessing tuples can become
-clumsy.
+against the exact analysis. Composition could also become more ergonomic:
+deeply nested chains and preprocessing tuples can become clumsy.
 
-Finally, the statefulness rule deserves continued review. Allowing
-configuration in \texttt{self} is necessary for realistic protocols, but every
-behavior-affecting parameter must be reflected in domain separation. This is
-the right tradeoff for now, but it should remain a review checklist item for
-future protocols such as WHIR, STIR, FRI, and STARK components.
+Finally, the statefulness rule deserves continued review. Configuration in
+\texttt{self} is necessary for realistic protocols, but every
+behavior-affecting parameter must be reflected in domain separation. This
+should remain a review checklist item for future WHIR, STIR, FRI, and STARK
+components.
 
 \section{Conclusion}
 
 Argus supplies a missing protocol layer in the arkworks proof-system stack. It
-lets authors describe interactive arguments and reductions as typed
-public-coin channel programs, separates those descriptions from transcript
-mechanics, and provides DSFS and live backends for executing the same protocol
-objects. The design covers the eight useful combinations of
-argument/reduction, interactive/non-interactive, and plain/preprocessed
+lets authors describe arguments and reductions as typed public-coin channel
+programs, separates those descriptions from transcript mechanics, and provides
+DSFS and live backends for executing the same protocol objects. The design
+covers argument/reduction, interactive/non-interactive, and plain/preprocessed
 protocols through a bottom-up capability tree rather than a single maximal
 type.
 
-The main lesson is that IA/IR should be treated as an interface in its own
-right. It is an input to DSFS, a target for future iBCS compilation, and a
-protocol that can be run interactively. Once that layer exists, transcript
-discipline, preprocessing, composition, and security metadata become backend
-and type-system concerns rather than ad hoc code inside each protocol.
+The main lesson is that IA/IR is an interface in its own right: an input to
+DSFS, a target for future iBCS compilation, and a protocol that can run
+interactively. Once that layer exists, transcript discipline, preprocessing,
+composition, and security metadata become backend and type-system concerns
+rather than ad hoc code inside each protocol.
 
 \begin{thebibliography}{9}
 
@@ -378,6 +391,11 @@ Benedikt B\"unz, Alessandro Chiesa, Giacomo Fenzi, and William Wang.
 \newblock \emph{Linear-Time Accumulation Schemes}.
 \newblock IACR ePrint 2025/753, 2025.
 \newblock \url{https://eprint.iacr.org/2025/753}
+
+\bibitem{bulletproofs}
+Benedikt B\"unz et al.
+\newblock \emph{Bulletproofs}.
+\newblock IEEE S\&P, 2018.
 
 \end{thebibliography}
 
