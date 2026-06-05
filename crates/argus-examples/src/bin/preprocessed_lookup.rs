@@ -29,10 +29,9 @@
 //!   Instance    = (u32, u32)          (index, claimed value)
 //!   Witness     = ()                  (everything needed is in pk)
 //!
-//! Compare to preprocessed_schnorr.rs and dleq.rs, where pk and vk are
-//! the *same* data (the generator, or the public key) just held by both
-//! sides. Here the indexer is doing real work — building a tree, and
-//! routing each derived piece to the side that needs it.
+//! Compare to dleq.rs, where pk and vk are the *same* long-term public
+//! key data just held by both sides. Here the indexer is doing real work -
+//! building a tree, and routing each derived piece to the side that needs it.
 //!
 //! Run:  cargo run -p argus-examples --bin preprocessed_lookup
 
@@ -355,10 +354,9 @@ mod tests {
 
         // Open table_a at index 5 (unperturbed in both).
         let proof = nia.prove(&pk_a, &session, &(5, table_a[5]), &());
-        assert!(
-            nia.verify(&vk_b, &session, &(5, table_a[5]), &proof)
-                .is_err()
-        );
+        assert!(nia
+            .verify(&vk_b, &session, &(5, table_a[5]), &proof)
+            .is_err());
     }
 
     /// The optional `Prover`/`Verifier` role wrappers compose `(nia, key)` and

@@ -21,15 +21,18 @@ Run the same Schnorr protocol with live prover and verifier threads:
 cargo run -p argus-examples --bin schnorr -- --live
 ```
 
-Other useful examples:
+Read the examples as an incremental ladder:
 
 ```bash
-cargo run -p argus-examples --bin sumcheck
-cargo run -p argus-examples --bin sumcheck_commit
-cargo run -p argus-examples --bin composition
+cargo run -p argus-examples --bin dleq
 cargo run -p argus-examples --bin preprocessed_lookup
-cargo run -p argus-examples --bin warp_accumulate
+cargo run -p argus-examples --bin preprocessed_sumcheck
+cargo run -p argus-examples --bin composition
+cargo run -p argus-examples --bin multiparty_threads
 ```
+
+The full example map, including advanced protocol showcases, lives in
+`crates/argus-examples/README.md`.
 
 ## First Protocol Shape
 

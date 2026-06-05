@@ -1,8 +1,8 @@
 //! Preprocessed multilinear sumcheck — first example of an
 //! `PreprocessingInteractiveReduction`.
 //!
-//! All previous preprocessed examples (preprocessed_schnorr, dleq,
-//! preprocessed_lookup) implement [`ia_core::PreprocessingInteractiveArgument`]: the
+//! The previous preprocessed examples (`dleq`, `preprocessed_lookup`) implement
+//! [`ia_core::PreprocessingInteractiveArgument`]: the
 //! verifier outputs accept/reject. This one implements
 //! [`ia_core::PreprocessingInteractiveReduction`]: the verifier outputs a *new target
 //! instance* that a downstream decider then checks.
@@ -404,10 +404,9 @@ mod tests {
             dsfs::Keccak::default(),
         );
         let (pk, _vk) = nir.preprocess(&coeffs);
-        assert!(
-            pk.committed_index()
-                .as_bytes()
-                .starts_with(b"preprocessed-sumcheck:vk:v1")
-        );
+        assert!(pk
+            .committed_index()
+            .as_bytes()
+            .starts_with(b"preprocessed-sumcheck:vk:v1"));
     }
 }

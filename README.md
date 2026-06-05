@@ -54,8 +54,8 @@ Fiat-Shamir challenge directly.
 - `spongefish-dsfs`: DSFS backend used by Argus. In this workspace it is exposed
   through the patched spongefish dependency and imported as `spongefish_dsfs`.
 - `crates/live-channel`: in-process interactive backend built on `mpsc`.
-- `crates/argus-examples`: runnable Schnorr, sumcheck, composition, lookup, and
-  WARP examples.
+- `crates/argus-examples`: runnable examples, organized as an incremental
+  six-step authoring ladder plus advanced protocol showcases.
 - `crates/warp`: WARP expressed as preprocessing reductions plus a final
   argument.
 - `crates/sigma-bridge`: compatibility bridge for selected `sigma-proofs`
@@ -80,14 +80,18 @@ Run the same protocol interactively:
 cargo run -p argus-examples --bin schnorr -- --live
 ```
 
-Other useful examples:
+Read the examples as an incremental ladder:
 
 ```bash
-cargo run -p argus-examples --bin sumcheck
-cargo run -p argus-examples --bin sumcheck_commit
+cargo run -p argus-examples --bin dleq
+cargo run -p argus-examples --bin preprocessed_lookup
+cargo run -p argus-examples --bin preprocessed_sumcheck
 cargo run -p argus-examples --bin composition
-cargo run -p argus-examples --bin warp_accumulate
+cargo run -p argus-examples --bin multiparty_threads
 ```
+
+Advanced showcases are listed in
+[`crates/argus-examples/README.md`](crates/argus-examples/README.md).
 
 Run only WARP tests:
 

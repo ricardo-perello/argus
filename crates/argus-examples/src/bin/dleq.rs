@@ -33,9 +33,9 @@
 //! a proof produced under (g, h_alice) cannot be re-targeted at
 //! (g, h_bob) — the transcripts diverge from the very first squeeze.
 //!
-//! See preprocessed_schnorr.rs for the same "where do the keys live"
-//! diagram. This file mirrors that structure; the only thing new is the
-//! protocol math.
+//! In the examples ladder, this is the first preprocessing example: the
+//! compiled wrapper stores no keys, and the derived keys are passed as inputs
+//! to prove and verify.
 //!
 //! Run:  cargo run -p argus-examples --bin dleq
 
@@ -274,10 +274,9 @@ mod tests {
         let proof = nia.prove(&pk_alice, &session, &(u, v_alice), &x_alice);
 
         // Verifying under Bob's key rejects — the bound public key differs.
-        assert!(
-            nia.verify(&vk_bob, &session, &(u, v_alice), &proof)
-                .is_err()
-        );
+        assert!(nia
+            .verify(&vk_bob, &session, &(u, v_alice), &proof)
+            .is_err());
     }
 
     /// Mismatching (u, v) — i.e., v != u^x — must be rejected by the
