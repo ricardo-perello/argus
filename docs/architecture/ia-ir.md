@@ -66,15 +66,34 @@ The trait tree is bottom-up and capability-oriented:
 ```text
 ProtocolCore
 ├── ArgumentCore
-│   ├── InteractiveArgument
-│   └── PreprocessingInteractiveArgument
+│   ├── InteractiveArgument               = InteractiveArgumentProver + InteractiveArgumentVerifier
+│   └── PreprocessingInteractiveArgument  = …ArgumentProver + …ArgumentVerifier
 └── ReductionCore
-    ├── InteractiveReduction
-    └── PreprocessingInteractiveReduction
+    ├── InteractiveReduction              = InteractiveReductionProver + InteractiveReductionVerifier
+    └── PreprocessingInteractiveReduction = …ReductionProver + …ReductionVerifier
 ```
 
 `PreprocessingCore` is the shared setup capability used by preprocessing leaves.
 It provides `Index`, `ProverKey`, `VerifierKey`, and `preprocess`.
+
+### The prover / verifier split
+
+Each leaf is itself split along a fourth, orthogonal axis — **role** — into a
+`…Prover` half (holding `prove`) and a `…Verifier` half (holding `verify`). The
+full leaf trait is the blanket-impl conjunction of the two halves:
+
+```rust
+pub trait InteractiveArgument: InteractiveArgumentProver + InteractiveArgumentVerifier {}
+impl<T: InteractiveArgumentProver + InteractiveArgumentVerifier> InteractiveArgument for T {}
+```
+
+This keeps the type system honest about role the same way it is about preprocessing:
+a value (or a generic bound) can carry just the prover half or just the verifier
+half. Authoring is unchanged — the macro emits both halves from one block — and
+every existing `T: InteractiveArgument` bound still resolves. A backend can then
+compile and hold a single role (a prover-only NARG), and recursion can depend on an
+inner verifier without dragging in the inner prover. See
+[Prover/Verifier Split](../prover-verifier-split-presentation.md).
 
 This design was chosen over a single maximal protocol type that degenerates into
 the simpler cases. The maximal type would reduce some generic machinery, but it

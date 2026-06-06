@@ -7,6 +7,8 @@ The verifier samples public coins and sends them to the prover instead of
 deriving them with Fiat-Shamir.
 
 ```rust
+use ia_core::prelude::*;   // prove()/verify() live on the role half-traits
+
 let (mut prover_ch, mut verifier_ch) = live_channel::channel_pair();
 
 let prover_handle = std::thread::spawn(move || {

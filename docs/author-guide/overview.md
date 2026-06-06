@@ -37,6 +37,14 @@ The non-interactive traits are usually backend results. For example,
 `spongefish-dsfs` turns an `InteractiveArgument` into a
 `NonInteractiveArgument`.
 
+Each of these traits is the conjunction of a `…Prover` half (`prove`) and a
+`…Verifier` half (`verify`). You author one block with both methods exactly as
+before — the macro emits the halves — so the split is invisible while writing a
+protocol. It only matters when *running*: `.prove()` / `.verify()` live on the
+halves, so bring them into scope with `use ia_core::prelude::*;`, and you can
+compile/hold just one role (`body.into_prover()`). See
+[Prover/Verifier Split](../prover-verifier-split-presentation.md).
+
 ## Keep the Boundary Clean
 
 Inside protocol code, use only:

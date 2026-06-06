@@ -40,7 +40,7 @@ The compiled DSFS wrapper stores the protocol body and sponge configuration, but
 it stores no keys:
 
 ```rust
-use ia_core::{PreprocessingCore, PreprocessingNonInteractiveArgument};
+use ia_core::prelude::*;   // PreprocessingCore (preprocess) + the keyed role half-traits
 use spongefish_dsfs as dsfs;
 
 let pnia = dsfs::preprocessing_non_interactive_argument(

@@ -6,7 +6,7 @@ proof.
 For a plain argument:
 
 ```rust
-use ia_core::NonInteractiveArgument;
+use ia_core::prelude::*;   // .prove()/.verify() live on the role half-traits
 use spongefish_dsfs as dsfs;
 
 let session = spongefish::session!("schnorr example");
@@ -59,7 +59,7 @@ A proof for one session should not verify under another.
 Reductions compile the same way, but verification returns a target instance:
 
 ```rust
-use ia_core::NonInteractiveReduction;
+use ia_core::prelude::*;
 
 let nir = dsfs::plain_non_interactive_reduction(
     reduction,

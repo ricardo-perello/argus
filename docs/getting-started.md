@@ -80,7 +80,7 @@ inspect proof bytes.
 ## Compile with DSFS
 
 ```rust
-use ia_core::NonInteractiveArgument;
+use ia_core::prelude::*;        // brings prove()/verify() (the role half-traits) into scope
 use spongefish_dsfs as dsfs;
 
 let nia = dsfs::plain_non_interactive_argument(
@@ -91,6 +91,10 @@ let nia = dsfs::plain_non_interactive_argument(
 let proof = nia.prove(&session, &instance, &witness);
 nia.verify(&session, &instance, &proof)?;
 ```
+
+`.prove()` / `.verify()` live on the prover/verifier *half-traits* now, so the
+prelude (or the specific halves) must be in scope. Authoring the protocol is
+unchanged — the macro above still takes one block with both methods.
 
 For preprocessing protocols, the compiled object stores no keys:
 

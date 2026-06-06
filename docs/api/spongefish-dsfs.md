@@ -73,6 +73,32 @@ Internally the backend derives `pk.committed_index()` on the prover side and
 the ordinary instance before the first verifier challenge, then calls keyed
 protocol execution with the bare instance.
 
+## Asymmetric Compilation
+
+The compiler is capability-agnostic: the constructors above take *any* body and
+the resulting wrapper implements whichever non-interactive halves its body
+supports. The prove path is bounded on `…Prover`, the verify path on `…Verifier`,
+so:
+
+```rust
+// A body that implements only InteractiveArgumentProver (or `body.into_prover()`)
+// compiles to a prover-only object — `.verify` does not exist on it.
+let prover = spongefish_dsfs::plain_non_interactive_argument(prover_only_body, Keccak::default());
+let proof  = prover.prove(&session, &instance, &witness);
+
+// The verifier-only counterpart only has `.verify`.
+let verifier = spongefish_dsfs::plain_non_interactive_argument(verifier_only_body, Keccak::default());
+verifier.verify(&session, &instance, &proof)?;
+```
+
+`CombinedNarg::new(prover_narg, verifier_narg)` recombines two independently
+compiled non-interactive halves into a full `NonInteractiveArgument`, checking
+that they agree on `protocol_id` (a `debug_assert`) with instance/witness/session
+agreement enforced at the type level.
+
+(Calling `.prove()` / `.verify()` needs the relevant half-trait in scope; the
+simplest import is `use ia_core::prelude::*;`.)
+
 ## Sponge Choice
 
 The Argus standard DSFS path uses `Keccak`.

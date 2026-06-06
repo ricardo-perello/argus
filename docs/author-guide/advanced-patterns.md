@@ -46,19 +46,42 @@ claim is valid.
 
 See [WARP](../protocols/warp.md) for the case study.
 
-## Role Wrappers
+## Prover / Verifier Roles
 
-For preprocessing non-interactive protocols, optional role wrappers can pair a
-compiled protocol with one key:
+Each leaf execution trait is split into a prover half and a verifier half (for
+example `InteractiveArgumentProver` / `InteractiveArgumentVerifier`), with the
+familiar full trait as their conjunction. Authoring is unchanged — the macro
+emits both halves from one block — but you can now compile and hold *one* role:
 
 ```rust
-let prover = Prover::new(&pnia, &pk);
-let verifier = Verifier::new(&pnia, &vk);
+use ia_core::prelude::*;
+
+// Ergonomic role views over a full body:
+let prover   = dsfs::plain_non_interactive_argument(body.into_prover(),   dsfs::Keccak::default());
+let verifier = dsfs::plain_non_interactive_argument(body.into_verifier(), dsfs::Keccak::default());
 ```
 
-These wrappers are ergonomic views, not a cryptographic boundary. The real
-capability boundary is key possession: proving requires a prover key, and
-verification requires a verifier key.
+`into_prover()` / `into_verifier()` (the `ProverOnly<T>` / `VerifierOnly<T>`
+wrappers) expose only one executable half — an API boundary; the wrapped body
+still contains both algorithms. A *genuinely* one-sided body — a type that
+implements only `…Verifier` — goes further: the other algorithm does not exist
+for it at all (the recursion-relevant case).
+
+For preprocessing protocols, keys are passed explicitly on each call; there is no
+stateful key-binding wrapper:
+
+```rust
+let proof = prover.prove(&pk, &session, &instance, &witness);
+verifier.verify(&vk, &session, &instance, &proof)?;
+```
+
+The capability boundary is key possession: proving needs the prover key,
+verification needs the verifier key. Two independently-built halves can be
+recombined — `CombinedIA` at the body level, `spongefish_dsfs::CombinedNarg` at
+the compiled-NARG level.
+
+See [Prover/Verifier Split](../prover-verifier-split-presentation.md) for the full
+picture.
 
 ## External Compatibility
 

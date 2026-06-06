@@ -115,3 +115,20 @@ pnia.verify(&vk, &session, &instance, &proof)?;
 
 The preprocessing wrapper stores no keys. Keys are inputs to proving and
 verification.
+
+## Prover and Verifier Roles
+
+Each leaf trait above splits into a `…Prover` half and a `…Verifier` half, with
+the full trait as their conjunction. You still author one block with both methods
+(the macro emits the halves), but a *compiled* object can hold a single role:
+
+```rust
+use ia_core::prelude::*;   // .prove()/.verify() live on the halves
+
+let prover = dsfs::plain_non_interactive_argument(body.into_prover(), dsfs::Keccak::default());
+// prover.prove(...)  — yes;  prover.verify(...)  — does not exist
+```
+
+`into_prover()` / `into_verifier()` are API-level role views over a full body; a
+natively one-sided body (implementing only `…Verifier`) drops the other algorithm
+entirely. See [Prover/Verifier Split](../prover-verifier-split-presentation.md).

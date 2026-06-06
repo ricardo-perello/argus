@@ -41,14 +41,21 @@ live inside the protocol object.
 
 ## Interactive Leaves
 
-Protocol authors normally implement one of these:
+Each leaf execution trait is split into a **prover half** (`prove`) and a
+**verifier half** (`verify`), with the familiar full trait as their blanket-impl
+conjunction:
 
-- `InteractiveArgument`,
-- `InteractiveReduction`,
-- `PreprocessingInteractiveArgument`,
-- `PreprocessingInteractiveReduction`.
+| full trait | prover half | verifier half |
+|---|---|---|
+| `InteractiveArgument` | `InteractiveArgumentProver` | `InteractiveArgumentVerifier` |
+| `InteractiveReduction` | `InteractiveReductionProver` | `InteractiveReductionVerifier` |
+| `PreprocessingInteractiveArgument` | `PreprocessingInteractiveArgumentProver` | `PreprocessingInteractiveArgumentVerifier` |
+| `PreprocessingInteractiveReduction` | `PreprocessingInteractiveReductionProver` | `PreprocessingInteractiveReductionVerifier` |
 
-Most authors use the macro surface:
+Authors normally don't touch the halves: the macro emits both from one block, and
+any `T: InteractiveArgument` bound still resolves (the conjunction *is* both
+halves). Bounding on a single half is what lets a backend build, hold, or demand
+just one role. Most authors use the macro surface:
 
 ```rust
 ia_core::impl_interactive_argument! {
@@ -88,7 +95,29 @@ Available macros:
 - `impl_preprocessing_argument!`
 - `impl_preprocessing_reduction!`
 
-Manual impls are part of the API when adapters or tests need them.
+Manual impls are part of the API when adapters or tests need them. A genuinely
+one-sided body just implements one half (e.g. only `InteractiveArgumentVerifier`)
+and omits the other.
+
+## Role Views and Recombination
+
+- `into_prover()` / `into_verifier()` wrap a full body as a `ProverOnly<T>` /
+  `VerifierOnly<T>` that exposes only one executable half. This is an *API*
+  boundary — the wrapped body still implements both halves.
+- `CombinedIA::new(prover_body, verifier_body)` is the inverse: glue a prover-only
+  and a verifier-only body into a full `InteractiveArgument` (its NARG-level mirror
+  is `spongefish_dsfs::CombinedNarg`).
+
+The stateful `Prover` / `Verifier` key-binding wrappers are gone: capability
+separation comes from the split, and preprocessing keys are passed explicitly to
+`prove(&pk, …)` / `verify(&vk, …)`.
+
+## Prelude
+
+`use ia_core::prelude::*;` brings every leaf trait — each conjunction and both of
+its halves, plus the core and channel traits — into scope, so a compiled object's
+`.prove()` / `.verify()` resolve without listing each half. The conjunctions carry
+no methods, so importing them beside the halves never causes ambiguity.
 
 ## Channels
 
@@ -112,13 +141,17 @@ send/read call.
 `ia-core` owns the abstract NARG vocabulary:
 
 - `NargProof`,
-- `NonInteractiveArgument`,
-- `NonInteractiveReduction`,
-- `PreprocessingNonInteractiveArgument`,
-- `PreprocessingNonInteractiveReduction`.
+- `NonInteractiveSession` (the shared `Session` associated type),
+- `NonInteractiveArgument` (+ `…Prover` / `…Verifier` halves),
+- `NonInteractiveReduction` (+ halves),
+- `PreprocessingNonInteractiveArgument` (+ halves),
+- `PreprocessingNonInteractiveReduction` (+ halves).
 
-Concrete proof construction is backend-owned. In this workspace,
-`spongefish-dsfs` implements the DSFS compiler backend.
+These split the same way as the interactive leaves. Concrete proof construction is
+backend-owned: a backend implements the prover half under one bound and the
+verifier half under another, so an interactive body that only proves compiles to a
+prover-only NARG. In this workspace, `spongefish-dsfs` implements the DSFS compiler
+backend.
 
 ## Preprocessing Public Input
 
