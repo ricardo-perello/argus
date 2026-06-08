@@ -1,10 +1,9 @@
 //! Preprocessed multilinear sumcheck — first example of an
-//! `PreprocessingInteractiveReduction`.
+//! preprocessing interactive reduction roles.
 //!
 //! The previous preprocessed examples (`dleq`, `preprocessed_lookup`) implement
-//! [`ia_core::PreprocessingInteractiveArgument`]: the
-//! verifier outputs accept/reject. This one implements
-//! [`ia_core::PreprocessingInteractiveReduction`]: the verifier outputs a *new target
+//! preprocessing argument roles: the verifier outputs accept/reject. This one implements
+//! preprocessing reduction roles: the verifier outputs a *new target
 //! instance* that a downstream decider then checks.
 //!
 //! The protocol is the standard multilinear sumcheck of Lund-Fortnow-
@@ -58,7 +57,7 @@ use spongefish_dsfs as dsfs;
 
 use ia_core::prelude::*;
 use ia_core::{
-    CommittedIndex, CommittedIndexBytes, PreprocessingCore, ProverChannel, VerificationError,
+    CommittedIndex, CommittedIndexBytes, Indexer, ProverChannel, VerificationError,
     VerificationResult, VerifierChannel,
 };
 
@@ -163,21 +162,23 @@ impl CommittedIndex for SumcheckProverKey {
 // The body — implements the indexed *reduction* trait
 // ---------------------------------------------------------------------------
 
+fn sumcheck_protocol_id() -> [u8; 32] {
+    ia_core::pad_protocol_id(b"preprocessed-sumcheck-n2")
+}
+
 #[derive(Default)]
-struct PreprocessedSumcheck;
+struct SumcheckIndexer;
 
 ia_core::impl_preprocessing_reduction! {
-    impl PreprocessingInteractiveReduction for PreprocessedSumcheck {
+    indexer impl for SumcheckIndexer {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
-            ia_core::pad_protocol_id(b"preprocessed-sumcheck-n2")
+            sumcheck_protocol_id()
         }
 
         /// Claimed sum T.
         type SourceInstance = Fr;
         /// ((r_1, r_2), v)
         type TargetInstance = ((Fr, Fr), Fr);
-        type SourceWitness = ();
-        type TargetWitness = ();
         type Index = [Fr; 4];
         type ProverKey = SumcheckProverKey;
         type VerifierKey = SumcheckVerifierKey;
@@ -189,6 +190,23 @@ ia_core::impl_preprocessing_reduction! {
             };
             (pk, vk)
         }
+    }
+}
+
+#[derive(Default)]
+struct SumcheckProver;
+
+ia_core::impl_preprocessing_reduction! {
+    prover impl for SumcheckProver {
+        fn protocol_id(&self) -> impl AsRef<[u8]> {
+            sumcheck_protocol_id()
+        }
+
+        type SourceInstance = Fr;
+        type TargetInstance = ((Fr, Fr), Fr);
+        type SourceWitness = ();
+        type TargetWitness = ();
+        type ProverKey = SumcheckProverKey;
 
         fn prove<P: ProverChannel<Unit = u8>>(
             &self,
@@ -213,6 +231,21 @@ ia_core::impl_preprocessing_reduction! {
             let v = line(q2, r2);
             (((r1, r2), v), ())
         }
+    }
+}
+
+#[derive(Default)]
+struct SumcheckVerifier;
+
+ia_core::impl_preprocessing_reduction! {
+    verifier impl for SumcheckVerifier {
+        fn protocol_id(&self) -> impl AsRef<[u8]> {
+            sumcheck_protocol_id()
+        }
+
+        type SourceInstance = Fr;
+        type TargetInstance = ((Fr, Fr), Fr);
+        type VerifierKey = SumcheckVerifierKey;
 
         fn verify<V: VerifierChannel<Unit = u8>>(
             &self,
@@ -269,14 +302,19 @@ fn main() {
     println!("Picked p(X, Y) with 4 random coefficients.");
     println!("Claimed sum  T = Σ_{{x∈{{0,1}}^2}} p(x) = {t}\n");
 
-    // Preprocessing: preprocessing_non_interactive_reduction is the stateless
-    // compiled wrapper; .preprocess(&coeffs) runs body.preprocess(&coeffs) once and
-    // returns the bare (prover_key, verifier_key).
-    let nir = dsfs::preprocessing_non_interactive_reduction(
-        PreprocessedSumcheck,
+    // The independent indexer derives keys before the two stateless DSFS roles run.
+    let indexer = SumcheckIndexer;
+    let prover = dsfs::preprocessing_non_interactive_reduction_prover(
+        SumcheckProver,
         dsfs::Keccak::default(),
     );
-    let (proving_key, verifier_key) = nir.preprocess(&coeffs);
+    let verifier = dsfs::preprocessing_non_interactive_reduction_verifier(
+        SumcheckVerifier,
+        dsfs::Keccak::default(),
+    );
+    let (proving_key, verifier_key) = indexer
+        .preprocess_checked(&coeffs)
+        .expect("matching committed indices");
 
     // Inspect the verifier key + committed index directly.
     println!("Preprocessed keys:");
@@ -287,8 +325,8 @@ fn main() {
     );
 
     // Run the reduction. Source instance is just T; witness is ().
-    let (proof, target_prover, ()) = nir.prove(&proving_key, &session, &t, &());
-    let target_verifier = nir
+    let (proof, target_prover, ()) = prover.prove(&proving_key, &session, &t, &());
+    let target_verifier = verifier
         .verify(&verifier_key, &session, &t, &proof)
         .expect("sumcheck reduction verifies");
     assert_eq!(target_prover, target_verifier);
@@ -319,8 +357,7 @@ fn main() {
 mod tests {
     use super::*;
     use ia_core::{
-        IntoProver, IntoVerifier, PreprocessingNonInteractiveReductionProver,
-        PreprocessingNonInteractiveReductionVerifier,
+        PreprocessingNonInteractiveReductionProver, PreprocessingNonInteractiveReductionVerifier,
     };
 
     fn assert_preprocessed_reduction_prover<N: PreprocessingNonInteractiveReductionProver>(_: &N) {}
@@ -347,35 +384,40 @@ mod tests {
         let session = spongefish::session!("preprocessed sumcheck test");
         let coeffs = sample_coeffs();
         let t = sum_over_hypercube(&coeffs);
-        let nir = dsfs::preprocessing_non_interactive_reduction::<_, [u8; 64], _>(
-            PreprocessedSumcheck,
+        let indexer = SumcheckIndexer;
+        let prover = dsfs::preprocessing_non_interactive_reduction_prover::<_, [u8; 64], _>(
+            SumcheckProver,
             dsfs::Keccak::default(),
         );
-        let (pk, vk) = nir.preprocess(&coeffs);
+        let verifier = dsfs::preprocessing_non_interactive_reduction_verifier::<_, [u8; 64], _>(
+            SumcheckVerifier,
+            dsfs::Keccak::default(),
+        );
+        let (pk, vk) = indexer
+            .preprocess_checked(&coeffs)
+            .expect("matching committed indices");
 
-        let (proof, _target_p, ()) = nir.prove(&pk, &session, &t, &());
-        let ((r1, r2), v) = nir.verify(&vk, &session, &t, &proof).expect("verify");
+        let (proof, _target_p, ()) = prover.prove(&pk, &session, &t, &());
+        let ((r1, r2), v) = verifier.verify(&vk, &session, &t, &proof).expect("verify");
 
         assert_eq!(eval(&coeffs, r1, r2), v, "decider check");
     }
 
     #[test]
-    fn sumcheck_via_separate_prover_and_verifier_reduction_views() {
+    fn sumcheck_via_separate_prover_and_verifier_reduction_roles() {
         let session = spongefish::session!("preprocessed sumcheck role split test");
         let coeffs = sample_coeffs();
         let t = sum_over_hypercube(&coeffs);
-        let nir = dsfs::preprocessing_non_interactive_reduction::<_, [u8; 64], _>(
-            PreprocessedSumcheck,
-            dsfs::Keccak::default(),
-        );
-        let (pk, vk) = nir.preprocess(&coeffs);
+        let (pk, vk) = SumcheckIndexer
+            .preprocess_checked(&coeffs)
+            .expect("matching committed indices");
 
-        let prover_nir = dsfs::preprocessing_non_interactive_reduction(
-            PreprocessedSumcheck.into_prover(),
+        let prover_nir = dsfs::preprocessing_non_interactive_reduction_prover(
+            SumcheckProver,
             dsfs::Keccak::default(),
         );
-        let verifier_nir = dsfs::preprocessing_non_interactive_reduction(
-            PreprocessedSumcheck.into_verifier(),
+        let verifier_nir = dsfs::preprocessing_non_interactive_reduction_verifier(
+            SumcheckVerifier,
             dsfs::Keccak::default(),
         );
 
@@ -404,18 +446,25 @@ mod tests {
         let real_t = sum_over_hypercube(&coeffs);
         let fake_t = real_t + Fr::from(1u64);
 
-        let nir = dsfs::preprocessing_non_interactive_reduction(
-            PreprocessedSumcheck,
+        let indexer = SumcheckIndexer;
+        let prover = dsfs::preprocessing_non_interactive_reduction_prover(
+            SumcheckProver,
             dsfs::Keccak::default(),
         );
-        let (pk, vk) = nir.preprocess(&coeffs);
+        let verifier = dsfs::preprocessing_non_interactive_reduction_verifier(
+            SumcheckVerifier,
+            dsfs::Keccak::default(),
+        );
+        let (pk, vk) = indexer
+            .preprocess_checked(&coeffs)
+            .expect("matching committed indices");
 
         // Prover honestly runs on (its true) `coeffs`. But the caller
         // passes the wrong T as the source instance. The verifier reads
         // the round-1 polynomial, computes q_1(0)+q_1(1) (which equals
         // real_t), and finds it != fake_t. Reject.
-        let (proof, _, ()) = nir.prove(&pk, &session, &fake_t, &());
-        assert!(nir.verify(&vk, &session, &fake_t, &proof).is_err());
+        let (proof, _, ()) = prover.prove(&pk, &session, &fake_t, &());
+        assert!(verifier.verify(&vk, &session, &fake_t, &proof).is_err());
     }
 
     /// Two indexings over different polynomials have different committed
@@ -428,17 +477,26 @@ mod tests {
         let mut coeffs_b = coeffs_a;
         coeffs_b[C11] += Fr::from(1u64); // perturb one coefficient
 
-        let nir = dsfs::preprocessing_non_interactive_reduction(
-            PreprocessedSumcheck,
+        let indexer = SumcheckIndexer;
+        let prover = dsfs::preprocessing_non_interactive_reduction_prover(
+            SumcheckProver,
             dsfs::Keccak::default(),
         );
-        let (pk_a, _vk_a) = nir.preprocess(&coeffs_a);
-        let (_pk_b, vk_b) = nir.preprocess(&coeffs_b);
+        let verifier = dsfs::preprocessing_non_interactive_reduction_verifier(
+            SumcheckVerifier,
+            dsfs::Keccak::default(),
+        );
+        let (pk_a, _vk_a) = indexer
+            .preprocess_checked(&coeffs_a)
+            .expect("matching committed indices");
+        let (_pk_b, vk_b) = indexer
+            .preprocess_checked(&coeffs_b)
+            .expect("matching committed indices");
         assert_ne!(pk_a.committed_index(), vk_b.committed_index());
 
         let t_a = sum_over_hypercube(&coeffs_a);
-        let (proof, _, ()) = nir.prove(&pk_a, &session, &t_a, &());
-        assert!(nir.verify(&vk_b, &session, &t_a, &proof).is_err());
+        let (proof, _, ()) = prover.prove(&pk_a, &session, &t_a, &());
+        assert!(verifier.verify(&vk_b, &session, &t_a, &proof).is_err());
     }
 
     /// The proving key carries the tagged committed index derived from the
@@ -446,11 +504,9 @@ mod tests {
     #[test]
     fn sumcheck_proving_key_carries_tagged_committed_index() {
         let coeffs = sample_coeffs();
-        let nir = dsfs::preprocessing_non_interactive_reduction::<_, [u8; 64], _>(
-            PreprocessedSumcheck,
-            dsfs::Keccak::default(),
-        );
-        let (pk, _vk) = nir.preprocess(&coeffs);
+        let (pk, _vk) = SumcheckIndexer
+            .preprocess_checked(&coeffs)
+            .expect("matching committed indices");
         assert!(
             pk.committed_index()
                 .as_bytes()

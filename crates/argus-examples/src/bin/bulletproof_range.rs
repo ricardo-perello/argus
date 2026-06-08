@@ -18,7 +18,7 @@
 
 use ark_ec::{CurveGroup, PrimeGroup};
 use ark_ff::{AdditiveGroup, Field, PrimeField};
-use ark_std::{log2, UniformRand};
+use ark_std::{UniformRand, log2};
 use rand::rngs::OsRng;
 use spongefish_dsfs as dsfs;
 
@@ -27,8 +27,8 @@ use argus_examples::bulletproofs::{
 };
 use ia_core::prelude::*;
 use ia_core::{
-    ArgumentSecurity, Decoding, Deserialize, Encoding, ProverChannel,
-    SecurityErrorBound, SecurityProfile, VerificationError, VerificationResult, VerifierChannel,
+    ArgumentSecurity, Decoding, Deserialize, Encoding, ProverChannel, SecurityErrorBound,
+    SecurityProfile, VerificationError, VerificationResult, VerifierChannel,
 };
 
 // ---------------------------------------------------------------------------
@@ -52,11 +52,21 @@ impl<G: CurveGroup> RangeParams<G> {
     }
 }
 
-struct RangeProof<G: CurveGroup> {
+struct RangeProofProver<G: CurveGroup> {
     params: RangeParams<G>,
 }
 
-impl<G: CurveGroup> RangeProof<G> {
+struct RangeProofVerifier<G: CurveGroup> {
+    params: RangeParams<G>,
+}
+
+impl<G: CurveGroup> RangeProofProver<G> {
+    fn new(params: RangeParams<G>) -> Self {
+        Self { params }
+    }
+}
+
+impl<G: CurveGroup> RangeProofVerifier<G> {
     fn new(params: RangeParams<G>) -> Self {
         Self { params }
     }
@@ -87,7 +97,7 @@ struct RangeWitness<F> {
 // ---------------------------------------------------------------------------
 
 ia_core::impl_interactive_argument! {
-    impl<G> InteractiveArgument for RangeProof<G>
+    prover impl<G> for RangeProofProver<G>
     where
         G: CurveGroup + PrimeGroup + Encoding + Deserialize,
         G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
@@ -178,6 +188,21 @@ ia_core::impl_interactive_argument! {
             ipa_prove_core(ch, params.g_vec.clone(), h_prime, u_ipa, l, r);
         }
 
+    }
+}
+
+ia_core::impl_interactive_argument! {
+    verifier impl<G> for RangeProofVerifier<G>
+    where
+        G: CurveGroup + PrimeGroup + Encoding + Deserialize,
+        G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
+    {
+        fn protocol_id(&self) -> impl AsRef<[u8]> {
+            ia_core::pad_protocol_id(b"bulletproofs-range")
+        }
+
+        type Instance = RangeInstance<G>;
+
         #[allow(non_snake_case)]
         fn verify<V: VerifierChannel<Unit = u8>>(
             &self,
@@ -206,28 +231,23 @@ ia_core::impl_interactive_argument! {
             let two_pows = powers(F::<G>::from(2u64), n);
             let z2 = z.square();
             let z3 = z2 * z;
-
-            // delta(y,z) = (z - z^2)<1, y^n> - z^3 <1, 2^n>.
             let sum_y: F<G> = y_pows.iter().copied().sum();
             let sum_two: F<G> = two_pows.iter().copied().sum();
             let delta = (z - z2) * sum_y - z3 * sum_two;
 
-            // Check 1: t_hat commitment ties t_hat to V.
             let lhs = g_base * t_hat + h_base * tau_x;
             let rhs = V_comm * z2 + g_base * delta + T1 * x + T2 * x.square();
             if lhs != rhs {
                 return Err(VerificationError);
             }
 
-            // Rebuild the inner-product commitment P' and discharge it via the IPA.
             let u_ipa = params.u * w;
             let y_inv = y.inverse().ok_or(VerificationError)?;
             let y_inv_pows = powers(y_inv, n);
             let h_prime: Vec<G> = (0..n).map(|i| params.h_vec[i] * y_inv_pows[i]).collect();
-
-            // P_pre = A + xS - mu h_base + <-z, g> + <z y^n + z^2 2^n, h'>.
             let neg_z = vec![-z; n];
-            let h_coeffs: Vec<F<G>> = (0..n).map(|i| z * y_pows[i] + z2 * two_pows[i]).collect();
+            let h_coeffs: Vec<F<G>> =
+                (0..n).map(|i| z * y_pows[i] + z2 * two_pows[i]).collect();
             let p_pre = A + S * x - h_base * mu
                 + msm(&neg_z, &params.g_vec)
                 + msm(&h_coeffs, &h_prime);
@@ -238,7 +258,7 @@ ia_core::impl_interactive_argument! {
     }
 }
 
-impl<G> ArgumentSecurity for RangeProof<G>
+impl<G> ArgumentSecurity for RangeProofVerifier<G>
 where
     G: CurveGroup + PrimeGroup + Encoding + Deserialize,
     G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
@@ -319,10 +339,19 @@ fn main() {
     let witness = RangeWitness { v, gamma };
 
     let session = spongefish::session!("bulletproofs range example");
-    let nia = dsfs::plain_non_interactive_argument(RangeProof::new(params), dsfs::Keccak::default());
-    let narg = nia.prove(&session, &instance, &witness);
+    let prover = dsfs::plain_non_interactive_argument_prover(
+        RangeProofProver::new(params.clone()),
+        dsfs::Keccak::default(),
+    );
+    let verifier = dsfs::plain_non_interactive_argument_verifier(
+        RangeProofVerifier::new(params),
+        dsfs::Keccak::default(),
+    );
+    let narg = prover.prove(&session, &instance, &witness);
     println!("Proof: {} bytes", narg.as_bytes().len());
-    nia.verify(&session, &instance, &narg).expect("range verification failed");
+    verifier
+        .verify(&session, &instance, &narg)
+        .expect("range verification failed");
     println!("Verification succeeded");
 }
 
@@ -346,10 +375,17 @@ mod tests {
         let witness = RangeWitness { v, gamma };
 
         let session = spongefish::session!("bulletproofs range test");
-        let nia =
-            dsfs::plain_non_interactive_argument(RangeProof::new(params), dsfs::Keccak::default());
-        let narg = nia.prove(&session, &instance, &witness);
-        nia.verify(&session, &instance, &narg)
+        let prover = dsfs::plain_non_interactive_argument_prover(
+            RangeProofProver::new(params.clone()),
+            dsfs::Keccak::default(),
+        );
+        let verifier = dsfs::plain_non_interactive_argument_verifier(
+            RangeProofVerifier::new(params),
+            dsfs::Keccak::default(),
+        );
+        let narg = prover.prove(&session, &instance, &witness);
+        verifier
+            .verify(&session, &instance, &narg)
             .unwrap_or_else(|_| panic!("range verification failed for v = {v}"));
     }
 
@@ -366,14 +402,24 @@ mod tests {
         let n_bits = 8;
         let params = random_range_params::<G>(n_bits, &mut OsRng);
         let gamma = F::rand(&mut OsRng);
-        let honest = RangeInstance { commitment: commit_value(&params, 100, gamma) };
-        let tampered = RangeInstance { commitment: commit_value(&params, 101, gamma) };
+        let honest = RangeInstance {
+            commitment: commit_value(&params, 100, gamma),
+        };
+        let tampered = RangeInstance {
+            commitment: commit_value(&params, 101, gamma),
+        };
         let witness = RangeWitness { v: 100, gamma };
 
         let session = spongefish::session!("bulletproofs range test");
-        let nia =
-            dsfs::plain_non_interactive_argument(RangeProof::new(params), dsfs::Keccak::default());
-        let narg = nia.prove(&session, &honest, &witness);
-        assert!(nia.verify(&session, &tampered, &narg).is_err());
+        let prover = dsfs::plain_non_interactive_argument_prover(
+            RangeProofProver::new(params.clone()),
+            dsfs::Keccak::default(),
+        );
+        let verifier = dsfs::plain_non_interactive_argument_verifier(
+            RangeProofVerifier::new(params),
+            dsfs::Keccak::default(),
+        );
+        let narg = prover.prove(&session, &honest, &witness);
+        assert!(verifier.verify(&session, &tampered, &narg).is_err());
     }
 }

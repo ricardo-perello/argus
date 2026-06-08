@@ -118,7 +118,7 @@ impl<
 // -----------------------------------------------------------------------
 // Indexed-relation split: WarpIndex / WarpProverKey / WarpVerifierKey
 //
-// `WarpIndex` is the static problem description. `WarpReduction::preprocess`
+// `WarpIndex` is the static problem description. `WarpReductionIndexer::preprocess`
 // derives a (prover key, verifier key) pair from it. The verifier key carries
 // an internally-derived commitment so its material and commitment cannot be
 // provided independently.
@@ -591,9 +591,7 @@ where
         // The source statement is the verifier's own `instance` argument (bound
         // by DSFS as public input), not re-read from the transcript. Validate
         // its shape against the index dimensions.
-        if instance.instances.len() != l1
-            || instance.instances.iter().any(|xs| xs.len() != N - k)
-        {
+        if instance.instances.len() != l1 || instance.instances.iter().any(|xs| xs.len() != N - k) {
             return Err(WARPVerifierError::SumcheckRound);
         }
         let l1_xs = instance.instances.clone();

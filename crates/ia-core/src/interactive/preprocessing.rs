@@ -1,21 +1,25 @@
 //! Preprocessing interactive protocol traits and preprocessing composition.
 
 use crate::{
-    ArgumentCore, PreprocessingCore, ProverChannel, ReductionCore, VerificationResult,
-    VerifierChannel,
+    ArgumentCore, ArgumentProverCore, CommittedIndex, ProverChannel, ReductionCore,
+    ReductionProverCore, VerificationResult, VerifierChannel,
 };
 
 /// Prover half of an indexed (preprocessed) interactive argument.
 ///
 /// Splits the relation into an index and a per-claim instance/witness pair.
-/// The `PreprocessingCore::preprocess` function deterministically derives prover
-/// and verifier keys; [`prove`](Self::prove) executes keyed.
+/// An independent [`crate::Indexer`] deterministically derives the matching
+/// prover and verifier keys; [`prove`](Self::prove) executes with only the
+/// prover key.
 ///
 /// There is no blanket implementation from [`crate::InteractiveArgumentProver`] into
 /// this trait. Plain protocols stay plain. A protocol with real preprocessing
 /// implements this trait directly. To use a plain protocol in the *inner* slot
-/// of a preprocessing composition, wrap it in [`crate::TrivialIndexedArgument`].
-pub trait PreprocessingInteractiveArgumentProver: ArgumentCore + PreprocessingCore {
+/// of a preprocessing composition, wrap its role in
+/// [`crate::TrivialIndexedArgumentProver`].
+pub trait PreprocessingInteractiveArgumentProver: ArgumentProverCore {
+    type ProverKey: CommittedIndex;
+
     fn prove<P: ProverChannel<Unit = u8>>(
         &self,
         ch: &mut P,
@@ -26,7 +30,37 @@ pub trait PreprocessingInteractiveArgumentProver: ArgumentCore + PreprocessingCo
 }
 
 /// Verifier half of an indexed (preprocessed) interactive argument.
-pub trait PreprocessingInteractiveArgumentVerifier: ArgumentCore + PreprocessingCore {
+///
+/// A verifier role names only its verifier key:
+///
+/// ```compile_fail
+/// use ia_core::{
+///     ArgumentCore, PreprocessingInteractiveArgumentProver,
+///     PreprocessingInteractiveArgumentVerifier, ProtocolCore, VerificationResult,
+///     VerifierChannel,
+/// };
+///
+/// struct Verifier;
+/// impl ProtocolCore for Verifier {
+///     fn protocol_id(&self) -> impl AsRef<[u8]> { b"verifier" }
+/// }
+/// impl ArgumentCore for Verifier { type Instance = (); }
+/// impl PreprocessingInteractiveArgumentVerifier for Verifier {
+///     type VerifierKey = ();
+///     fn verify<C: VerifierChannel<Unit = u8>>(
+///         &self,
+///         _: &mut C,
+///         _: &Self::VerifierKey,
+///         _: &Self::Instance,
+///     ) -> VerificationResult<()> { Ok(()) }
+/// }
+///
+/// fn requires_prover_key<T: PreprocessingInteractiveArgumentProver>() {}
+/// requires_prover_key::<Verifier>();
+/// ```
+pub trait PreprocessingInteractiveArgumentVerifier: ArgumentCore {
+    type VerifierKey: CommittedIndex;
+
     fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,
@@ -35,24 +69,13 @@ pub trait PreprocessingInteractiveArgumentVerifier: ArgumentCore + Preprocessing
     ) -> VerificationResult<()>;
 }
 
-/// Indexed (preprocessed) interactive argument: both halves. Marker conjunction
-/// of [`PreprocessingInteractiveArgumentProver`] and
-/// [`PreprocessingInteractiveArgumentVerifier`].
-pub trait PreprocessingInteractiveArgument:
-    PreprocessingInteractiveArgumentProver + PreprocessingInteractiveArgumentVerifier
-{
-}
-
-impl<T> PreprocessingInteractiveArgument for T where
-    T: PreprocessingInteractiveArgumentProver + PreprocessingInteractiveArgumentVerifier
-{
-}
-
 /// Prover half of an indexed (preprocessed) interactive reduction.
 ///
 /// Same split as [`PreprocessingInteractiveArgumentProver`], with the standard
 /// reduction shape: prove returns a target instance/witness pair.
-pub trait PreprocessingInteractiveReductionProver: ReductionCore + PreprocessingCore {
+pub trait PreprocessingInteractiveReductionProver: ReductionProverCore {
+    type ProverKey: CommittedIndex;
+
     fn prove<P: ProverChannel<Unit = u8>>(
         &self,
         ch: &mut P,
@@ -63,7 +86,9 @@ pub trait PreprocessingInteractiveReductionProver: ReductionCore + Preprocessing
 }
 
 /// Verifier half of an indexed (preprocessed) interactive reduction.
-pub trait PreprocessingInteractiveReductionVerifier: ReductionCore + PreprocessingCore {
+pub trait PreprocessingInteractiveReductionVerifier: ReductionCore {
+    type VerifierKey: CommittedIndex;
+
     fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,
@@ -72,18 +97,6 @@ pub trait PreprocessingInteractiveReductionVerifier: ReductionCore + Preprocessi
     ) -> VerificationResult<Self::TargetInstance>;
 }
 
-/// Indexed (preprocessed) interactive reduction: both halves. Marker conjunction
-/// of [`PreprocessingInteractiveReductionProver`] and
-/// [`PreprocessingInteractiveReductionVerifier`].
-pub trait PreprocessingInteractiveReduction:
-    PreprocessingInteractiveReductionProver + PreprocessingInteractiveReductionVerifier
-{
-}
-
-impl<T> PreprocessingInteractiveReduction for T where
-    T: PreprocessingInteractiveReductionProver + PreprocessingInteractiveReductionVerifier
-{
-}
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -94,9 +107,10 @@ mod tests {
     use crate::ChainedReduction;
     use crate::preprocessing::{INDEXED_INSTANCE_TAG, VK_PAIR_TAG};
     use crate::{
-        CommittedIndex, CommittedIndexBytes, Decoding, Deserialize, Encoding, IndexedInstance,
-        IndexedInstanceRef, InteractiveArgumentProver, InteractiveArgumentVerifier, NargSerialize,
-        ProtocolCore, ReducedArgument, TrivialIndexedArgument, VerificationError, pad_protocol_id,
+        ArgumentProverCore, CommittedIndex, CommittedIndexBytes, Decoding, Deserialize, Encoding,
+        IndexedInstance, IndexedInstanceRef, Indexer, IndexingError, InteractiveArgumentProver,
+        InteractiveArgumentVerifier, NargSerialize, ProtocolCore, ReducedArgument,
+        ReductionProverCore, TrivialIndexer, VerificationError, pad_protocol_id,
     };
     use alloc::vec;
     use alloc::vec::Vec;
@@ -161,7 +175,7 @@ mod tests {
 
     // ---- Tuple VK commitment tests ----
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug, PartialEq, Eq)]
     struct ByteVk(Vec<u8>);
 
     impl CommittedIndex for ByteVk {
@@ -205,6 +219,9 @@ mod tests {
 
     impl ArgumentCore for PlainOk {
         type Instance = ();
+    }
+
+    impl ArgumentProverCore for PlainOk {
         type Witness = ();
     }
 
@@ -224,7 +241,7 @@ mod tests {
 
     #[test]
     fn trivial_indexed_argument_has_empty_committed_index() {
-        let wrapped = TrivialIndexedArgument(PlainOk);
+        let wrapped = TrivialIndexer(PlainOk);
         let (_, vk) = wrapped.preprocess(&());
         assert!(vk.committed_index().is_empty());
     }
@@ -244,10 +261,9 @@ mod tests {
 
     impl ArgumentCore for MismatchedKeys {
         type Instance = ();
-        type Witness = ();
     }
 
-    impl PreprocessingCore for MismatchedKeys {
+    impl Indexer for MismatchedKeys {
         type Index = ();
         type ProverKey = ByteVk;
         type VerifierKey = ByteVk;
@@ -262,14 +278,16 @@ mod tests {
         // EqualsKey returns `((), EqualsKeyVk(ix))`; () and the vk agree (() is
         // empty, but here both keys are the same byte) — use AddPk which returns
         // two equal AddPkVk values.
-        let (pk, vk) = AddPk.preprocess_checked(&7u8);
+        let (pk, vk) = AddPk.preprocess_checked(&7u8).unwrap();
         assert_eq!(pk.committed_index(), vk.committed_index());
     }
 
     #[test]
-    #[should_panic(expected = "mismatched committed_index")]
-    fn preprocess_checked_panics_on_mismatched_committed_index() {
-        let _ = MismatchedKeys.preprocess_checked(&());
+    fn preprocess_checked_rejects_mismatched_committed_index() {
+        assert_eq!(
+            MismatchedKeys.preprocess_checked(&()),
+            Err(IndexingError::CommittedIndexMismatch)
+        );
     }
 
     // ---- Preprocessing composition tests ----
@@ -297,11 +315,14 @@ mod tests {
     impl ReductionCore for AddPk {
         type SourceInstance = u8;
         type TargetInstance = u8;
+    }
+
+    impl ReductionProverCore for AddPk {
         type SourceWitness = ();
         type TargetWitness = ();
     }
 
-    impl PreprocessingCore for AddPk {
+    impl Indexer for AddPk {
         type Index = u8;
         type ProverKey = AddPkVk;
         type VerifierKey = AddPkVk;
@@ -312,6 +333,8 @@ mod tests {
     }
 
     impl PreprocessingInteractiveReductionProver for AddPk {
+        type ProverKey = AddPkVk;
+
         fn prove<P: ProverChannel<Unit = u8>>(
             &self,
             _: &mut P,
@@ -324,6 +347,8 @@ mod tests {
     }
 
     impl PreprocessingInteractiveReductionVerifier for AddPk {
+        type VerifierKey = AddPkVk;
+
         fn verify<V: VerifierChannel<Unit = u8>>(
             &self,
             _: &mut V,
@@ -355,20 +380,25 @@ mod tests {
 
     impl ArgumentCore for EqualsKey {
         type Instance = u8;
+    }
+
+    impl ArgumentProverCore for EqualsKey {
         type Witness = ();
     }
 
-    impl PreprocessingCore for EqualsKey {
+    impl Indexer for EqualsKey {
         type Index = u8;
-        type ProverKey = ();
+        type ProverKey = EqualsKeyVk;
         type VerifierKey = EqualsKeyVk;
 
         fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
-            ((), EqualsKeyVk(*ix))
+            (EqualsKeyVk(*ix), EqualsKeyVk(*ix))
         }
     }
 
     impl PreprocessingInteractiveArgumentProver for EqualsKey {
+        type ProverKey = EqualsKeyVk;
+
         fn prove<P: ProverChannel<Unit = u8>>(
             &self,
             _: &mut P,
@@ -380,6 +410,8 @@ mod tests {
     }
 
     impl PreprocessingInteractiveArgumentVerifier for EqualsKey {
+        type VerifierKey = EqualsKeyVk;
+
         fn verify<V: VerifierChannel<Unit = u8>>(
             &self,
             _: &mut V,
@@ -421,7 +453,8 @@ mod tests {
         let composed = ReducedArgument::new(AddPk, EqualsKey);
         let ix = (5u8, 17u8);
         let (pk, vk) = composed.preprocess(&ix);
-        assert_eq!(pk, (AddPkVk(5), ()));
+        assert_eq!(pk.0, AddPkVk(5));
+        assert_eq!(pk.1.committed_index(), EqualsKeyVk(17).committed_index());
 
         // Source instance 12, plus pk=5, equals 17, which matches argument vk.
         let recorder = RefCell::new(Vec::new());

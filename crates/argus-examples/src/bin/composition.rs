@@ -52,10 +52,12 @@ struct AccPair {
 // ---------------------------------------------------------------------------
 
 #[derive(Default)]
-struct FoldPairs;
+struct FoldPairsProver;
+#[derive(Default)]
+struct FoldPairsVerifier;
 
 ia_core::impl_interactive_reduction! {
-impl InteractiveReduction for FoldPairs {
+prover impl for FoldPairsProver {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"fold pairs")
     }
@@ -89,6 +91,18 @@ impl InteractiveReduction for FoldPairs {
         (Claims(folded_claims), Values(folded_values))
     }
 
+}
+}
+
+ia_core::impl_interactive_reduction! {
+verifier impl for FoldPairsVerifier {
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        ia_core::pad_protocol_id(b"fold pairs")
+    }
+
+    type SourceInstance = Claims;
+    type TargetInstance = Claims;
+
     fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,
@@ -113,7 +127,7 @@ impl InteractiveReduction for FoldPairs {
 }
 }
 
-impl ReductionSecurity for FoldPairs {
+impl ReductionSecurity for FoldPairsVerifier {
     type SourceParams = ();
     type SourceBound = ();
     type TargetBound = ();
@@ -146,10 +160,12 @@ impl ReductionSecurity for FoldPairs {
 // ---------------------------------------------------------------------------
 
 #[derive(Default)]
-struct Accumulate;
+struct AccumulateProver;
+#[derive(Default)]
+struct AccumulateVerifier;
 
 ia_core::impl_interactive_reduction! {
-impl InteractiveReduction for Accumulate {
+prover impl for AccumulateProver {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"accumulate")
     }
@@ -190,6 +206,18 @@ impl InteractiveReduction for Accumulate {
         )
     }
 
+}
+}
+
+ia_core::impl_interactive_reduction! {
+verifier impl for AccumulateVerifier {
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        ia_core::pad_protocol_id(b"accumulate")
+    }
+
+    type SourceInstance = Claims;
+    type TargetInstance = AccPair;
+
     fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,
@@ -221,7 +249,7 @@ impl InteractiveReduction for Accumulate {
 }
 }
 
-impl ReductionSecurity for Accumulate {
+impl ReductionSecurity for AccumulateVerifier {
     type SourceParams = ();
     type SourceBound = ();
     type TargetBound = ();
@@ -254,10 +282,12 @@ impl ReductionSecurity for Accumulate {
 // ---------------------------------------------------------------------------
 
 #[derive(Default)]
-struct EqualityCheck;
+struct EqualityCheckProver;
+#[derive(Default)]
+struct EqualityCheckVerifier;
 
 ia_core::impl_interactive_argument! {
-impl InteractiveArgument for EqualityCheck {
+prover impl for EqualityCheckProver {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"equality check")
     }
@@ -266,6 +296,17 @@ impl InteractiveArgument for EqualityCheck {
     type Witness = ();
 
     fn prove<P: ProverChannel<Unit = u8>>(&self, _ch: &mut P, _instance: &AccPair, _witness: &()) {}
+
+}
+}
+
+ia_core::impl_interactive_argument! {
+verifier impl for EqualityCheckVerifier {
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        ia_core::pad_protocol_id(b"equality check")
+    }
+
+    type Instance = AccPair;
 
     fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
@@ -281,7 +322,7 @@ impl InteractiveArgument for EqualityCheck {
 }
 }
 
-impl ArgumentSecurity for EqualityCheck {
+impl ArgumentSecurity for EqualityCheckVerifier {
     type InstanceParams = ();
     type InstanceBound = ();
 
@@ -313,13 +354,16 @@ impl ArgumentSecurity for EqualityCheck {
 // ---------------------------------------------------------------------------
 
 /// IR . IR -> IR: fold twice (8 -> 4 -> 2)
-type TwoFolds = ChainedReduction<FoldPairs, FoldPairs>;
+type TwoFoldsProver = ChainedReduction<FoldPairsProver, FoldPairsProver>;
+type TwoFoldsVerifier = ChainedReduction<FoldPairsVerifier, FoldPairsVerifier>;
 
 /// (IR . IR) . IR -> IR: fold twice then accumulate (8 -> 4 -> 2 -> pair)
-type FoldAndAccumulate = ChainedReduction<TwoFolds, Accumulate>;
+type FoldAndAccumulateProver = ChainedReduction<TwoFoldsProver, AccumulateProver>;
+type FoldAndAccumulateVerifier = ChainedReduction<TwoFoldsVerifier, AccumulateVerifier>;
 
 /// IR . IA -> IA: full pipeline ending in accept/reject
-type FullProtocol = ReducedArgument<FoldAndAccumulate, EqualityCheck>;
+type FullProtocolProver = ReducedArgument<FoldAndAccumulateProver, EqualityCheckProver>;
+type FullProtocolVerifier = ReducedArgument<FoldAndAccumulateVerifier, EqualityCheckVerifier>;
 
 // ---------------------------------------------------------------------------
 // Main
@@ -341,16 +385,22 @@ fn main() {
     println!("=== ChainedReduction: FoldPairs . FoldPairs (IR . IR -> IR) ===");
     println!("    8 values -> 4 -> 2\n");
 
-    let two_folds = TwoFolds::default();
-    let nir = dsfs::plain_non_interactive_reduction(two_folds, dsfs::Keccak::default());
-    let (proof, target, _) = nir.prove(&session, &instance, &witness);
+    let prover = dsfs::plain_non_interactive_reduction_prover(
+        TwoFoldsProver::default(),
+        dsfs::Keccak::default(),
+    );
+    let verifier = dsfs::plain_non_interactive_reduction_verifier(
+        TwoFoldsVerifier::default(),
+        dsfs::Keccak::default(),
+    );
+    let (proof, target, _) = prover.prove(&session, &instance, &witness);
     println!(
         "  proof ({} bytes): {}",
         proof.len(),
         hex::encode(proof.as_bytes())
     );
 
-    let verified_target = nir
+    let verified_target = verifier
         .verify(&session, &instance, &proof)
         .expect("two-fold reduction failed");
     debug_assert_eq!(verified_target.0, target.0);
@@ -362,16 +412,23 @@ fn main() {
     println!("=== ReducedArgument: (Fold . Fold . Accumulate) . EqualityCheck ===");
     println!("    8 values -> 4 -> 2 -> AccPair -> accept/reject\n");
 
-    let full = FullProtocol::default();
-    let nia = dsfs::plain_non_interactive_argument(full, dsfs::Keccak::default());
-    let proof = nia.prove(&session, &instance, &witness);
+    let prover = dsfs::plain_non_interactive_argument_prover(
+        FullProtocolProver::default(),
+        dsfs::Keccak::default(),
+    );
+    let verifier = dsfs::plain_non_interactive_argument_verifier(
+        FullProtocolVerifier::default(),
+        dsfs::Keccak::default(),
+    );
+    let proof = prover.prove(&session, &instance, &witness);
     println!(
         "  proof ({} bytes): {}",
         proof.len(),
         hex::encode(proof.as_bytes())
     );
 
-    nia.verify(&session, &instance, &proof)
+    verifier
+        .verify(&session, &instance, &proof)
         .expect("full protocol verification failed");
     println!("  [OK] full composed protocol verified");
 }
@@ -384,9 +441,8 @@ fn main() {
 mod tests {
     use super::*;
     use ia_core::{
-        IntoProver, IntoVerifier, NonInteractiveArgument, NonInteractiveArgumentProver,
-        NonInteractiveArgumentVerifier, NonInteractiveReduction, NonInteractiveReductionProver,
-        NonInteractiveReductionVerifier,
+        NonInteractiveArgumentProver, NonInteractiveArgumentVerifier,
+        NonInteractiveReductionProver, NonInteractiveReductionVerifier,
     };
 
     fn assert_narg_prover<N: NonInteractiveArgumentProver>(_: &N) {}
@@ -405,21 +461,29 @@ mod tests {
         let witness = Values(values);
 
         let session = spongefish::session!("argus example: composition");
-        let protocol = FullProtocol::default();
-        let nia = dsfs::plain_non_interactive_argument(protocol, dsfs::Keccak::default());
-        fn assert_narg<N: NonInteractiveArgument>(_: &N) {}
-        assert_narg(&nia);
-        let proof = nia.prove(&session, &instance, &witness);
-        nia.verify(&session, &instance, &proof)
-            .expect("verification failed");
-
-        let reduction = TwoFolds::default();
-        let nir = dsfs::plain_non_interactive_reduction::<_, [u8; 64], _>(
-            reduction,
+        let prover = dsfs::plain_non_interactive_argument_prover(
+            FullProtocolProver::default(),
             dsfs::Keccak::default(),
         );
-        fn assert_nir<N: NonInteractiveReduction>(_: &N) {}
-        assert_nir(&nir);
+        let verifier = dsfs::plain_non_interactive_argument_verifier(
+            FullProtocolVerifier::default(),
+            dsfs::Keccak::default(),
+        );
+        let proof = prover.prove(&session, &instance, &witness);
+        verifier
+            .verify(&session, &instance, &proof)
+            .expect("verification failed");
+
+        let reduction_prover = dsfs::plain_non_interactive_reduction_prover::<_, [u8; 64], _>(
+            TwoFoldsProver::default(),
+            dsfs::Keccak::default(),
+        );
+        let reduction_verifier = dsfs::plain_non_interactive_reduction_verifier::<_, [u8; 64], _>(
+            TwoFoldsVerifier::default(),
+            dsfs::Keccak::default(),
+        );
+        assert_nir_prover(&reduction_prover);
+        assert_nir_verifier(&reduction_verifier);
     }
 
     #[test]
@@ -430,12 +494,12 @@ mod tests {
         let witness = Values(values);
 
         let session = spongefish::session!("argus example: composition role split");
-        let prover = dsfs::plain_non_interactive_argument(
-            FullProtocol::default().into_prover(),
+        let prover = dsfs::plain_non_interactive_argument_prover(
+            FullProtocolProver::default(),
             dsfs::Keccak::default(),
         );
-        let verifier = dsfs::plain_non_interactive_argument(
-            FullProtocol::default().into_verifier(),
+        let verifier = dsfs::plain_non_interactive_argument_verifier(
+            FullProtocolVerifier::default(),
             dsfs::Keccak::default(),
         );
 
@@ -458,12 +522,12 @@ mod tests {
         let witness = Values(values);
 
         let session = spongefish::session!("argus example: composition reduction role split");
-        let prover = dsfs::plain_non_interactive_reduction::<_, [u8; 64], _>(
-            TwoFolds::default().into_prover(),
+        let prover = dsfs::plain_non_interactive_reduction_prover::<_, [u8; 64], _>(
+            TwoFoldsProver::default(),
             dsfs::Keccak::default(),
         );
-        let verifier = dsfs::plain_non_interactive_reduction::<_, [u8; 64], _>(
-            TwoFolds::default().into_verifier(),
+        let verifier = dsfs::plain_non_interactive_reduction_verifier::<_, [u8; 64], _>(
+            TwoFoldsVerifier::default(),
             dsfs::Keccak::default(),
         );
 

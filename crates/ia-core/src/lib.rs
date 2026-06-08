@@ -7,8 +7,7 @@
 //! for protocol implementors.
 //!
 //! The public re-exports are intentionally flat: protocol authors can import
-//! `InteractiveArgument`, `PreprocessingInteractiveArgument`, `ProtocolCore`,
-//! `ArgumentCore`, and the channel traits directly from `ia_core`.
+//! the prover, verifier, and indexer role traits directly from `ia_core`.
 #![no_std]
 extern crate alloc;
 
@@ -26,7 +25,7 @@ pub use spongefish::{
 
 /// Zero-pad a byte slice into a 32-byte protocol identifier.
 ///
-/// Convenience for implementing `InteractiveArgument::protocol_id()` with a
+/// Convenience for implementing [`ProtocolCore::protocol_id`] with a
 /// short human-readable ASCII label, following the sigma-proofs convention.
 /// Panics at compile time if `label` is longer than 32 bytes.
 pub const fn pad_protocol_id(label: &[u8]) -> [u8; 32] {
@@ -41,23 +40,24 @@ pub const fn pad_protocol_id(label: &[u8]) -> [u8; 32] {
 }
 
 pub use channel::{ProverChannel, VerifierChannel};
-pub use core::{ArgumentCore, PreprocessingCore, ProtocolCore, ReductionCore};
+pub use core::{
+    ArgumentCore, ArgumentProverCore, Indexer, IndexingError, ProtocolCore, ReductionCore,
+    ReductionProverCore,
+};
 pub use interactive::{
-    ChainedReduction, CombinedIA, InteractiveArgument, InteractiveArgumentProver,
-    InteractiveArgumentVerifier, InteractiveReduction, InteractiveReductionProver,
-    InteractiveReductionVerifier, IntoProver, IntoVerifier, PreprocessingInteractiveArgument,
+    ChainedReduction, InteractiveArgumentProver, InteractiveArgumentVerifier,
+    InteractiveReductionProver, InteractiveReductionVerifier,
     PreprocessingInteractiveArgumentProver, PreprocessingInteractiveArgumentVerifier,
-    PreprocessingInteractiveReduction, PreprocessingInteractiveReductionProver,
-    PreprocessingInteractiveReductionVerifier, ProverOnly, ReducedArgument, TrivialIndexedArgument,
-    TrivialIndexedReduction, VerifierOnly,
+    PreprocessingInteractiveReductionProver, PreprocessingInteractiveReductionVerifier,
+    ReducedArgument, TrivialIndexedArgumentProver, TrivialIndexedArgumentVerifier,
+    TrivialIndexedReductionProver, TrivialIndexedReductionVerifier, TrivialIndexer,
 };
 pub use noninteractive::{
-    NargAsInteractiveArgument, NargProof, NonInteractiveArgument, NonInteractiveArgumentProver,
-    NonInteractiveArgumentVerifier, NonInteractiveReduction, NonInteractiveReductionProver,
-    NonInteractiveReductionVerifier, NonInteractiveSession, PreprocessingNonInteractiveArgument,
+    NargProof, NargProverAsInteractiveArgument, NargVerifierAsInteractiveArgument,
+    NonInteractiveArgumentProver, NonInteractiveArgumentVerifier, NonInteractiveReductionProver,
+    NonInteractiveReductionVerifier, NonInteractiveSession,
     PreprocessingNonInteractiveArgumentProver, PreprocessingNonInteractiveArgumentVerifier,
-    PreprocessingNonInteractiveReduction, PreprocessingNonInteractiveReductionProver,
-    PreprocessingNonInteractiveReductionVerifier,
+    PreprocessingNonInteractiveReductionProver, PreprocessingNonInteractiveReductionVerifier,
 };
 pub use preprocessing::{CommittedIndex, CommittedIndexBytes, IndexedInstance, IndexedInstanceRef};
 pub use security::{
@@ -67,26 +67,19 @@ pub use security::{
 
 /// Common execution traits for authoring and running protocols.
 ///
-/// After the prover/verifier split, calling `.prove()` / `.verify()` needs the
-/// relevant **half-trait** in scope (the conjunction trait is a method-less
-/// marker). Glob-importing this prelude brings every leaf trait — conjunction and
-/// both halves, interactive and non-interactive — plus the core and channel
-/// traits into scope, so a full compiled object's `.prove()` / `.verify()` resolve
-/// without listing each half. Because the conjunctions carry no methods, importing
-/// them alongside the halves never creates method-resolution ambiguity.
+/// Calling `.prove()` / `.verify()` needs the relevant native role trait in
+/// scope. Glob-importing this prelude brings every executable role plus the
+/// public/prover core, indexer, session, and channel traits into scope.
 pub mod prelude {
     pub use crate::{
-        ArgumentCore, InteractiveArgument, InteractiveArgumentProver, InteractiveArgumentVerifier,
-        InteractiveReduction, InteractiveReductionProver, InteractiveReductionVerifier, IntoProver,
-        IntoVerifier, NonInteractiveArgument, NonInteractiveArgumentProver,
-        NonInteractiveArgumentVerifier, NonInteractiveReduction, NonInteractiveReductionProver,
-        NonInteractiveReductionVerifier, NonInteractiveSession, PreprocessingCore,
-        PreprocessingInteractiveArgument, PreprocessingInteractiveArgumentProver,
-        PreprocessingInteractiveArgumentVerifier, PreprocessingInteractiveReduction,
+        ArgumentCore, ArgumentProverCore, Indexer, InteractiveArgumentProver,
+        InteractiveArgumentVerifier, InteractiveReductionProver, InteractiveReductionVerifier,
+        NonInteractiveArgumentProver, NonInteractiveArgumentVerifier,
+        NonInteractiveReductionProver, NonInteractiveReductionVerifier, NonInteractiveSession,
+        PreprocessingInteractiveArgumentProver, PreprocessingInteractiveArgumentVerifier,
         PreprocessingInteractiveReductionProver, PreprocessingInteractiveReductionVerifier,
-        PreprocessingNonInteractiveArgument, PreprocessingNonInteractiveArgumentProver,
-        PreprocessingNonInteractiveArgumentVerifier, PreprocessingNonInteractiveReduction,
+        PreprocessingNonInteractiveArgumentProver, PreprocessingNonInteractiveArgumentVerifier,
         PreprocessingNonInteractiveReductionProver, PreprocessingNonInteractiveReductionVerifier,
-        ProtocolCore, ProverChannel, ReductionCore, VerifierChannel,
+        ProtocolCore, ProverChannel, ReductionCore, ReductionProverCore, VerifierChannel,
     };
 }

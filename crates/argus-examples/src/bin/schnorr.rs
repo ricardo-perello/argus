@@ -30,16 +30,23 @@ use ia_core::{
 // Protocol type
 // ---------------------------------------------------------------------------
 
-struct Schnorr<G: CurveGroup>(core::marker::PhantomData<G>);
+struct SchnorrProver<G: CurveGroup>(core::marker::PhantomData<G>);
+struct SchnorrVerifier<G: CurveGroup>(core::marker::PhantomData<G>);
 
-impl<G: CurveGroup> Default for Schnorr<G> {
+impl<G: CurveGroup> Default for SchnorrProver<G> {
+    fn default() -> Self {
+        Self(core::marker::PhantomData)
+    }
+}
+
+impl<G: CurveGroup> Default for SchnorrVerifier<G> {
     fn default() -> Self {
         Self(core::marker::PhantomData)
     }
 }
 
 ia_core::impl_interactive_argument! {
-    impl<G> InteractiveArgument for Schnorr<G>
+    prover impl<G> for SchnorrProver<G>
     where
         G: CurveGroup + PrimeGroup + Encoding + Deserialize,
         G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
@@ -62,6 +69,21 @@ ia_core::impl_interactive_argument! {
             let r = k + c * witness;
             ch.send_prover_message(&r);
         }
+    }
+}
+
+ia_core::impl_interactive_argument! {
+    verifier impl<G> for SchnorrVerifier<G>
+    where
+        G: CurveGroup + PrimeGroup + Encoding + Deserialize,
+        G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
+    {
+        fn protocol_id(&self) -> impl AsRef<[u8]> {
+            ia_core::pad_protocol_id(b"schnorr")
+        }
+
+        /// [generator, public_key]
+        type Instance = [G; 2];
 
         #[allow(non_snake_case)]
         fn verify<V: VerifierChannel<Unit = u8>>(&self, ch: &mut V, instance: &[G; 2]) -> VerificationResult<()> {
@@ -80,7 +102,7 @@ ia_core::impl_interactive_argument! {
     }
 }
 
-impl<G> ArgumentSecurity for Schnorr<G>
+impl<G> ArgumentSecurity for SchnorrVerifier<G>
 where
     G: CurveGroup + PrimeGroup + Encoding + Deserialize,
     G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
@@ -132,12 +154,18 @@ fn run_dsfs(instance: &[ark_curve25519::EdwardsProjective; 2], sk: &ark_curve255
 
     let session = spongefish::session!("spongefish examples");
 
-    let schnorr = Schnorr::<G>::default();
-    let nia_schnorr = dsfs::plain_non_interactive_argument(schnorr, dsfs::Keccak::default());
-    let narg_string = nia_schnorr.prove(&session, instance, sk);
+    let prover = dsfs::plain_non_interactive_argument_prover(
+        SchnorrProver::<G>::default(),
+        dsfs::Keccak::default(),
+    );
+    let verifier = dsfs::plain_non_interactive_argument_verifier(
+        SchnorrVerifier::<G>::default(),
+        dsfs::Keccak::default(),
+    );
+    let narg_string = prover.prove(&session, instance, sk);
     println!("Proof:\n{}", hex::encode(narg_string.as_bytes()));
 
-    nia_schnorr
+    verifier
         .verify(&session, instance, &narg_string)
         .expect("verification failed");
     println!("Verification succeeded");
@@ -156,13 +184,13 @@ fn run_live(instance: [ark_curve25519::EdwardsProjective; 2], sk: ark_curve25519
 
     let prover_instance = instance;
     let prover_handle = thread::spawn(move || {
-        Schnorr::<G>::default().prove(&mut prover_ch, &prover_instance, &sk);
+        SchnorrProver::<G>::default().prove(&mut prover_ch, &prover_instance, &sk);
         println!("[Prover]   Done.");
     });
 
     let verifier_instance = instance;
     let verifier_handle = thread::spawn(move || {
-        let result = Schnorr::<G>::default().verify(&mut verifier_ch, &verifier_instance);
+        let result = SchnorrVerifier::<G>::default().verify(&mut verifier_ch, &verifier_instance);
         match result {
             Ok(()) => println!("[Verifier] Verification succeeded!"),
             Err(_) => println!("[Verifier] Verification FAILED."),
@@ -203,10 +231,7 @@ fn main() {
 mod tests {
     use super::*;
     use ark_ff::PrimeField;
-    use ia_core::{
-        ArgumentSecurity, IntoProver, IntoVerifier, NonInteractiveArgument,
-        NonInteractiveArgumentProver, NonInteractiveArgumentVerifier,
-    };
+    use ia_core::{ArgumentSecurity, NonInteractiveArgumentProver, NonInteractiveArgumentVerifier};
     use spongefish_dsfs::STD_SPONGE_PARAMS;
     use std::thread;
 
@@ -219,7 +244,7 @@ mod tests {
 
     #[test]
     fn schnorr_ia_soundness_is_one_over_q() {
-        let schnorr = Schnorr::<G>::default();
+        let schnorr = SchnorrVerifier::<G>::default();
         let instance = [G::generator(), G::generator()];
         let profile = schnorr.profile_for_concrete_instance(&instance);
         let expected = 2_f64.powi(-(F::MODULUS_BIT_SIZE as i32));
@@ -243,7 +268,7 @@ mod tests {
 
     #[test]
     fn schnorr_ia_hvzk_is_zero() {
-        let schnorr = Schnorr::<G>::default();
+        let schnorr = SchnorrVerifier::<G>::default();
         let instance = [G::generator(), G::generator()];
         let profile = schnorr.profile_for_concrete_instance(&instance);
         assert_eq!(profile.hvzk_error.evaluate(0), 0.0);
@@ -252,7 +277,7 @@ mod tests {
 
     #[test]
     fn schnorr_narg_soundness_adds_sponge_term() {
-        let schnorr = Schnorr::<G>::default();
+        let schnorr = SchnorrVerifier::<G>::default();
         let instance = [G::generator(), G::generator()];
         let narg = dsfs::security_for_concrete_instance(&schnorr, &instance);
 
@@ -275,7 +300,7 @@ mod tests {
 
     #[test]
     fn schnorr_narg_soundness_bits_above_128() {
-        let schnorr = Schnorr::<G>::default();
+        let schnorr = SchnorrVerifier::<G>::default();
         let instance = [G::generator(), G::generator()];
         let narg = dsfs::security_for_concrete_instance(&schnorr, &instance);
         let t: u64 = 1 << 40;
@@ -288,7 +313,7 @@ mod tests {
 
     #[test]
     fn schnorr_narg_zk_is_purely_sponge() {
-        let schnorr = Schnorr::<G>::default();
+        let schnorr = SchnorrVerifier::<G>::default();
         let instance = [G::generator(), G::generator()];
         let narg = dsfs::security_for_concrete_instance(&schnorr, &instance);
         let t: u64 = 1 << 40;
@@ -317,10 +342,17 @@ mod tests {
         let instance = [generator, pk];
 
         let session = spongefish::session!("spongefish examples");
-        let schnorr = Schnorr::<G>::default();
-        let nia = dsfs::plain_non_interactive_argument(schnorr, dsfs::Keccak::default());
-        let narg = nia.prove(&session, &instance, &sk);
-        nia.verify(&session, &instance, &narg)
+        let prover = dsfs::plain_non_interactive_argument_prover(
+            SchnorrProver::<G>::default(),
+            dsfs::Keccak::default(),
+        );
+        let verifier = dsfs::plain_non_interactive_argument_verifier(
+            SchnorrVerifier::<G>::default(),
+            dsfs::Keccak::default(),
+        );
+        let narg = prover.prove(&session, &instance, &sk);
+        verifier
+            .verify(&session, &instance, &narg)
             .expect("dsfs verification failed");
     }
 
@@ -332,12 +364,12 @@ mod tests {
         let instance = [generator, pk];
 
         let session = spongefish::session!("spongefish examples");
-        let prover = dsfs::plain_non_interactive_argument(
-            Schnorr::<G>::default().into_prover(),
+        let prover = dsfs::plain_non_interactive_argument_prover(
+            SchnorrProver::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let verifier = dsfs::plain_non_interactive_argument(
-            Schnorr::<G>::default().into_verifier(),
+        let verifier = dsfs::plain_non_interactive_argument_verifier(
+            SchnorrVerifier::<G>::default(),
             dsfs::Keccak::default(),
         );
 
@@ -353,22 +385,29 @@ mod tests {
     }
 
     #[test]
-    fn schnorr_dsfs_wrapper_is_non_interactive_argument() {
+    fn schnorr_dsfs_wrappers_are_role_specific() {
         let generator = G::generator();
         let sk = F::rand(&mut OsRng);
         let pk = generator * sk;
         let instance = [generator, pk];
 
         let session = spongefish::session!("spongefish examples");
-        let schnorr = Schnorr::<G>::default();
-        let narg = dsfs::plain_non_interactive_argument(schnorr, dsfs::Keccak::default());
-        fn assert_narg<N: NonInteractiveArgument>(_: &N) {}
-        assert_narg(&narg);
+        let prover = dsfs::plain_non_interactive_argument_prover(
+            SchnorrProver::<G>::default(),
+            dsfs::Keccak::default(),
+        );
+        let verifier = dsfs::plain_non_interactive_argument_verifier(
+            SchnorrVerifier::<G>::default(),
+            dsfs::Keccak::default(),
+        );
+        assert_narg_prover(&prover);
+        assert_narg_verifier(&verifier);
 
-        let proof = narg.prove(&session, &instance, &sk);
+        let proof = prover.prove(&session, &instance, &sk);
 
         assert!(!proof.is_empty());
-        narg.verify(&session, &instance, &proof)
+        verifier
+            .verify(&session, &instance, &proof)
             .expect("DSFS-backed NARG verification failed");
     }
 
@@ -383,12 +422,12 @@ mod tests {
 
         let prover_instance = instance;
         let prover_handle = thread::spawn(move || {
-            Schnorr::<G>::default().prove(&mut prover_ch, &prover_instance, &sk);
+            SchnorrProver::<G>::default().prove(&mut prover_ch, &prover_instance, &sk);
         });
 
         let verifier_instance = instance;
         let verifier_handle = thread::spawn(move || {
-            Schnorr::<G>::default().verify(&mut verifier_ch, &verifier_instance)
+            SchnorrVerifier::<G>::default().verify(&mut verifier_ch, &verifier_instance)
         });
 
         prover_handle.join().unwrap();

@@ -5,7 +5,7 @@ extern crate alloc;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use crate::{InteractiveArgument, InteractiveReduction};
+use crate::{ArgumentCore, ReductionCore};
 
 /// An error bound expressed as a function of the adversary's query budget `t`.
 ///
@@ -53,7 +53,7 @@ impl SecurityErrorBound {
 /// Protocols with instance-independent security can use `()` for both associated
 /// types and ignore the arguments in `profile_for_instance_params` /
 /// `profile_for_instance_bound`.
-pub trait ArgumentSecurity: InteractiveArgument {
+pub trait ArgumentSecurity: ArgumentCore {
     /// Compact security-relevant parameters derived from a concrete instance.
     type InstanceParams;
     /// A worst-case/adaptive bound for a family of instances.
@@ -96,7 +96,7 @@ pub trait ArgumentSecurity: InteractiveArgument {
 /// on the target instance produced by the verifier. Sequential composition uses
 /// this target bound to evaluate the security of the next protocol without
 /// needing to run the transcript just to learn the concrete target instance.
-pub trait ReductionSecurity: InteractiveReduction {
+pub trait ReductionSecurity: ReductionCore {
     /// Compact security-relevant parameters derived from a concrete source instance.
     type SourceParams;
     /// A worst-case/adaptive bound for source instances.

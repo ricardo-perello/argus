@@ -1,17 +1,8 @@
 # Protocol Shapes
 
-Argus covers a small matrix of public-coin protocol shapes:
-
-| Axis | Choices |
-| --- | --- |
-| Verifier output | argument or reduction |
-| Execution view | interactive or non-interactive |
-| Static setup | plain or preprocessing |
-
-Together these choices give eight combinations. The API is designed so the type
-system exposes the capability a value actually has: a plain interactive argument
-does not have preprocessing methods, while a preprocessing reduction carries
-source/target relation types and keyed execution.
+Argus covers public-coin arguments and reductions, with plain or preprocessing
+execution. Proving, verification, and indexing are independent production roles,
+so each deployed type exposes only the capability it actually has.
 
 ## Arguments and Reductions
 
@@ -19,8 +10,8 @@ An argument proves membership in one relation:
 
 ```text
 R subset X x W
-prover input:   x, w
-verifier input: x
+prover input:    x, w
+verifier input:  x
 verifier output: accept/reject
 ```
 
@@ -28,95 +19,69 @@ A reduction transforms a source claim into a target claim:
 
 ```text
 R0 -> R1
-prover input:   x0, w0
-prover output:  x1, w1
-verifier input: x0
+prover input:    x0, w0
+prover output:   x1, w1
+verifier input:  x0
 verifier output: x1
 ```
 
-The verifier output is the important distinction. An argument is done when it
-accepts. A reduction produces the next instance that another protocol may need
-to prove or reduce.
-
 ## Plain and Preprocessing
 
-Plain protocols receive all public statement data as the ordinary instance.
-
-Preprocessing protocols split static relation data from per-claim data:
+Plain protocols receive all public statement data as the instance.
+Preprocessing protocols use three independent roles:
 
 ```text
-preprocess(index) -> (prover_key, verifier_key)
-prove(pk, instance, witness)
-verify(vk, instance, proof)
+indexer.preprocess_checked(index)
+    -> Result<(prover_key, verifier_key), IndexingError>
+prover.prove(pk, instance, witness)
+verifier.verify(vk, instance)
 ```
 
-The compiled preprocessing object is stateless with respect to keys. It stores
-the protocol body and backend configuration, but it does not store a prover key
-or verifier key. This keeps setup material explicit and prevents APIs from
-quietly smuggling prover-only data into verifier-only code.
-
-Both keys implement `CommittedIndex`. For keys derived from the same index,
-their committed-index bytes must agree. DSFS binds those bytes together with the
-ordinary instance before the first challenge.
+Both keys implement `CommittedIndex`. The checked indexing path rejects keys
+whose committed-index bytes differ in debug and release builds. DSFS binds the
+role's key commitment together with the ordinary instance before the first
+challenge.
 
 ## Trait Shape
 
-The trait tree is bottom-up and capability-oriented:
+Public statement shape and prover-private shape are separate:
 
 ```text
 ProtocolCore
 ├── ArgumentCore
-│   ├── InteractiveArgument               = InteractiveArgumentProver + InteractiveArgumentVerifier
-│   └── PreprocessingInteractiveArgument  = …ArgumentProver + …ArgumentVerifier
+│   ├── ArgumentProverCore
+│   │   ├── InteractiveArgumentProver
+│   │   └── PreprocessingInteractiveArgumentProver
+│   ├── InteractiveArgumentVerifier
+│   └── PreprocessingInteractiveArgumentVerifier
 └── ReductionCore
-    ├── InteractiveReduction              = InteractiveReductionProver + InteractiveReductionVerifier
-    └── PreprocessingInteractiveReduction = …ReductionProver + …ReductionVerifier
+    ├── ReductionProverCore
+    │   ├── InteractiveReductionProver
+    │   └── PreprocessingInteractiveReductionProver
+    ├── InteractiveReductionVerifier
+    └── PreprocessingInteractiveReductionVerifier
+
+ProtocolCore
+└── Indexer
 ```
 
-`PreprocessingCore` is the shared setup capability used by preprocessing leaves.
-It provides `Index`, `ProverKey`, `VerifierKey`, and `preprocess`.
+Each role is authored on its own concrete type. There are no full conjunction
+traits, role-view wrappers, or recombination adapters. Verifiers therefore have
+no witness or prover-key associated type, and indexers have no executable
+method.
 
-### The prover / verifier split
-
-Each leaf is itself split along a fourth, orthogonal axis — **role** — into a
-`…Prover` half (holding `prove`) and a `…Verifier` half (holding `verify`). The
-full leaf trait is the blanket-impl conjunction of the two halves:
-
-```rust
-pub trait InteractiveArgument: InteractiveArgumentProver + InteractiveArgumentVerifier {}
-impl<T: InteractiveArgumentProver + InteractiveArgumentVerifier> InteractiveArgument for T {}
-```
-
-This keeps the type system honest about role the same way it is about preprocessing:
-a value (or a generic bound) can carry just the prover half or just the verifier
-half. Authoring is unchanged — the macro emits both halves from one block — and
-every existing `T: InteractiveArgument` bound still resolves. A backend can then
-compile and hold a single role (a prover-only NARG), and recursion can depend on an
-inner verifier without dragging in the inner prover. See
-[Prover/Verifier Split](../prover-verifier-split-presentation.md).
-
-This design was chosen over a single maximal protocol type that degenerates into
-the simpler cases. The maximal type would reduce some generic machinery, but it
-would also make irrelevant operations visible. In Argus, a plain protocol does
-not pretend to be indexed, and a reduction is not forced to look like an
-argument with a dummy output.
+Plain security metadata is implemented on verifier roles. Preprocessing
+security metadata is implemented on indexer roles.
 
 ## Composition
 
-Reductions compose sequentially when the target type of the first component
-matches the source type of the second:
+`ChainedReduction` composes reductions when the first target instance matches
+the second source instance. `ReducedArgument` composes a reduction with a final
+argument.
 
-```text
-R0 -> R1 -> R2
-```
-
-`ReducedArgument` composes a reduction with a final argument:
-
-```text
-R0 -> R1, then prove R1
-```
-
-Preprocessing composition pairs indexes and keys structurally:
+Each composition is instantiated separately for prover, verifier, and indexer
+roles. Prover composition carries witness equalities; verifier composition only
+needs public instance equalities. Indexer composition pairs indexes and keys:
 
 ```text
 Index       = (First::Index, Second::Index)
@@ -124,12 +89,8 @@ ProverKey   = (First::ProverKey, Second::ProverKey)
 VerifierKey = (First::VerifierKey, Second::VerifierKey)
 ```
 
-The actual implementation pairs the first and second component types. The point
-is that composition must route each sub-key to the corresponding component and
-must bind a combined committed index before challenges. Mixed plain and
-preprocessing composition is explicit through trivial-index adapters.
+Mixed plain and preprocessing composition uses role-specific trivial-index
+adapters.
 
-## Where Exact Signatures Live
-
-This page explains the shape. Exact trait signatures, macro syntax, and source
-layout are documented in [ia-core](../api/ia-core.md).
+Exact signatures, macro forms, DSFS wrappers, and migration rationale are in the
+[role-first architecture plan](role-first-protocol-architecture-plan.md).

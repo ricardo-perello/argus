@@ -40,7 +40,7 @@ use spongefish_dsfs as dsfs;
 
 use ia_core::prelude::*;
 use ia_core::{
-    CommittedIndex, CommittedIndexBytes, PreprocessingCore, ProverChannel, VerificationError,
+    CommittedIndex, CommittedIndexBytes, Indexer, ProverChannel, VerificationError,
     VerificationResult, VerifierChannel,
 };
 
@@ -159,19 +159,18 @@ impl CommittedIndex for LookupProverKey {
 // The body — implements the indexed author trait
 // ---------------------------------------------------------------------------
 
-#[derive(Default)]
-struct PreprocessedLookup;
+fn lookup_protocol_id() -> [u8; 32] {
+    ia_core::pad_protocol_id(b"preprocessed-merkle-lookup")
+}
 
 ia_core::impl_preprocessing_argument! {
-    impl PreprocessingInteractiveArgument for PreprocessedLookup {
+    indexer impl for LookupIndexer {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
-            ia_core::pad_protocol_id(b"preprocessed-merkle-lookup")
+            lookup_protocol_id()
         }
 
         /// Per-claim instance is (i, claimed_value).
         type Instance = (u32, u32);
-        type Witness = ();
-
         type Index = Vec<u32>;
         type ProverKey = LookupProverKey;
         type VerifierKey = LookupVerifierKey;
@@ -189,6 +188,24 @@ ia_core::impl_preprocessing_argument! {
             let vk = LookupVerifierKey { root, n };
             (pk, vk)
         }
+    }
+}
+
+#[derive(Default)]
+struct LookupIndexer;
+
+#[derive(Default)]
+struct LookupProver;
+
+ia_core::impl_preprocessing_argument! {
+    prover impl for LookupProver {
+        fn protocol_id(&self) -> impl AsRef<[u8]> {
+            lookup_protocol_id()
+        }
+
+        type Instance = (u32, u32);
+        type Witness = ();
+        type ProverKey = LookupProverKey;
 
         fn prove<P: ProverChannel<Unit = u8>>(
             &self,
@@ -209,6 +226,20 @@ ia_core::impl_preprocessing_argument! {
                 ch.send_prover_message(sibling.as_bytes());
             }
         }
+    }
+}
+
+#[derive(Default)]
+struct LookupVerifier;
+
+ia_core::impl_preprocessing_argument! {
+    verifier impl for LookupVerifier {
+        fn protocol_id(&self) -> impl AsRef<[u8]> {
+            lookup_protocol_id()
+        }
+
+        type Instance = (u32, u32);
+        type VerifierKey = LookupVerifierKey;
 
         fn verify<V: VerifierChannel<Unit = u8>>(
             &self,
@@ -257,12 +288,17 @@ fn main() {
     let table: Vec<u32> = (0..8u32).map(|i| 100 + i * 7).collect();
     println!("Public table: {table:?}\n");
 
-    // Preprocessing: preprocessing_non_interactive_argument(body, sponge) is the
-    // stateless compiled wrapper; .preprocess(&table) runs body.preprocess(&table)
-    // once and returns the bare (prover_key, verifier_key).
-    let nia =
-        dsfs::preprocessing_non_interactive_argument(PreprocessedLookup, dsfs::Keccak::default());
-    let (proving_key, verifier_key) = nia.preprocess(&table);
+    // The indexer builds the tree once and returns the bare prover/verifier keys.
+    let indexer = LookupIndexer;
+    let prover =
+        dsfs::preprocessing_non_interactive_argument_prover(LookupProver, dsfs::Keccak::default());
+    let verifier = dsfs::preprocessing_non_interactive_argument_verifier(
+        LookupVerifier,
+        dsfs::Keccak::default(),
+    );
+    let (proving_key, verifier_key) = indexer
+        .preprocess_checked(&table)
+        .expect("matching committed indices");
 
     // The asymmetry, straight off the keys: the prover key holds the full
     // table + tree (O(n)); the verifier key is just root + n (O(1)).
@@ -278,8 +314,9 @@ fn main() {
     // the verifier never reconstructs the table.
     for i in 0u32..3 {
         let y = table[i as usize];
-        let proof = nia.prove(&proving_key, &session, &(i, y), &());
-        nia.verify(&verifier_key, &session, &(i, y), &proof)
+        let proof = prover.prove(&proving_key, &session, &(i, y), &());
+        verifier
+            .verify(&verifier_key, &session, &(i, y), &proof)
             .expect("verify");
         println!(
             "table[{i}] == {y} -> verified ({} proof bytes, vk stays {} bytes)",
@@ -297,8 +334,7 @@ fn main() {
 mod tests {
     use super::*;
     use ia_core::{
-        IntoProver, IntoVerifier, PreprocessingNonInteractiveArgumentProver,
-        PreprocessingNonInteractiveArgumentVerifier,
+        PreprocessingNonInteractiveArgumentProver, PreprocessingNonInteractiveArgumentVerifier,
     };
 
     fn sample_table() -> Vec<u32> {
@@ -313,16 +349,24 @@ mod tests {
     fn lookup_roundtrip() {
         let session = spongefish::session!("preprocessed lookup test");
         let table = sample_table();
-        let nia = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
-            PreprocessedLookup,
+        let indexer = LookupIndexer;
+        let prover = dsfs::preprocessing_non_interactive_argument_prover::<_, [u8; 64], _>(
+            LookupProver,
             dsfs::Keccak::default(),
         );
-        let (pk, vk) = nia.preprocess(&table);
+        let verifier = dsfs::preprocessing_non_interactive_argument_verifier::<_, [u8; 64], _>(
+            LookupVerifier,
+            dsfs::Keccak::default(),
+        );
+        let (pk, vk) = indexer
+            .preprocess_checked(&table)
+            .expect("matching committed indices");
 
         for i in 0u32..table.len() as u32 {
             let y = table[i as usize];
-            let proof = nia.prove(&pk, &session, &(i, y), &());
-            nia.verify(&vk, &session, &(i, y), &proof)
+            let proof = prover.prove(&pk, &session, &(i, y), &());
+            verifier
+                .verify(&vk, &session, &(i, y), &proof)
                 .expect("opening should verify");
         }
     }
@@ -332,16 +376,23 @@ mod tests {
     fn lookup_rejects_wrong_value() {
         let session = spongefish::session!("preprocessed lookup test");
         let table = sample_table();
-        let nia = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
-            PreprocessedLookup,
+        let indexer = LookupIndexer;
+        let prover = dsfs::preprocessing_non_interactive_argument_prover::<_, [u8; 64], _>(
+            LookupProver,
             dsfs::Keccak::default(),
         );
-        let (pk, vk) = nia.preprocess(&table);
+        let verifier = dsfs::preprocessing_non_interactive_argument_verifier::<_, [u8; 64], _>(
+            LookupVerifier,
+            dsfs::Keccak::default(),
+        );
+        let (pk, vk) = indexer
+            .preprocess_checked(&table)
+            .expect("matching committed indices");
 
-        let proof = nia.prove(&pk, &session, &(3, table[3]), &());
+        let proof = prover.prove(&pk, &session, &(3, table[3]), &());
         // Same proof bytes, but claim a different value -> reject.
         let bogus = (3u32, table[3].wrapping_add(1));
-        assert!(nia.verify(&vk, &session, &bogus, &proof).is_err());
+        assert!(verifier.verify(&vk, &session, &bogus, &proof).is_err());
     }
 
     /// Two indexings on different tables have different committed indices, so a
@@ -353,18 +404,28 @@ mod tests {
         let mut table_b = sample_table();
         table_b[0] = table_b[0].wrapping_add(1); // perturb one entry
 
-        let nia = dsfs::preprocessing_non_interactive_argument(
-            PreprocessedLookup,
+        let indexer = LookupIndexer;
+        let prover = dsfs::preprocessing_non_interactive_argument_prover(
+            LookupProver,
             dsfs::Keccak::default(),
         );
-        let (pk_a, _vk_a) = nia.preprocess(&table_a);
-        let (_pk_b, vk_b) = nia.preprocess(&table_b);
+        let verifier = dsfs::preprocessing_non_interactive_argument_verifier(
+            LookupVerifier,
+            dsfs::Keccak::default(),
+        );
+        let (pk_a, _vk_a) = indexer
+            .preprocess_checked(&table_a)
+            .expect("matching committed indices");
+        let (_pk_b, vk_b) = indexer
+            .preprocess_checked(&table_b)
+            .expect("matching committed indices");
         assert_ne!(pk_a.committed_index(), vk_b.committed_index());
 
         // Open table_a at index 5 (unperturbed in both).
-        let proof = nia.prove(&pk_a, &session, &(5, table_a[5]), &());
+        let proof = prover.prove(&pk_a, &session, &(5, table_a[5]), &());
         assert!(
-            nia.verify(&vk_b, &session, &(5, table_a[5]), &proof)
+            verifier
+                .verify(&vk_b, &session, &(5, table_a[5]), &proof)
                 .is_err()
         );
     }
@@ -372,21 +433,19 @@ mod tests {
     /// The optional `Prover`/`Verifier` role wrappers compose `(nia, key)` and
     /// round-trip; `Verifier` exposes only `verify`.
     #[test]
-    fn lookup_via_separate_prover_and_verifier_views() {
+    fn lookup_via_separate_prover_and_verifier_roles() {
         let session = spongefish::session!("preprocessed lookup wrappers test");
         let table = sample_table();
-        let nia = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
-            PreprocessedLookup,
-            dsfs::Keccak::default(),
-        );
-        let (pk, vk) = nia.preprocess(&table);
+        let (pk, vk) = LookupIndexer
+            .preprocess_checked(&table)
+            .expect("matching committed indices");
 
-        let prover_nia = dsfs::preprocessing_non_interactive_argument(
-            PreprocessedLookup.into_prover(),
+        let prover_nia = dsfs::preprocessing_non_interactive_argument_prover(
+            LookupProver,
             dsfs::Keccak::default(),
         );
-        let verifier_nia = dsfs::preprocessing_non_interactive_argument(
-            PreprocessedLookup.into_verifier(),
+        let verifier_nia = dsfs::preprocessing_non_interactive_argument_verifier(
+            LookupVerifier,
             dsfs::Keccak::default(),
         );
 
@@ -406,12 +465,12 @@ mod tests {
     fn pk_grows_with_table_vk_stays_small() {
         let small = (0..2u32).collect::<Vec<_>>();
         let large = (0..1024u32).collect::<Vec<_>>();
-        let nia = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
-            PreprocessedLookup,
-            dsfs::Keccak::default(),
-        );
-        let (pk_small, _vk_small) = nia.preprocess(&small);
-        let (pk_large, _vk_large) = nia.preprocess(&large);
+        let (pk_small, _vk_small) = LookupIndexer
+            .preprocess_checked(&small)
+            .expect("matching committed indices");
+        let (pk_large, _vk_large) = LookupIndexer
+            .preprocess_checked(&large)
+            .expect("matching committed indices");
 
         // PK scales with the table; VK is a fixed 36 bytes (root + n) by construction.
         assert_eq!(pk_small.table.len(), 2);

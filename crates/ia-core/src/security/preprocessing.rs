@@ -6,17 +6,14 @@
 //! many per-claim instances without recomputing the index portion of the
 //! security profile.
 
-use crate::{
-    PreprocessingInteractiveArgument, PreprocessingInteractiveReduction, SecurityErrorBound,
-    SecurityProfile,
-};
+use crate::{ArgumentCore, Indexer, ReductionCore, SecurityErrorBound, SecurityProfile};
 
-/// Index-aware security metadata for an [`PreprocessingInteractiveArgument`].
+/// Index-aware argument security metadata, implemented by the indexer role.
 ///
 /// The security profile may depend on both the static index and the per-claim
 /// instance. Separating the two lets callers cache the index-derived portion
 /// across instances under the same preprocessed verifier key.
-pub trait PreprocessingArgumentSecurity: PreprocessingInteractiveArgument {
+pub trait PreprocessingArgumentSecurity: ArgumentCore + Indexer {
     /// Compact security-relevant parameters derived from a concrete index.
     type IndexParams;
     /// A worst-case/adaptive bound for a family of indices.
@@ -105,8 +102,8 @@ pub trait PreprocessingArgumentSecurity: PreprocessingInteractiveArgument {
     }
 }
 
-/// Index-aware security metadata for an [`PreprocessingInteractiveReduction`].
-pub trait PreprocessingReductionSecurity: PreprocessingInteractiveReduction {
+/// Index-aware reduction security metadata, implemented by the indexer role.
+pub trait PreprocessingReductionSecurity: ReductionCore + Indexer {
     /// Compact security-relevant parameters derived from a concrete index.
     type IndexParams;
     /// A worst-case/adaptive bound for a family of indices.

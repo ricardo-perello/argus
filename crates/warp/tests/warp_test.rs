@@ -18,7 +18,7 @@ use rand::thread_rng;
 
 use ia_core::prelude::*;
 use ia_core::{
-    CommittedIndex, Encoding, PreprocessingArgumentSecurity, PreprocessingCore,
+    CommittedIndex, Encoding, Indexer, NargProof, PreprocessingArgumentSecurity,
     PreprocessingReductionSecurity, SecurityErrorBound,
 };
 use spongefish_dsfs::{self as dsfs, Keccak, NargSecurity, STD_SPONGE_PARAMS};
@@ -36,7 +36,9 @@ use warp::{
     },
     types::{AccumulatorInstances, AccumulatorWitnesses},
     utils::poseidon,
-    FullWarp, WarpDecider, WarpIndex, WarpInstance, WarpMerkleParams, WarpReduction, WarpWitness,
+    FullWarpIndexer, FullWarpProver, FullWarpVerifier, WarpDeciderIndexer, WarpIndex, WarpInstance,
+    WarpMerkleParams, WarpReductionIndexer, WarpReductionProver, WarpReductionVerifier,
+    WarpWitness,
 };
 
 type MT = Blake3MerkleTreeParams<Fp>;
@@ -141,6 +143,46 @@ fn setup() -> (R1CS<Fp>, ReedSolomon<Fp>, Vec<Vec<Fp>>, Vec<Vec<Fp>>) {
     (r1cs, code, instances, witnesses)
 }
 
+#[allow(clippy::type_complexity)]
+fn deterministic_setup() -> (R1CS<Fp>, ReedSolomon<Fp>, Vec<Vec<Fp>>, Vec<Vec<Fp>>) {
+    let hash_chain_size = 10;
+    let poseidon_config = poseidon::initialize_poseidon_config::<Fp>();
+    let l1 = 4;
+
+    let r1cs = HashChainRelation::<Fp, CRH<_>, CRHGadget<_>>::into_r1cs(&(
+        poseidon_config.clone(),
+        hash_chain_size,
+    ))
+    .unwrap();
+    let code_config = ReedSolomonConfig::<Fp>::default(r1cs.k, r1cs.k.next_power_of_two());
+    let code = ReedSolomon::new(code_config);
+
+    let (instances, witnesses): (Vec<Vec<Fp>>, Vec<Vec<Fp>>) = (1..=l1)
+        .map(|value| {
+            let preimage = vec![Fp::from(value as u64)];
+            let instance = HashChainInstance {
+                digest: compute_hash_chain::<Fp, CRH<_>>(
+                    &poseidon_config,
+                    &preimage,
+                    hash_chain_size,
+                ),
+            };
+            let witness = HashChainWitness {
+                preimage,
+                _crhs_scheme: PhantomData::<CRH<Fp>>,
+            };
+            let relation = HashChainRelation::<Fp, CRH<_>, CRHGadget<_>>::new(
+                instance,
+                witness,
+                (poseidon_config.clone(), hash_chain_size),
+            );
+            (relation.x, relation.w)
+        })
+        .unzip();
+
+    (r1cs, code, instances, witnesses)
+}
+
 fn empty_acc() -> (AccumulatorInstances<Fp, MT>, AccumulatorWitnesses<Fp, MT>) {
     (
         (vec![], vec![], vec![], (vec![], vec![]), vec![]),
@@ -211,8 +253,10 @@ fn changed_relation_same_dimensions(r1cs: &R1CS<Fp>) -> R1CS<Fp> {
 }
 
 fn committed_index(ix: &WarpIndex<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>) -> Vec<u8> {
-    let ir = WarpReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
-    let (_, vk) = ir.preprocess(ix);
+    let indexer = WarpReductionIndexer::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
+    let (_, vk) = indexer
+        .preprocess_checked(ix)
+        .expect("matching committed indices");
     vk.committed_index().as_bytes().to_vec()
 }
 
@@ -225,9 +269,9 @@ fn warp_security_profile_is_derived_from_index() {
     let ix_small = warp_index(r1cs.clone(), code.clone(), 4, 4);
     let ix_large = warp_index(r1cs, code, 8, 4);
 
-    let ir = WarpReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
-    let small_profile = ir.profile_for_concrete_source(&ix_small, &small_instance);
-    let large_profile = ir.profile_for_concrete_source(&ix_large, &large_instance);
+    let indexer = WarpReductionIndexer::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
+    let small_profile = indexer.profile_for_concrete_source(&ix_small, &small_instance);
+    let large_profile = indexer.profile_for_concrete_source(&ix_large, &large_instance);
 
     assert_eq!(
         large_profile.rbr_soundness_errors.len(),
@@ -269,8 +313,8 @@ fn warp_reduction_offline_binding_is_zero_while_nonsuccinct() {
     // only once WARP has a succinct/holographic verifier index.
     let (r1cs, code, _, _) = setup();
     let ix = warp_index(r1cs, code, 4, 4);
-    let ir = WarpReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
-    let offline = ir.offline_binding_error(&ir.index_security_params(&ix));
+    let indexer = WarpReductionIndexer::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
+    let offline = indexer.offline_binding_error(&indexer.index_security_params(&ix));
     for &t in &[0u64, 1 << 20, 1 << 40] {
         assert_eq!(offline.evaluate(t), 0.0);
     }
@@ -280,11 +324,22 @@ fn warp_reduction_offline_binding_is_zero_while_nonsuccinct() {
 fn warp_decider_has_no_offline_binding() {
     // The decider holds the full verifier key and runs a deterministic local
     // check: no index commitment for a prover to equivocate.
-    let decider = WarpDecider::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default();
-    let offline = decider.offline_binding_error(&());
+    let indexer = WarpDeciderIndexer::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default();
+    let offline = indexer.offline_binding_error(&());
     for &t in &[0u64, 1 << 20, 1 << 40] {
         assert_eq!(offline.evaluate(t), 0.0);
     }
+}
+
+#[test]
+fn warp_decider_keys_share_the_same_commitment() {
+    let (r1cs, code, _, _) = setup();
+    let ix = warp_index(r1cs, code, 4, 4);
+    let indexer = WarpDeciderIndexer::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default();
+    let (pk, vk) = indexer
+        .preprocess_checked(&ix)
+        .expect("decider keys must bind the same index");
+    assert_eq!(pk.committed_index(), vk.committed_index());
 }
 
 #[test]
@@ -296,8 +351,8 @@ fn offline_binding_convention_adds_to_soundness_and_knowledge_not_zk() {
     let (r1cs, code, instances, _) = setup();
     let (instance, _) = warp_statement(instances, vec![]);
     let ix = warp_index(r1cs, code, 4, 4);
-    let ir = WarpReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
-    let profile = ir.profile_for_concrete_source(&ix, &instance);
+    let indexer = WarpReductionIndexer::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
+    let profile = indexer.profile_for_concrete_source(&ix, &instance);
 
     let narg = NargSecurity {
         ia: profile,
@@ -353,9 +408,13 @@ fn warp_commitment_changes_when_merkle_params_change() {
     let ix_a = param_warp_index(r1cs.clone(), code.clone(), [1u8; 32], [2u8; 32]);
     let ix_b = param_warp_index(r1cs, code, [3u8; 32], [2u8; 32]);
 
-    let ir = WarpReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, ParamMT>::new();
-    let (_, vk_a) = ir.preprocess(&ix_a);
-    let (_, vk_b) = ir.preprocess(&ix_b);
+    let indexer = WarpReductionIndexer::<Fp, R1CS<Fp>, ReedSolomon<Fp>, ParamMT>::new();
+    let (_, vk_a) = indexer
+        .preprocess_checked(&ix_a)
+        .expect("matching committed indices");
+    let (_, vk_b) = indexer
+        .preprocess_checked(&ix_b)
+        .expect("matching committed indices");
 
     assert_ne!(vk_a.committed_index(), vk_b.committed_index());
 }
@@ -370,15 +429,24 @@ fn proof_rejects_with_wrong_verifier_key_same_dimensions() {
     let ix_b = warp_index(changed_r1cs, code, 4, 4);
 
     let session = spongefish::session!("warp wrong verifier key test");
-    let nir = dsfs::preprocessing_non_interactive_reduction(
-        WarpReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new(),
+    let indexer = WarpReductionIndexer::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
+    let prover = dsfs::preprocessing_non_interactive_reduction_prover(
+        WarpReductionProver::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default(),
         Keccak::default(),
     );
-    let (pk_a, _vk_a) = nir.preprocess(&ix_a);
-    let (_pk_b, vk_b) = nir.preprocess(&ix_b);
+    let verifier = dsfs::preprocessing_non_interactive_reduction_verifier(
+        WarpReductionVerifier::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default(),
+        Keccak::default(),
+    );
+    let (pk_a, _vk_a) = indexer
+        .preprocess_checked(&ix_a)
+        .expect("matching committed indices");
+    let (_pk_b, vk_b) = indexer
+        .preprocess_checked(&ix_b)
+        .expect("matching committed indices");
 
-    let (proof, _, _) = nir.prove(&pk_a, &session, &instance, &witness);
-    assert!(nir.verify(&vk_b, &session, &instance, &proof).is_err());
+    let (proof, _, _) = prover.prove(&pk_a, &session, &instance, &witness);
+    assert!(verifier.verify(&vk_b, &session, &instance, &proof).is_err());
 }
 
 #[test]
@@ -386,7 +454,7 @@ fn proof_rejects_with_wrong_source_instance_same_index() {
     // A proof generated against one WarpInstance must not verify against a
     // *different* source instance under the same index/verifier key.
     //
-    // `WarpReduction::verify` ignores its `instance` argument and reconstructs
+    // `WarpReductionVerifier::verify` ignores its `instance` argument and reconstructs
     // the source claims from prover messages, so this binding does NOT come from
     // the reduction's verify logic. It comes from the DSFS layer absorbing
     // `WarpInstance::encode()` as public input before the first challenge: a
@@ -403,15 +471,22 @@ fn proof_rejects_with_wrong_source_instance_same_index() {
     let ix = warp_index(r1cs, code, 4, 4);
 
     let session = spongefish::session!("warp wrong source instance test");
-    let nir = dsfs::preprocessing_non_interactive_reduction(
-        WarpReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new(),
+    let indexer = WarpReductionIndexer::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
+    let prover = dsfs::preprocessing_non_interactive_reduction_prover(
+        WarpReductionProver::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default(),
         Keccak::default(),
     );
-    let (pk, vk) = nir.preprocess(&ix);
+    let verifier = dsfs::preprocessing_non_interactive_reduction_verifier(
+        WarpReductionVerifier::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default(),
+        Keccak::default(),
+    );
+    let (pk, vk) = indexer
+        .preprocess_checked(&ix)
+        .expect("matching committed indices");
 
-    let (proof, _, _) = nir.prove(&pk, &session, &instance_a, &witness_a);
+    let (proof, _, _) = prover.prove(&pk, &session, &instance_a, &witness_a);
     assert!(
-        nir.verify(&vk, &session, &instance_b, &proof).is_err(),
+        verifier.verify(&vk, &session, &instance_b, &proof).is_err(),
         "proof for instance_a must reject when verified against instance_b",
     );
 }
@@ -436,12 +511,15 @@ fn build_accumulator(
     };
     let ix = warp_index(r1cs.clone(), code.clone(), l1, l1); // l = l1, l2 = 0
     let session = spongefish::session!("warp accumulator build");
-    let nir = dsfs::preprocessing_non_interactive_reduction(
-        WarpReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new(),
+    let indexer = WarpReductionIndexer::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
+    let prover = dsfs::preprocessing_non_interactive_reduction_prover(
+        WarpReductionProver::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default(),
         Keccak::default(),
     );
-    let (pk, _vk) = nir.preprocess(&ix);
-    let (_proof, target, target_w) = nir.prove(&pk, &session, &instance, &witness);
+    let (pk, _vk) = indexer
+        .preprocess_checked(&ix)
+        .expect("matching committed indices");
+    let (_proof, target, target_w) = prover.prove(&pk, &session, &instance, &witness);
     (target.acc_instance, target_w)
 }
 
@@ -500,13 +578,20 @@ fn warp_reduction_accumulation_l2_nonzero() {
 
     let ix = warp_index(r1cs, code, 4, 2); // l = 4, l1 = 2 -> l2 = 2
     let session = spongefish::session!("warp l2 accumulation test");
-    let nir = dsfs::preprocessing_non_interactive_reduction(
-        WarpReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new(),
+    let indexer = WarpReductionIndexer::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
+    let prover = dsfs::preprocessing_non_interactive_reduction_prover(
+        WarpReductionProver::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default(),
         Keccak::default(),
     );
-    let (pk, vk) = nir.preprocess(&ix);
-    let (proof, target_p, _) = nir.prove(&pk, &session, &instance, &witness);
-    let target = nir
+    let verifier = dsfs::preprocessing_non_interactive_reduction_verifier(
+        WarpReductionVerifier::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default(),
+        Keccak::default(),
+    );
+    let (pk, vk) = indexer
+        .preprocess_checked(&ix)
+        .expect("matching committed indices");
+    let (proof, target_p, _) = prover.prove(&pk, &session, &instance, &witness);
+    let target = verifier
         .verify(&vk, &session, &instance, &proof)
         .expect("l2 > 0 reduction verification failed");
     assert_eq!(target.acc_instance.0, target_p.acc_instance.0);
@@ -532,12 +617,21 @@ fn warp_ir_dsfs_prove_verify() {
     let ix = warp_index(r1cs, code, 4, 4);
 
     let session = spongefish::session!("warp IR test");
-    let ir = WarpReduction::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
-    let nir = dsfs::preprocessing_non_interactive_reduction(ir, Keccak::default());
-    let (pk, vk) = nir.preprocess(&ix);
-    let (proof, target_p, _target_w) = nir.prove(&pk, &session, &instance, &witness);
+    let indexer = WarpReductionIndexer::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
+    let prover = dsfs::preprocessing_non_interactive_reduction_prover(
+        WarpReductionProver::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default(),
+        Keccak::default(),
+    );
+    let verifier = dsfs::preprocessing_non_interactive_reduction_verifier(
+        WarpReductionVerifier::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default(),
+        Keccak::default(),
+    );
+    let (pk, vk) = indexer
+        .preprocess_checked(&ix)
+        .expect("matching committed indices");
+    let (proof, target_p, _target_w) = prover.prove(&pk, &session, &instance, &witness);
 
-    let target = nir
+    let target = verifier
         .verify(&vk, &session, &instance, &proof)
         .expect("IR verification failed");
     assert_eq!(target_p.acc_instance.0, target.acc_instance.0);
@@ -548,32 +642,67 @@ fn warp_ir_dsfs_prove_verify() {
 
 #[test]
 fn full_warp_uses_single_index() {
-    fn assert_single_index<
-        T: PreprocessingCore<Index = WarpIndex<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>>,
-    >(
+    fn assert_single_index<T: Indexer<Index = WarpIndex<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>>>(
         _: &T,
     ) {
     }
 
-    let full = FullWarp::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default();
+    let (r1cs, code, _, _) = setup();
+    let ix = warp_index(r1cs, code, 4, 4);
+    let full = FullWarpIndexer::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default();
+    let reduction = WarpReductionIndexer::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default();
     assert_single_index(&full);
+
+    let (full_pk, full_vk) = full
+        .preprocess_checked(&ix)
+        .expect("matching committed indices");
+    let (reduction_pk, reduction_vk) = reduction
+        .preprocess_checked(&ix)
+        .expect("matching committed indices");
+    assert_eq!(full_pk.committed_index(), reduction_pk.committed_index());
+    assert_eq!(full_vk.committed_index(), reduction_vk.committed_index());
 }
 
 #[test]
 fn full_warp_dsfs_roundtrip() {
-    let (r1cs, code, instances, witnesses) = setup();
+    let (r1cs, code, instances, witnesses) = deterministic_setup();
     let (instance, witness) = warp_statement(instances, witnesses);
     let ix = warp_index(r1cs, code, 4, 4);
 
     let session = spongefish::session!("warp FullWarp test");
-    let full = FullWarp::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new(
-        WarpReduction::new(),
-        WarpDecider::default(),
+    let indexer = FullWarpIndexer::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default();
+    let prover = dsfs::preprocessing_non_interactive_argument_prover(
+        FullWarpProver::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default(),
+        Keccak::default(),
     );
-    let nia = dsfs::preprocessing_non_interactive_argument(full, Keccak::default());
-    let (pk, vk) = nia.preprocess(&ix);
-    let proof = nia.prove(&pk, &session, &instance, &witness);
+    let verifier = dsfs::preprocessing_non_interactive_argument_verifier(
+        FullWarpVerifier::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default(),
+        Keccak::default(),
+    );
+    let (pk, vk) = indexer
+        .preprocess_checked(&ix)
+        .expect("matching committed indices");
+    let proof = prover.prove(&pk, &session, &instance, &witness);
 
-    nia.verify(&vk, &session, &instance, &proof)
+    verifier
+        .verify(&vk, &session, &instance, &proof)
         .expect("FullWarp verification failed");
+
+    assert_eq!(proof.len(), 226_848);
+    assert_eq!(
+        *blake3::hash(proof.as_bytes()).as_bytes(),
+        [
+            69, 19, 86, 146, 216, 207, 234, 1, 201, 152, 144, 131, 54, 126, 242, 38, 136, 148, 151,
+            29, 245, 114, 207, 230, 122, 218, 223, 74, 36, 243, 176, 39,
+        ],
+    );
+
+    let mut trailing = proof.into_bytes();
+    trailing.push(0);
+    assert!(
+        verifier
+            .verify(&vk, &session, &instance, &NargProof::from_bytes(trailing),)
+            .is_err(),
+        "FullWarp verifier must reject trailing proof bytes",
+    );
 }

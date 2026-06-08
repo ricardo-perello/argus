@@ -1,15 +1,14 @@
-//! Non-interactive reduction traits: the prover half
-//! ([`NonInteractiveReductionProver`]), the verifier half
-//! ([`NonInteractiveReductionVerifier`]), and their conjunction
-//! ([`NonInteractiveReduction`]).
+//! Non-interactive reduction prover and verifier roles.
 
-use crate::{NargProof, NonInteractiveSession, ReductionCore, VerificationResult};
+use crate::{
+    NargProof, NonInteractiveSession, ReductionCore, ReductionProverCore, VerificationResult,
+};
 
 /// Prover half of an abstract non-interactive reduction.
 ///
 /// Proving returns the proof plus the reduced target instance/witness pair so
 /// callers can continue a reduction pipeline without replaying the verifier.
-pub trait NonInteractiveReductionProver: ReductionCore + NonInteractiveSession {
+pub trait NonInteractiveReductionProver: ReductionProverCore + NonInteractiveSession {
     /// Produce a reduction proof and the reduced target statement/witness pair.
     fn prove(
         &self,
@@ -28,20 +27,4 @@ pub trait NonInteractiveReductionVerifier: ReductionCore + NonInteractiveSession
         instance: &Self::SourceInstance,
         proof: &NargProof,
     ) -> VerificationResult<Self::TargetInstance>;
-}
-
-/// Abstract non-interactive reduction: both halves.
-///
-/// A non-interactive reduction proves that a source instance reduces to a target
-/// instance. Verification returns the target instance instead of accept/reject,
-/// mirroring [`crate::InteractiveReduction`]. Marker conjunction of
-/// [`NonInteractiveReductionProver`] and [`NonInteractiveReductionVerifier`].
-pub trait NonInteractiveReduction:
-    NonInteractiveReductionProver + NonInteractiveReductionVerifier
-{
-}
-
-impl<T: NonInteractiveReductionProver + NonInteractiveReductionVerifier> NonInteractiveReduction
-    for T
-{
 }

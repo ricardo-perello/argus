@@ -22,8 +22,8 @@ use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 
 use ia_core::prelude::*;
 use ia_core::{
-    ArgumentSecurity, ProverChannel,
-    SecurityErrorBound, SecurityProfile, VerificationError, VerificationResult, VerifierChannel,
+    ArgumentSecurity, ProverChannel, SecurityErrorBound, SecurityProfile, VerificationError,
+    VerificationResult, VerifierChannel,
 };
 
 use spongefish::Encoding;
@@ -124,9 +124,11 @@ impl Config for Sha256MerkleConfig {
 // ---------------------------------------------------------------------------
 
 struct CommittedSumcheck;
+struct CommittedSumcheckProver;
+struct CommittedSumcheckVerifier;
 
 ia_core::impl_interactive_argument! {
-    impl InteractiveArgument for CommittedSumcheck {
+    prover impl for CommittedSumcheckProver {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
             ia_core::pad_protocol_id(b"committed sumcheck sha256")
         }
@@ -137,7 +139,7 @@ ia_core::impl_interactive_argument! {
         #[allow(non_snake_case)]
         fn prove<P: ProverChannel<Unit = u8>>(&self, ch: &mut P, instance: &Instance, evals: &Vec<Fr>) {
             let n = instance.n as usize;
-            let (tree, root) = Self::build_merkle_tree(evals);
+            let (tree, root) = CommittedSumcheck::build_merkle_tree(evals);
             assert_eq!(root.as_slice(), instance.root.0.as_slice());
 
             // Commit phase: send Merkle root
@@ -184,6 +186,17 @@ ia_core::impl_interactive_argument! {
             });
         }
 
+    }
+}
+
+ia_core::impl_interactive_argument! {
+    verifier impl for CommittedSumcheckVerifier {
+        fn protocol_id(&self) -> impl AsRef<[u8]> {
+            ia_core::pad_protocol_id(b"committed sumcheck sha256")
+        }
+
+        type Instance = Instance;
+
         fn verify<V: VerifierChannel<Unit = u8>>(
             &self,
             ch: &mut V,
@@ -196,7 +209,6 @@ ia_core::impl_interactive_argument! {
                 return Err(VerificationError);
             }
 
-            // Bit-challenge sumcheck verification
             let mut claim = instance.claimed_sum;
             let mut idx: u32 = 0;
 
@@ -216,7 +228,6 @@ ia_core::impl_interactive_argument! {
                 claim = if b == 0 { s0 } else { s1 };
             }
 
-            // Read and verify opening proof
             let opening: OpeningProof = ch.read_prover_message()?;
             if opening.idx != idx || opening.value != claim {
                 return Err(VerificationError);
@@ -226,8 +237,8 @@ ia_core::impl_interactive_argument! {
             let path = Path::<Sha256MerkleConfig>::deserialize_compressed(&mut path_reader)
                 .map_err(|_| VerificationError)?;
 
-            let (leaf_params, two_to_one_params) = Self::merkle_params();
-            let leaf_bytes = Self::fr_to_leaf_bytes(&opening.value);
+            let (leaf_params, two_to_one_params) = CommittedSumcheck::merkle_params();
+            let leaf_bytes = CommittedSumcheck::fr_to_leaf_bytes(&opening.value);
 
             let ok = path
                 .verify(
@@ -238,16 +249,16 @@ ia_core::impl_interactive_argument! {
                 )
                 .unwrap();
 
-            if !ok {
-                return Err(VerificationError);
+            if ok {
+                Ok(())
+            } else {
+                Err(VerificationError)
             }
-
-            Ok(())
         }
     }
 }
 
-impl ArgumentSecurity for CommittedSumcheck {
+impl ArgumentSecurity for CommittedSumcheckVerifier {
     type InstanceParams = ();
     type InstanceBound = ();
 
@@ -310,16 +321,24 @@ fn run_dsfs(instance: &Instance, evals: &Vec<Fr>) {
     println!("=== Committed Sumcheck (DSFS / non-interactive) ===\n");
 
     let session = spongefish::session!("argus warmup: committed sumcheck");
-    let nia = dsfs::plain_non_interactive_argument(CommittedSumcheck, dsfs::Keccak::default());
+    let prover = dsfs::plain_non_interactive_argument_prover(
+        CommittedSumcheckProver,
+        dsfs::Keccak::default(),
+    );
+    let verifier = dsfs::plain_non_interactive_argument_verifier(
+        CommittedSumcheckVerifier,
+        dsfs::Keccak::default(),
+    );
 
-    let narg = nia.prove(&session, instance, evals);
+    let narg = prover.prove(&session, instance, evals);
     println!(
         "Proof ({} bytes):\n{}",
         narg.len(),
         hex::encode(narg.as_bytes())
     );
 
-    nia.verify(&session, instance, &narg)
+    verifier
+        .verify(&session, instance, &narg)
         .expect("Invalid proof");
     println!("Verification succeeded");
 }
@@ -336,13 +355,13 @@ fn run_live(instance: Instance, evals: Vec<Fr>) {
     let prover_instance = instance.clone();
     let prover_evals = evals.clone();
     let prover_handle = thread::spawn(move || {
-        CommittedSumcheck.prove(&mut prover_ch, &prover_instance, &prover_evals);
+        CommittedSumcheckProver.prove(&mut prover_ch, &prover_instance, &prover_evals);
         println!("[Prover]   Done.");
     });
 
     let verifier_instance = instance;
     let verifier_handle = thread::spawn(move || {
-        let result = CommittedSumcheck.verify(&mut verifier_ch, &verifier_instance);
+        let result = CommittedSumcheckVerifier.verify(&mut verifier_ch, &verifier_instance);
         match result {
             Ok(()) => println!("[Verifier] Verification succeeded!"),
             Err(_) => println!("[Verifier] Verification FAILED."),

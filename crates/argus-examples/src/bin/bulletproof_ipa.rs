@@ -32,28 +32,35 @@ use rand::rngs::OsRng;
 use spongefish_dsfs as dsfs;
 
 use argus_examples::bulletproofs::{
-    ipa_prove_core, ipa_round_error, ipa_verify_core, random_statement, IpaInstance, IpaWitness,
+    IpaInstance, IpaWitness, ipa_prove_core, ipa_round_error, ipa_verify_core, random_statement,
 };
 use ia_core::prelude::*;
 use ia_core::{
-    ArgumentSecurity, Decoding, Deserialize, Encoding,
-    ProverChannel, SecurityErrorBound, SecurityProfile, VerificationResult, VerifierChannel,
+    ArgumentSecurity, Decoding, Deserialize, Encoding, ProverChannel, SecurityErrorBound,
+    SecurityProfile, VerificationResult, VerifierChannel,
 };
 
 // ---------------------------------------------------------------------------
 // Protocol object
 // ---------------------------------------------------------------------------
 
-struct BulletproofIpa<G: CurveGroup>(core::marker::PhantomData<G>);
+struct BulletproofIpaProver<G: CurveGroup>(core::marker::PhantomData<G>);
+struct BulletproofIpaVerifier<G: CurveGroup>(core::marker::PhantomData<G>);
 
-impl<G: CurveGroup> Default for BulletproofIpa<G> {
+impl<G: CurveGroup> Default for BulletproofIpaProver<G> {
+    fn default() -> Self {
+        Self(core::marker::PhantomData)
+    }
+}
+
+impl<G: CurveGroup> Default for BulletproofIpaVerifier<G> {
     fn default() -> Self {
         Self(core::marker::PhantomData)
     }
 }
 
 ia_core::impl_interactive_argument! {
-    impl<G> InteractiveArgument for BulletproofIpa<G>
+    prover impl<G> for BulletproofIpaProver<G>
     where
         G: CurveGroup + PrimeGroup + Encoding + Deserialize,
         G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
@@ -81,6 +88,21 @@ ia_core::impl_interactive_argument! {
             );
         }
 
+    }
+}
+
+ia_core::impl_interactive_argument! {
+    verifier impl<G> for BulletproofIpaVerifier<G>
+    where
+        G: CurveGroup + PrimeGroup + Encoding + Deserialize,
+        G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
+    {
+        fn protocol_id(&self) -> impl AsRef<[u8]> {
+            ia_core::pad_protocol_id(b"bulletproofs-ipa")
+        }
+
+        type Instance = IpaInstance<G>;
+
         fn verify<V: VerifierChannel<Unit = u8>>(
             &self,
             ch: &mut V,
@@ -91,7 +113,7 @@ ia_core::impl_interactive_argument! {
     }
 }
 
-impl<G> ArgumentSecurity for BulletproofIpa<G>
+impl<G> ArgumentSecurity for BulletproofIpaVerifier<G>
 where
     G: CurveGroup + PrimeGroup + Encoding + Deserialize,
     G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
@@ -142,11 +164,23 @@ fn run_dsfs(n: usize) {
     println!("=== Bulletproofs IPA (DSFS / non-interactive), n = {n} ===\n");
     let (instance, witness) = random_statement::<Demo>(n, &mut OsRng);
     let session = spongefish::session!("bulletproofs ipa example");
-    let nia =
-        dsfs::plain_non_interactive_argument(BulletproofIpa::<Demo>::default(), dsfs::Keccak::default());
-    let narg = nia.prove(&session, &instance, &witness);
-    println!("Proof: {} bytes ({} rounds)", narg.as_bytes().len(), log2(n));
-    nia.verify(&session, &instance, &narg).expect("verification failed");
+    let prover = dsfs::plain_non_interactive_argument_prover(
+        BulletproofIpaProver::<Demo>::default(),
+        dsfs::Keccak::default(),
+    );
+    let verifier = dsfs::plain_non_interactive_argument_verifier(
+        BulletproofIpaVerifier::<Demo>::default(),
+        dsfs::Keccak::default(),
+    );
+    let narg = prover.prove(&session, &instance, &witness);
+    println!(
+        "Proof: {} bytes ({} rounds)",
+        narg.as_bytes().len(),
+        log2(n)
+    );
+    verifier
+        .verify(&session, &instance, &narg)
+        .expect("verification failed");
     println!("Verification succeeded");
 }
 
@@ -156,12 +190,19 @@ fn run_live(n: usize) {
     let (mut prover_ch, mut verifier_ch) = live_channel::channel_pair();
     let prover_instance = instance.clone();
     let prover = thread::spawn(move || {
-        BulletproofIpa::<Demo>::default().prove(&mut prover_ch, &prover_instance, &witness);
+        BulletproofIpaProver::<Demo>::default().prove(&mut prover_ch, &prover_instance, &witness);
         println!("[Prover]   Done.");
     });
     let verifier = thread::spawn(move || {
-        let r = BulletproofIpa::<Demo>::default().verify(&mut verifier_ch, &instance);
-        println!("[Verifier] {}", if r.is_ok() { "Verification succeeded!" } else { "FAILED." });
+        let r = BulletproofIpaVerifier::<Demo>::default().verify(&mut verifier_ch, &instance);
+        println!(
+            "[Verifier] {}",
+            if r.is_ok() {
+                "Verification succeeded!"
+            } else {
+                "FAILED."
+            }
+        );
         r
     });
     prover.join().unwrap();
@@ -193,12 +234,17 @@ mod tests {
         for &n in &[1usize, 2, 4, 8, 16] {
             let (instance, witness) = random_statement::<G>(n, &mut OsRng);
             let session = spongefish::session!("bulletproofs ipa test");
-            let nia = dsfs::plain_non_interactive_argument(
-                BulletproofIpa::<G>::default(),
+            let prover = dsfs::plain_non_interactive_argument_prover(
+                BulletproofIpaProver::<G>::default(),
                 dsfs::Keccak::default(),
             );
-            let narg = nia.prove(&session, &instance, &witness);
-            nia.verify(&session, &instance, &narg)
+            let verifier = dsfs::plain_non_interactive_argument_verifier(
+                BulletproofIpaVerifier::<G>::default(),
+                dsfs::Keccak::default(),
+            );
+            let narg = prover.prove(&session, &instance, &witness);
+            verifier
+                .verify(&session, &instance, &narg)
                 .unwrap_or_else(|_| panic!("dsfs verification failed for n = {n}"));
         }
     }
@@ -208,12 +254,16 @@ mod tests {
         let (mut instance, witness) = random_statement::<G>(8, &mut OsRng);
         instance.p += G::generator();
         let session = spongefish::session!("bulletproofs ipa test");
-        let nia = dsfs::plain_non_interactive_argument(
-            BulletproofIpa::<G>::default(),
+        let prover = dsfs::plain_non_interactive_argument_prover(
+            BulletproofIpaProver::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let narg = nia.prove(&session, &instance, &witness);
-        assert!(nia.verify(&session, &instance, &narg).is_err());
+        let verifier = dsfs::plain_non_interactive_argument_verifier(
+            BulletproofIpaVerifier::<G>::default(),
+            dsfs::Keccak::default(),
+        );
+        let narg = prover.prove(&session, &instance, &witness);
+        assert!(verifier.verify(&session, &instance, &narg).is_err());
     }
 
     #[test]
@@ -222,17 +272,18 @@ mod tests {
         let (mut prover_ch, mut verifier_ch) = live_channel::channel_pair();
         let prover_instance = instance.clone();
         let prover = thread::spawn(move || {
-            BulletproofIpa::<G>::default().prove(&mut prover_ch, &prover_instance, &witness);
+            BulletproofIpaProver::<G>::default().prove(&mut prover_ch, &prover_instance, &witness);
         });
-        let verifier =
-            thread::spawn(move || BulletproofIpa::<G>::default().verify(&mut verifier_ch, &instance));
+        let verifier = thread::spawn(move || {
+            BulletproofIpaVerifier::<G>::default().verify(&mut verifier_ch, &instance)
+        });
         prover.join().unwrap();
         verifier.join().unwrap().expect("live verification failed");
     }
 
     #[test]
     fn ipa_profile_round_count_tracks_log_n() {
-        let ipa = BulletproofIpa::<G>::default();
+        let ipa = BulletproofIpaVerifier::<G>::default();
         let (instance, _) = random_statement::<G>(16, &mut OsRng);
         let profile = ipa.profile_for_concrete_instance(&instance);
         assert_eq!(profile.rbr_soundness_errors.len(), log2(16) as usize);
@@ -241,7 +292,7 @@ mod tests {
 
     #[test]
     fn ipa_narg_soundness_above_128_bits() {
-        let ipa = BulletproofIpa::<G>::default();
+        let ipa = BulletproofIpaVerifier::<G>::default();
         let (instance, _) = random_statement::<G>(8, &mut OsRng);
         let narg = dsfs::security_for_concrete_instance(&ipa, &instance);
         assert!(narg.soundness_bits(1 << 40) > 128.0);

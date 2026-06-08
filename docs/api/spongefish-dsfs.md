@@ -1,132 +1,78 @@
 # `spongefish-dsfs`
 
-`spongefish-dsfs` is the DSFS compiler backend used by Argus. It compiles
-interactive arguments and reductions into non-interactive proof artifacts while
-owning all transcript mechanics.
+`spongefish-dsfs` compiles each interactive role independently while owning all
+transcript mechanics.
 
 ## Plain Arguments
 
 ```rust
-let nia = spongefish_dsfs::plain_non_interactive_argument(
-    argument,
+let prover = spongefish_dsfs::plain_non_interactive_argument_prover(
+    argument_prover,
+    spongefish_dsfs::Keccak::default(),
+);
+let verifier = spongefish_dsfs::plain_non_interactive_argument_verifier(
+    argument_verifier,
     spongefish_dsfs::Keccak::default(),
 );
 
-let proof = nia.prove(&session, &instance, &witness);
-nia.verify(&session, &instance, &proof)?;
-```
-
-The returned value implements `ia_core::NonInteractiveArgument`.
-
-Use `plain_non_interactive_argument_with_salt` when the proof layout includes an
-explicit prover salt.
-
-## Plain Reductions
-
-```rust
-let nir = spongefish_dsfs::plain_non_interactive_reduction(
-    reduction,
-    spongefish_dsfs::Keccak::default(),
-);
-
-let (proof, target_instance, target_witness) =
-    nir.prove(&session, &source_instance, &source_witness);
-
-let verified_target =
-    nir.verify(&session, &source_instance, &proof)?;
-```
-
-The returned value implements `ia_core::NonInteractiveReduction`.
-
-## Preprocessing
-
-Preprocessing wrappers store the protocol body and sponge configuration, but no
-keys:
-
-```rust
-let pnia = spongefish_dsfs::preprocessing_non_interactive_argument(
-    preprocessing_argument,
-    spongefish_dsfs::Keccak::default(),
-);
-
-let (pk, vk) = pnia.preprocess(&index);
-let proof = pnia.prove(&pk, &session, &instance, &witness);
-pnia.verify(&vk, &session, &instance, &proof)?;
-```
-
-Reductions use the same pattern:
-
-```rust
-let pnir = spongefish_dsfs::preprocessing_non_interactive_reduction(
-    preprocessing_reduction,
-    spongefish_dsfs::Keccak::default(),
-);
-
-let (pk, vk) = pnir.preprocess(&index);
-let (proof, target, target_witness) =
-    pnir.prove(&pk, &session, &source_instance, &source_witness);
-let verified_target = pnir.verify(&vk, &session, &source_instance, &proof)?;
-```
-
-Internally the backend derives `pk.committed_index()` on the prover side and
-`vk.committed_index()` on the verifier side. It absorbs those bytes paired with
-the ordinary instance before the first verifier challenge, then calls keyed
-protocol execution with the bare instance.
-
-## Asymmetric Compilation
-
-The compiler is capability-agnostic: the constructors above take *any* body and
-the resulting wrapper implements whichever non-interactive halves its body
-supports. The prove path is bounded on `…Prover`, the verify path on `…Verifier`,
-so:
-
-```rust
-// A body that implements only InteractiveArgumentProver (or `body.into_prover()`)
-// compiles to a prover-only object — `.verify` does not exist on it.
-let prover = spongefish_dsfs::plain_non_interactive_argument(prover_only_body, Keccak::default());
-let proof  = prover.prove(&session, &instance, &witness);
-
-// The verifier-only counterpart only has `.verify`.
-let verifier = spongefish_dsfs::plain_non_interactive_argument(verifier_only_body, Keccak::default());
+let proof = prover.prove(&session, &instance, &witness);
 verifier.verify(&session, &instance, &proof)?;
 ```
 
-`CombinedNarg::new(prover_narg, verifier_narg)` recombines two independently
-compiled non-interactive halves into a full `NonInteractiveArgument`, checking
-that they agree on `protocol_id` (a `debug_assert`) with instance/witness/session
-agreement enforced at the type level.
+Reductions use `plain_non_interactive_reduction_prover` and
+`plain_non_interactive_reduction_verifier`. Salted variants append
+`_with_salt` to the role-specific constructor name.
 
-(Calling `.prove()` / `.verify()` needs the relevant half-trait in scope; the
-simplest import is `use ia_core::prelude::*;`.)
+## Preprocessing
 
-## Sponge Choice
+Indexing remains outside DSFS:
 
-The Argus standard DSFS path uses `Keccak`.
+```rust
+let (pk, vk) = indexer.preprocess_checked(&index)?;
 
-`StdHash` is available for explicit compatibility paths. Treat sponge choice as
-part of the compiled proof format: changing it requires reviewing protocol id,
-domain separation, and test vectors.
+let prover = spongefish_dsfs::preprocessing_non_interactive_argument_prover(
+    argument_prover,
+    spongefish_dsfs::Keccak::default(),
+);
+let verifier = spongefish_dsfs::preprocessing_non_interactive_argument_verifier(
+    argument_verifier,
+    spongefish_dsfs::Keccak::default(),
+);
 
-## Security Helpers
+let proof = prover.prove(&pk, &session, &instance, &witness);
+verifier.verify(&vk, &session, &instance, &proof)?;
+```
 
-Argument helpers:
+The prover wrapper names only `ProverKey`; the verifier wrapper names only
+`VerifierKey`. DSFS derives the committed index from the supplied key and binds
+it with the public instance before the first challenge.
 
-- `security_for_concrete_instance`
-- `security_for_instance_bound`
-- `security_for_concrete_instance_with`
-- `security_for_instance_bound_with`
+Preprocessing reductions use the corresponding
+`preprocessing_non_interactive_reduction_prover` and
+`preprocessing_non_interactive_reduction_verifier` constructors.
 
-Reduction helpers:
+## Compiled Types
 
-- `reduction_security_for_source_instance`
-- `reduction_security_for_source_bound`
-- `reduction_security_for_source_instance_with`
-- `reduction_security_for_source_bound_with`
+- `DsfsArgumentProver` / `DsfsArgumentVerifier`
+- `DsfsReductionProver` / `DsfsReductionVerifier`
+- `PreprocessedDsfsArgumentProver` / `PreprocessedDsfsArgumentVerifier`
+- `PreprocessedDsfsReductionProver` / `PreprocessedDsfsReductionVerifier`
 
-The `_with` variants take explicit `SpongeParams`.
+DSFS does not implement or forward `Indexer`, and it does not provide a combined
+compiled object.
 
-## Transcript Ownership
+## Invariants
 
-DSFS owns public-input absorption, prover-message absorption, challenge
-derivation, proof byte serialization, deterministic replay, and malformed-proof
-rejection. Protocol code should not duplicate any of that logic.
+DSFS owns:
+
+- public-input and committed-index absorption,
+- prover-message absorption before each challenge,
+- challenge derivation,
+- optional salt handling,
+- proof serialization,
+- deterministic verifier replay,
+- EOF and trailing-byte rejection.
+
+The Argus standard sponge is `Keccak`. `StdHash` remains available for explicit
+compatibility paths. Any sponge, salt, proof-layout, or transcript initialization
+change requires a protocol-id review.

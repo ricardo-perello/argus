@@ -3,11 +3,12 @@
 Argus is a Rust interface layer for public-coin interactive protocols.
 
 Its core contribution is not a new transcript primitive. It is a clean way to
-describe an interactive argument or reduction as a reusable protocol object,
-without putting sponge calls or transcript logic inside the protocol itself.
+describe an interactive argument or reduction as independent prover, verifier,
+and optional indexer roles, without putting sponge calls or transcript logic
+inside protocol code.
 
-Protocol authors write a conversation once against typed channels. Backends then
-decide how to execute that conversation:
+Protocol authors write matching role programs against typed channels. Backends
+then decide how to execute those conversations:
 
 - `spongefish-dsfs` compiles the protocol into a non-interactive proof using the
   Duplex-Sponge Fiat-Shamir transformation.

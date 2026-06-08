@@ -9,11 +9,10 @@ use ark_serialize::CanonicalSerialize;
 use ark_std::log2;
 
 use ia_core::{
-    ArgumentCore, CommittedIndex, CommittedIndexBytes, PreprocessingArgumentSecurity,
-    PreprocessingCore, PreprocessingInteractiveArgumentProver,
-    PreprocessingInteractiveArgumentVerifier, PreprocessingInteractiveReductionProver,
-    PreprocessingInteractiveReductionVerifier, PreprocessingReductionSecurity, ProtocolCore,
-    ProverChannel, SecurityErrorBound, SecurityProfile, VerificationResult, VerifierChannel,
+    CommittedIndex, CommittedIndexBytes, PreprocessingArgumentSecurity,
+    PreprocessingInteractiveReductionProver, PreprocessingInteractiveReductionVerifier,
+    PreprocessingReductionSecurity, ProverChannel, SecurityErrorBound, SecurityProfile,
+    VerificationResult, VerifierChannel,
 };
 
 use crate::protocol::commitment::committed_index_for;
@@ -103,14 +102,14 @@ where
 }
 
 // -----------------------------------------------------------------------
-// WarpReduction: the full IOR as a single PreprocessingInteractiveReduction
+// WarpReduction roles
 // -----------------------------------------------------------------------
 
-pub struct WarpReduction<F, P, C, MT> {
+pub struct WarpReductionIndexer<F, P, C, MT> {
     _phantom: PhantomData<(F, P, C, MT)>,
 }
 
-impl<F, P, C, MT> WarpReduction<F, P, C, MT> {
+impl<F, P, C, MT> WarpReductionIndexer<F, P, C, MT> {
     pub fn new() -> Self {
         Self {
             _phantom: PhantomData,
@@ -118,9 +117,25 @@ impl<F, P, C, MT> WarpReduction<F, P, C, MT> {
     }
 }
 
-impl<F, P, C, MT> Default for WarpReduction<F, P, C, MT> {
+impl<F, P, C, MT> Default for WarpReductionIndexer<F, P, C, MT> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+pub struct WarpReductionProver<F, P, C, MT>(PhantomData<(F, P, C, MT)>);
+
+impl<F, P, C, MT> Default for WarpReductionProver<F, P, C, MT> {
+    fn default() -> Self {
+        Self(PhantomData)
+    }
+}
+
+pub struct WarpReductionVerifier<F, P, C, MT>(PhantomData<(F, P, C, MT)>);
+
+impl<F, P, C, MT> Default for WarpReductionVerifier<F, P, C, MT> {
+    fn default() -> Self {
+        Self(PhantomData)
     }
 }
 
@@ -155,7 +170,38 @@ pub struct WarpSecurityParams {
 pub type WarpSecurityBound = WarpSecurityParams;
 
 ia_core::impl_preprocessing_reduction! {
-impl<F, P, C, MT> PreprocessingInteractiveReduction for WarpReduction<F, P, C, MT>
+indexer impl<F, P, C, MT> for WarpReductionIndexer<F, P, C, MT>
+where
+    F: Field
+        + PrimeField
+        + Send
+        + Sync
+        + spongefish::Encoding
+        + spongefish::Decoding
+        + ia_core::Deserialize,
+    P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
+    C: LinearCode<F> + Clone + CanonicalSerialize,
+    MT: WarpMerkle<F>,
+{
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        ia_core::pad_protocol_id(b"argus::warp::reduction")
+    }
+
+    type SourceInstance = WarpInstance<F, MT>;
+    type TargetInstance = DeciderInstance<F, MT>;
+    type Index = WarpIndex<F, P, C, MT>;
+    type ProverKey = WarpProverKey<F, P, C, MT>;
+    type VerifierKey = WarpVerifierKey<F, P, C, MT>;
+
+    fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+        let material = indexed_material(ix);
+        (prover_key(material.clone()), verifier_key(material))
+    }
+}
+}
+
+ia_core::impl_preprocessing_reduction! {
+prover impl<F, P, C, MT> for WarpReductionProver<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -176,15 +222,7 @@ where
     type TargetInstance = DeciderInstance<F, MT>;
     type SourceWitness = WarpWitness<F, MT>;
     type TargetWitness = DeciderWitness<F, MT>;
-
-    type Index = WarpIndex<F, P, C, MT>;
     type ProverKey = WarpProverKey<F, P, C, MT>;
-    type VerifierKey = WarpVerifierKey<F, P, C, MT>;
-
-    fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
-        let material = indexed_material(ix);
-        (prover_key(material.clone()), verifier_key(material))
-    }
 
     fn prove<Ch: ProverChannel<Unit = u8>>(
         &self,
@@ -208,6 +246,30 @@ where
         let target_instance = DeciderInstance { acc_instance };
         (target_instance, acc_witness)
     }
+}
+}
+
+ia_core::impl_preprocessing_reduction! {
+verifier impl<F, P, C, MT> for WarpReductionVerifier<F, P, C, MT>
+where
+    F: Field
+        + PrimeField
+        + Send
+        + Sync
+        + spongefish::Encoding
+        + spongefish::Decoding
+        + ia_core::Deserialize,
+    P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
+    C: LinearCode<F> + Clone + CanonicalSerialize,
+    MT: WarpMerkle<F>,
+{
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        ia_core::pad_protocol_id(b"argus::warp::reduction")
+    }
+
+    type SourceInstance = WarpInstance<F, MT>;
+    type TargetInstance = DeciderInstance<F, MT>;
+    type VerifierKey = WarpVerifierKey<F, P, C, MT>;
 
     fn verify<Ch: VerifierChannel<Unit = u8>>(
         &self,
@@ -227,7 +289,7 @@ where
 }
 }
 
-impl<F, P, C, MT> PreprocessingReductionSecurity for WarpReduction<F, P, C, MT>
+impl<F, P, C, MT> PreprocessingReductionSecurity for WarpReductionIndexer<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -393,7 +455,7 @@ fn warp_security_profile(params: &WarpSecurityParams) -> SecurityProfile {
 /// Offline index-binding error for WARP (CY24 §32.7 COS, §32.8.1).
 ///
 /// **Currently zero.** WARP's verifier key holds the *full* index material and
-/// re-derives the code/relation locally (see [`WarpDecider::verify`]), so the
+/// re-derives the code/relation locally, so the
 /// verifier is **non-succinct**:
 /// - there is no committed encoded index `rt_0` for a prover to equivocate, so
 ///   the Merkle binding term `E1` is zero; and
@@ -426,24 +488,82 @@ fn warp_offline_binding_error() -> SecurityErrorBound {
 }
 
 // -----------------------------------------------------------------------
-// WarpDecider: the decider as an PreprocessingInteractiveArgument
-//
-// The decider has no prover-side preprocessing of its own (`ProverKey =
-// ()`), but it reads code / Merkle params / relation checks from the verifier
-// key. `FullWarp` below shares the same verifier key between the reduction and
-// decider, so callers prepare it with one `WarpIndex`.
+// WarpDecider roles
 // -----------------------------------------------------------------------
 
-pub struct WarpDecider<F, P, C, MT>(pub PhantomData<(F, P, C, MT)>);
+/// Lightweight prover-side decider key. It carries only the committed index so
+/// the DSFS prover binds exactly the same bytes as the verifier key.
+#[derive(Clone)]
+pub struct WarpDeciderProverKey {
+    commitment: CommittedIndexBytes,
+}
 
-impl<F, P, C, MT> Default for WarpDecider<F, P, C, MT> {
+impl CommittedIndex for WarpDeciderProverKey {
+    fn committed_index(&self) -> CommittedIndexBytes {
+        self.commitment.clone()
+    }
+}
+
+pub struct WarpDeciderIndexer<F, P, C, MT>(pub PhantomData<(F, P, C, MT)>);
+
+impl<F, P, C, MT> Default for WarpDeciderIndexer<F, P, C, MT> {
+    fn default() -> Self {
+        Self(PhantomData)
+    }
+}
+
+pub struct WarpDeciderProver<F, P, C, MT>(pub PhantomData<(F, P, C, MT)>);
+
+impl<F, P, C, MT> Default for WarpDeciderProver<F, P, C, MT> {
+    fn default() -> Self {
+        Self(PhantomData)
+    }
+}
+
+pub struct WarpDeciderVerifier<F, P, C, MT>(pub PhantomData<(F, P, C, MT)>);
+
+impl<F, P, C, MT> Default for WarpDeciderVerifier<F, P, C, MT> {
     fn default() -> Self {
         Self(PhantomData)
     }
 }
 
 ia_core::impl_preprocessing_argument! {
-impl<F, P, C, MT> PreprocessingInteractiveArgument for WarpDecider<F, P, C, MT>
+indexer impl<F, P, C, MT> for WarpDeciderIndexer<F, P, C, MT>
+where
+    F: Field
+        + PrimeField
+        + Send
+        + Sync
+        + spongefish::Encoding
+        + spongefish::Decoding
+        + ia_core::Deserialize,
+    P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
+    C: LinearCode<F> + Clone + CanonicalSerialize,
+    MT: WarpMerkle<F>,
+{
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        ia_core::pad_protocol_id(b"argus::warp::decider")
+    }
+
+    type Instance = DeciderInstance<F, MT>;
+    type Index = WarpIndex<F, P, C, MT>;
+    type ProverKey = WarpDeciderProverKey;
+    type VerifierKey = WarpVerifierKey<F, P, C, MT>;
+
+    fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+        let material = indexed_material(ix);
+        let verifier_key = verifier_key(material);
+        let prover_key = WarpDeciderProverKey {
+            commitment: verifier_key.commitment.clone(),
+        };
+        (prover_key, verifier_key)
+    }
+}
+}
+
+ia_core::impl_preprocessing_argument! {
+prover impl<F, P, C, MT> for WarpDeciderProver<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -462,15 +582,7 @@ where
 
     type Instance = DeciderInstance<F, MT>;
     type Witness = DeciderWitness<F, MT>;
-
-    type Index = WarpIndex<F, P, C, MT>;
-    type ProverKey = ();
-    type VerifierKey = WarpVerifierKey<F, P, C, MT>;
-
-    fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
-        let material = indexed_material(ix);
-        ((), verifier_key(material))
-    }
+    type ProverKey = WarpDeciderProverKey;
 
     fn prove<Ch: ProverChannel<Unit = u8>>(
         &self,
@@ -487,6 +599,29 @@ where
             ch.send_prover_message(val);
         }
     }
+}
+}
+
+ia_core::impl_preprocessing_argument! {
+verifier impl<F, P, C, MT> for WarpDeciderVerifier<F, P, C, MT>
+where
+    F: Field
+        + PrimeField
+        + Send
+        + Sync
+        + spongefish::Encoding
+        + spongefish::Decoding
+        + ia_core::Deserialize,
+    P: Clone + BundledPESAT<F, Constraints = R1CSConstraints<F>, Config = (usize, usize, usize)>,
+    C: LinearCode<F> + Clone + CanonicalSerialize,
+    MT: WarpMerkle<F>,
+{
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        ia_core::pad_protocol_id(b"argus::warp::decider")
+    }
+
+    type Instance = DeciderInstance<F, MT>;
+    type VerifierKey = WarpVerifierKey<F, P, C, MT>;
 
     fn verify<Ch: VerifierChannel<Unit = u8>>(
         &self,
@@ -550,7 +685,7 @@ where
 }
 }
 
-impl<F, P, C, MT> PreprocessingArgumentSecurity for WarpDecider<F, P, C, MT>
+impl<F, P, C, MT> PreprocessingArgumentSecurity for WarpDeciderIndexer<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -623,44 +758,62 @@ fn decider_security_profile() -> SecurityProfile {
 }
 
 // -----------------------------------------------------------------------
-// FullWarp: first-class single-index WARP argument
+// FullWarp roles: first-class single-index WARP argument
 // -----------------------------------------------------------------------
 
-pub struct FullWarp<F, P, C, MT> {
-    reduction: WarpReduction<F, P, C, MT>,
-    decider: WarpDecider<F, P, C, MT>,
+pub struct FullWarpIndexer<F, P, C, MT>(PhantomData<(F, P, C, MT)>);
+
+impl<F, P, C, MT> Default for FullWarpIndexer<F, P, C, MT> {
+    fn default() -> Self {
+        Self(PhantomData)
+    }
 }
 
-impl<F, P, C, MT> FullWarp<F, P, C, MT> {
-    pub fn new(reduction: WarpReduction<F, P, C, MT>, decider: WarpDecider<F, P, C, MT>) -> Self {
+pub struct FullWarpProver<F, P, C, MT> {
+    reduction: WarpReductionProver<F, P, C, MT>,
+    decider: WarpDeciderProver<F, P, C, MT>,
+}
+
+impl<F, P, C, MT> FullWarpProver<F, P, C, MT> {
+    pub fn new(
+        reduction: WarpReductionProver<F, P, C, MT>,
+        decider: WarpDeciderProver<F, P, C, MT>,
+    ) -> Self {
         Self { reduction, decider }
     }
 }
 
-impl<F, P, C, MT> Default for FullWarp<F, P, C, MT> {
+impl<F, P, C, MT> Default for FullWarpProver<F, P, C, MT> {
     fn default() -> Self {
-        Self::new(WarpReduction::new(), WarpDecider::default())
+        Self::new(WarpReductionProver::default(), WarpDeciderProver::default())
     }
 }
 
-impl<F, P, C, MT> ProtocolCore for FullWarp<F, P, C, MT> {
-    fn protocol_id(&self) -> impl AsRef<[u8]> {
-        ia_core::pad_protocol_id(b"argus::warp::full")
+pub struct FullWarpVerifier<F, P, C, MT> {
+    reduction: WarpReductionVerifier<F, P, C, MT>,
+    decider: WarpDeciderVerifier<F, P, C, MT>,
+}
+
+impl<F, P, C, MT> FullWarpVerifier<F, P, C, MT> {
+    pub fn new(
+        reduction: WarpReductionVerifier<F, P, C, MT>,
+        decider: WarpDeciderVerifier<F, P, C, MT>,
+    ) -> Self {
+        Self { reduction, decider }
     }
 }
 
-impl<F, P, C, MT> ArgumentCore for FullWarp<F, P, C, MT>
-where
-    F: Field,
-    P: BundledPESAT<F>,
-    C: LinearCode<F> + Clone,
-    MT: Config,
-{
-    type Instance = WarpInstance<F, MT>;
-    type Witness = WarpWitness<F, MT>;
+impl<F, P, C, MT> Default for FullWarpVerifier<F, P, C, MT> {
+    fn default() -> Self {
+        Self::new(
+            WarpReductionVerifier::default(),
+            WarpDeciderVerifier::default(),
+        )
+    }
 }
 
-impl<F, P, C, MT> PreprocessingCore for FullWarp<F, P, C, MT>
+ia_core::impl_preprocessing_argument! {
+indexer impl<F, P, C, MT> for FullWarpIndexer<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -673,16 +826,24 @@ where
     C: LinearCode<F> + Clone + CanonicalSerialize,
     MT: WarpMerkle<F>,
 {
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        ia_core::pad_protocol_id(b"argus::warp::full")
+    }
+
+    type Instance = WarpInstance<F, MT>;
     type Index = WarpIndex<F, P, C, MT>;
     type ProverKey = WarpProverKey<F, P, C, MT>;
     type VerifierKey = WarpVerifierKey<F, P, C, MT>;
 
     fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
-        self.reduction.preprocess(ix)
+        let material = indexed_material(ix);
+        (prover_key(material.clone()), verifier_key(material))
     }
 }
+}
 
-impl<F, P, C, MT> PreprocessingInteractiveArgumentProver for FullWarp<F, P, C, MT>
+ia_core::impl_preprocessing_argument! {
+prover impl<F, P, C, MT> for FullWarpProver<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -695,6 +856,14 @@ where
     C: LinearCode<F> + Clone + CanonicalSerialize,
     MT: WarpMerkle<F>,
 {
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        ia_core::pad_protocol_id(b"argus::warp::full")
+    }
+
+    type Instance = WarpInstance<F, MT>;
+    type Witness = WarpWitness<F, MT>;
+    type ProverKey = WarpProverKey<F, P, C, MT>;
+
     fn prove<Ch: ProverChannel<Unit = u8>>(
         &self,
         ch: &mut Ch,
@@ -703,12 +872,17 @@ where
         witness: &Self::Witness,
     ) {
         let (target_instance, target_witness) = self.reduction.prove(ch, pk, instance, witness);
+        let decider_key = WarpDeciderProverKey {
+            commitment: pk.commitment.clone(),
+        };
         self.decider
-            .prove(ch, &(), &target_instance, &target_witness);
+            .prove(ch, &decider_key, &target_instance, &target_witness);
     }
 }
+}
 
-impl<F, P, C, MT> PreprocessingInteractiveArgumentVerifier for FullWarp<F, P, C, MT>
+ia_core::impl_preprocessing_argument! {
+verifier impl<F, P, C, MT> for FullWarpVerifier<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -721,6 +895,13 @@ where
     C: LinearCode<F> + Clone + CanonicalSerialize,
     MT: WarpMerkle<F>,
 {
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        ia_core::pad_protocol_id(b"argus::warp::full")
+    }
+
+    type Instance = WarpInstance<F, MT>;
+    type VerifierKey = WarpVerifierKey<F, P, C, MT>;
+
     fn verify<Ch: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut Ch,
@@ -730,4 +911,5 @@ where
         let target_instance = self.reduction.verify(ch, vk, instance)?;
         self.decider.verify(ch, vk, &target_instance)
     }
+}
 }

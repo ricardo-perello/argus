@@ -8,16 +8,13 @@ mod preprocessing;
 mod reduction;
 
 pub use adapters::{
-    CombinedIA, IntoProver, IntoVerifier, ProverOnly, TrivialIndexedArgument,
-    TrivialIndexedReduction, VerifierOnly,
+    TrivialIndexedArgumentProver, TrivialIndexedArgumentVerifier, TrivialIndexedReductionProver,
+    TrivialIndexedReductionVerifier, TrivialIndexer,
 };
-pub use argument::{InteractiveArgument, InteractiveArgumentProver, InteractiveArgumentVerifier};
+pub use argument::{InteractiveArgumentProver, InteractiveArgumentVerifier};
 pub use composition::{ChainedReduction, ReducedArgument};
 pub use preprocessing::{
-    PreprocessingInteractiveArgument, PreprocessingInteractiveArgumentProver,
-    PreprocessingInteractiveArgumentVerifier, PreprocessingInteractiveReduction,
+    PreprocessingInteractiveArgumentProver, PreprocessingInteractiveArgumentVerifier,
     PreprocessingInteractiveReductionProver, PreprocessingInteractiveReductionVerifier,
 };
-pub use reduction::{
-    InteractiveReduction, InteractiveReductionProver, InteractiveReductionVerifier,
-};
+pub use reduction::{InteractiveReductionProver, InteractiveReductionVerifier};

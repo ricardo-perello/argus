@@ -16,17 +16,12 @@ mod proof;
 mod reduction;
 mod session;
 
-pub use adapters::NargAsInteractiveArgument;
-pub use argument::{
-    NonInteractiveArgument, NonInteractiveArgumentProver, NonInteractiveArgumentVerifier,
-};
+pub use adapters::{NargProverAsInteractiveArgument, NargVerifierAsInteractiveArgument};
+pub use argument::{NonInteractiveArgumentProver, NonInteractiveArgumentVerifier};
 pub use preprocessing::{
-    PreprocessingNonInteractiveArgument, PreprocessingNonInteractiveArgumentProver,
-    PreprocessingNonInteractiveArgumentVerifier, PreprocessingNonInteractiveReduction,
+    PreprocessingNonInteractiveArgumentProver, PreprocessingNonInteractiveArgumentVerifier,
     PreprocessingNonInteractiveReductionProver, PreprocessingNonInteractiveReductionVerifier,
 };
 pub use proof::NargProof;
-pub use reduction::{
-    NonInteractiveReduction, NonInteractiveReductionProver, NonInteractiveReductionVerifier,
-};
+pub use reduction::{NonInteractiveReductionProver, NonInteractiveReductionVerifier};
 pub use session::NonInteractiveSession;

@@ -9,7 +9,8 @@
 - [Overview](architecture/overview.md)
 - [Channel Model](architecture/channel-model.md)
 - [Protocol Shapes](architecture/ia-ir.md)
-- [Prover/Verifier Split](prover-verifier-split-presentation.md)
+- [Role-First Architecture Plan](architecture/role-first-protocol-architecture-plan.md)
+- [Previous Prover/Verifier Split](prover-verifier-split-presentation.md)
 - [Backends](architecture/backends.md)
 
 # Author Guide

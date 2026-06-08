@@ -4,7 +4,7 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-use crate::{ArgumentCore, ProtocolCore, ReductionCore};
+use crate::{ArgumentCore, ArgumentProverCore, ProtocolCore, ReductionCore, ReductionProverCore};
 
 mod plain;
 mod preprocessing;
@@ -57,11 +57,20 @@ where
 impl<First, Second> ReductionCore for ChainedReduction<First, Second>
 where
     First: ReductionCore,
-    Second:
-        ReductionCore<SourceInstance = First::TargetInstance, SourceWitness = First::TargetWitness>,
+    Second: ReductionCore<SourceInstance = First::TargetInstance>,
 {
     type SourceInstance = First::SourceInstance;
     type TargetInstance = Second::TargetInstance;
+}
+
+impl<First, Second> ReductionProverCore for ChainedReduction<First, Second>
+where
+    First: ReductionProverCore,
+    Second: ReductionProverCore<
+            SourceInstance = First::TargetInstance,
+            SourceWitness = First::TargetWitness,
+        >,
+{
     type SourceWitness = First::SourceWitness;
     type TargetWitness = Second::TargetWitness;
 }
@@ -114,9 +123,16 @@ where
 impl<R, A> ArgumentCore for ReducedArgument<R, A>
 where
     R: ReductionCore,
-    A: ArgumentCore<Instance = R::TargetInstance, Witness = R::TargetWitness>,
+    A: ArgumentCore<Instance = R::TargetInstance>,
 {
     type Instance = R::SourceInstance;
+}
+
+impl<R, A> ArgumentProverCore for ReducedArgument<R, A>
+where
+    R: ReductionProverCore,
+    A: ArgumentProverCore<Instance = R::TargetInstance, Witness = R::TargetWitness>,
+{
     type Witness = R::SourceWitness;
 }
 

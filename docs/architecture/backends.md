@@ -8,19 +8,31 @@ Backends execute Argus channel programs.
 non-interactive proof artifacts.
 
 ```rust
-let nia = spongefish_dsfs::plain_non_interactive_argument(argument, sponge);
-let nir = spongefish_dsfs::plain_non_interactive_reduction(reduction, sponge);
+let prover = spongefish_dsfs::plain_non_interactive_argument_prover(
+    argument_prover,
+    sponge.clone(),
+);
+let verifier = spongefish_dsfs::plain_non_interactive_argument_verifier(
+    argument_verifier,
+    sponge,
+);
 ```
 
-For preprocessing protocols, the compiled wrapper remains stateless with
-respect to keys:
+For preprocessing protocols, indexing remains outside DSFS:
 
 ```rust
-let pnia = spongefish_dsfs::preprocessing_non_interactive_argument(body, sponge);
-let (pk, vk) = pnia.preprocess(&index);
+let (pk, vk) = indexer.preprocess_checked(&index)?;
+let prover = spongefish_dsfs::preprocessing_non_interactive_argument_prover(
+    prover_body,
+    sponge.clone(),
+);
+let verifier = spongefish_dsfs::preprocessing_non_interactive_argument_verifier(
+    verifier_body,
+    sponge,
+);
 
-let proof = pnia.prove(&pk, &session, &instance, &witness);
-pnia.verify(&vk, &session, &instance, &proof)?;
+let proof = prover.prove(&pk, &session, &instance, &witness);
+verifier.verify(&vk, &session, &instance, &proof)?;
 ```
 
 The DSFS backend is responsible for:

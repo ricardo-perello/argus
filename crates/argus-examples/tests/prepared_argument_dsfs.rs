@@ -9,12 +9,18 @@ use spongefish_dsfs as dsfs;
 
 use ia_core::prelude::*;
 use ia_core::{
-    ArgumentCore, CommittedIndex, CommittedIndexBytes, PreprocessingCore, ProtocolCore,
-    ProverChannel, VerificationError, VerificationResult, VerifierChannel,
+    ArgumentCore, ArgumentProverCore, CommittedIndex, CommittedIndexBytes, Indexer, NargProof,
+    ProtocolCore, ProverChannel, VerificationError, VerificationResult, VerifierChannel,
 };
 
 #[derive(Default)]
-struct ChallengeEchoArgument;
+struct ChallengeEchoIndexer;
+
+#[derive(Default)]
+struct ChallengeEchoProver;
+
+#[derive(Default)]
+struct ChallengeEchoVerifier;
 
 #[derive(Clone)]
 struct EchoKey(Vec<u8>);
@@ -25,21 +31,22 @@ impl CommittedIndex for EchoKey {
     }
 }
 
-impl ProtocolCore for ChallengeEchoArgument {
+fn protocol_id() -> [u8; 32] {
+    ia_core::pad_protocol_id(b"prepared-argument-dsfs-test")
+}
+
+impl ProtocolCore for ChallengeEchoIndexer {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
-        ia_core::pad_protocol_id(b"prepared-argument-dsfs-test")
+        protocol_id()
     }
 }
 
-impl ArgumentCore for ChallengeEchoArgument {
+impl ArgumentCore for ChallengeEchoIndexer {
     type Instance = [u8; 1];
-    type Witness = [u8; 1];
 }
 
-impl PreprocessingCore for ChallengeEchoArgument {
+impl Indexer for ChallengeEchoIndexer {
     type Index = Vec<u8>;
-    // Both keys carry the index: the prover binds `pk.committed_index()`, the
-    // verifier binds `vk.committed_index()`, and the two must agree.
     type ProverKey = EchoKey;
     type VerifierKey = EchoKey;
 
@@ -48,7 +55,23 @@ impl PreprocessingCore for ChallengeEchoArgument {
     }
 }
 
-impl PreprocessingInteractiveArgumentProver for ChallengeEchoArgument {
+impl ProtocolCore for ChallengeEchoProver {
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        protocol_id()
+    }
+}
+
+impl ArgumentCore for ChallengeEchoProver {
+    type Instance = [u8; 1];
+}
+
+impl ArgumentProverCore for ChallengeEchoProver {
+    type Witness = [u8; 1];
+}
+
+impl PreprocessingInteractiveArgumentProver for ChallengeEchoProver {
+    type ProverKey = EchoKey;
+
     fn prove<P: ProverChannel<Unit = u8>>(
         &self,
         ch: &mut P,
@@ -62,7 +85,19 @@ impl PreprocessingInteractiveArgumentProver for ChallengeEchoArgument {
     }
 }
 
-impl PreprocessingInteractiveArgumentVerifier for ChallengeEchoArgument {
+impl ProtocolCore for ChallengeEchoVerifier {
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        protocol_id()
+    }
+}
+
+impl ArgumentCore for ChallengeEchoVerifier {
+    type Instance = [u8; 1];
+}
+
+impl PreprocessingInteractiveArgumentVerifier for ChallengeEchoVerifier {
+    type VerifierKey = EchoKey;
+
     fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,
@@ -89,30 +124,50 @@ fn preprocessed_dsfs_absorbs_committed_index_and_instance() {
     let session = [0u8; 64];
     let witness = [0xABu8];
 
-    let nia = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
-        ChallengeEchoArgument,
+    let indexer = ChallengeEchoIndexer;
+    let prover = dsfs::preprocessing_non_interactive_argument_prover::<_, [u8; 64], _>(
+        ChallengeEchoProver,
+        dsfs::Keccak::default(),
+    );
+    let verifier = dsfs::preprocessing_non_interactive_argument_verifier::<_, [u8; 64], _>(
+        ChallengeEchoVerifier,
         dsfs::Keccak::default(),
     );
 
     // Prove under committed index [1,2,3] at instance [7].
-    let (pk, vk) = nia.preprocess(&vec![1u8, 2, 3]);
-    let proof = nia.prove(&pk, &session, &[7u8], &witness);
+    let (pk, vk) = indexer
+        .preprocess_checked(&vec![1u8, 2, 3])
+        .expect("matching committed indices");
+    let proof = prover.prove(&pk, &session, &[7u8], &witness);
 
     // Same committed index, same instance -> verifies.
-    nia.verify(&vk, &session, &[7u8], &proof)
+    verifier
+        .verify(&vk, &session, &[7u8], &proof)
         .expect("same committed index and same instance verify");
 
     // Changing only the verifier-key commitment must change the transcript.
-    let (_pk_other, vk_other_index) = nia.preprocess(&vec![9u8, 9, 9]);
+    let (_pk_other, vk_other_index) = indexer
+        .preprocess_checked(&vec![9u8, 9, 9])
+        .expect("matching committed indices");
     assert!(
-        nia.verify(&vk_other_index, &session, &[7u8], &proof)
+        verifier
+            .verify(&vk_other_index, &session, &[7u8], &proof)
             .is_err(),
         "changing only the committed index must change the DSFS transcript"
     );
 
     // Changing only the per-claim instance must change the transcript.
     assert!(
-        nia.verify(&vk, &session, &[8u8], &proof).is_err(),
+        verifier.verify(&vk, &session, &[8u8], &proof).is_err(),
         "changing only the per-claim instance must change the DSFS transcript"
+    );
+
+    // Verifiers consume exactly one proof and reject trailing bytes.
+    let mut trailing = proof.into_bytes();
+    trailing.push(0);
+    assert!(
+        verifier
+            .verify(&vk, &session, &[7u8], &NargProof::from_bytes(trailing))
+            .is_err()
     );
 }

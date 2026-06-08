@@ -25,8 +25,8 @@ use spongefish_dsfs as dsfs;
 
 use ia_core::prelude::*;
 use ia_core::{
-    ProverChannel, ReductionSecurity, SecurityErrorBound, SecurityProfile,
-    VerificationError, VerificationResult, VerifierChannel,
+    ProverChannel, ReductionSecurity, SecurityErrorBound, SecurityProfile, VerificationError,
+    VerificationResult, VerifierChannel,
 };
 
 // ---------------------------------------------------------------------------
@@ -52,10 +52,11 @@ struct TargetInstance {
 // InteractiveReduction impl
 // ---------------------------------------------------------------------------
 
-struct Accumulate;
+struct AccumulateProver;
+struct AccumulateVerifier;
 
 ia_core::impl_interactive_reduction! {
-impl InteractiveReduction for Accumulate {
+prover impl for AccumulateProver {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"warp-style rlc accumulator")
     }
@@ -94,6 +95,18 @@ impl InteractiveReduction for Accumulate {
         )
     }
 
+}
+}
+
+ia_core::impl_interactive_reduction! {
+verifier impl for AccumulateVerifier {
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        ia_core::pad_protocol_id(b"warp-style rlc accumulator")
+    }
+
+    type SourceInstance = SourceInstance;
+    type TargetInstance = TargetInstance;
+
     fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,
@@ -126,7 +139,7 @@ impl InteractiveReduction for Accumulate {
 }
 }
 
-impl ReductionSecurity for Accumulate {
+impl ReductionSecurity for AccumulateVerifier {
     type SourceParams = ();
     type SourceBound = ();
     type TargetBound = ();
@@ -180,16 +193,19 @@ fn main() {
     let witness = values;
 
     let session = spongefish::session!("argus example: warp accumulate");
-    let nir = dsfs::plain_non_interactive_reduction(Accumulate, dsfs::Keccak::default());
+    let prover =
+        dsfs::plain_non_interactive_reduction_prover(AccumulateProver, dsfs::Keccak::default());
+    let verifier =
+        dsfs::plain_non_interactive_reduction_verifier(AccumulateVerifier, dsfs::Keccak::default());
 
-    let (proof, _, _) = nir.prove(&session, &instance, &witness);
+    let (proof, _, _) = prover.prove(&session, &instance, &witness);
     println!(
         "Accumulation proof ({n} instances, {} bytes):\n{}",
         proof.len(),
         hex::encode(proof.as_bytes())
     );
 
-    let target = nir
+    let target = verifier
         .verify(&session, &instance, &proof)
         .expect("reduction failed");
     println!(
@@ -219,9 +235,14 @@ mod tests {
         let witness = values;
 
         let session = spongefish::session!("argus example: warp accumulate");
-        let nir = dsfs::plain_non_interactive_reduction(Accumulate, dsfs::Keccak::default());
-        let (proof, _, _) = nir.prove(&session, &instance, &witness);
-        let target = nir
+        let prover =
+            dsfs::plain_non_interactive_reduction_prover(AccumulateProver, dsfs::Keccak::default());
+        let verifier = dsfs::plain_non_interactive_reduction_verifier(
+            AccumulateVerifier,
+            dsfs::Keccak::default(),
+        );
+        let (proof, _, _) = prover.prove(&session, &instance, &witness);
+        let target = verifier
             .verify(&session, &instance, &proof)
             .expect("reduction failed");
         decide(&target).expect("decider rejected");

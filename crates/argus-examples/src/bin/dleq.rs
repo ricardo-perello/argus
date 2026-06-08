@@ -47,8 +47,8 @@ use spongefish_dsfs as dsfs;
 
 use ia_core::prelude::*;
 use ia_core::{
-    CommittedIndex, CommittedIndexBytes, Decoding, Deserialize, Encoding, PreprocessingCore,
-    ProverChannel, VerificationError, VerificationResult, VerifierChannel,
+    CommittedIndex, CommittedIndexBytes, Decoding, Deserialize, Encoding, Indexer, ProverChannel,
+    VerificationError, VerificationResult, VerifierChannel,
 };
 
 // ---------------------------------------------------------------------------
@@ -80,28 +80,33 @@ impl<G: CurveGroup + Encoding> CommittedIndex for DleqKey<G> {
 // The body — implements the indexed author trait
 // ---------------------------------------------------------------------------
 
-struct Dleq<G: CurveGroup>(core::marker::PhantomData<G>);
+fn dleq_protocol_id() -> [u8; 32] {
+    ia_core::pad_protocol_id(b"dleq-chaum-pedersen")
+}
 
-impl<G: CurveGroup> Default for Dleq<G> {
+struct DleqIndexer<G: CurveGroup>(core::marker::PhantomData<G>);
+
+struct DleqProver<G: CurveGroup>(core::marker::PhantomData<G>);
+
+struct DleqVerifier<G: CurveGroup>(core::marker::PhantomData<G>);
+
+impl<G: CurveGroup> Default for DleqIndexer<G> {
     fn default() -> Self {
         Self(core::marker::PhantomData)
     }
 }
 
 ia_core::impl_preprocessing_argument! {
-    impl<G> PreprocessingInteractiveArgument for Dleq<G>
+    indexer impl<G> for DleqIndexer<G>
     where
-        G: CurveGroup + PrimeGroup + Encoding + Deserialize,
-        G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
+        G: CurveGroup + Encoding,
     {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
-            ia_core::pad_protocol_id(b"dleq-chaum-pedersen")
+            dleq_protocol_id()
         }
 
         /// (u, v) — the per-claim DLEQ pair
         type Instance = (G, G);
-        /// x
-        type Witness = G::ScalarField;
         /// (g, h)
         type Index = (G, G);
         type ProverKey = DleqKey<G>;
@@ -115,6 +120,30 @@ ia_core::impl_preprocessing_argument! {
             let key = DleqKey { g: ix.0, h: ix.1 };
             (key.clone(), key)
         }
+    }
+}
+
+impl<G: CurveGroup> Default for DleqProver<G> {
+    fn default() -> Self {
+        Self(core::marker::PhantomData)
+    }
+}
+
+ia_core::impl_preprocessing_argument! {
+    prover impl<G> for DleqProver<G>
+    where
+        G: CurveGroup + PrimeGroup + Encoding + Deserialize,
+        G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
+    {
+        fn protocol_id(&self) -> impl AsRef<[u8]> {
+            dleq_protocol_id()
+        }
+
+        /// (u, v) — the per-claim DLEQ pair
+        type Instance = (G, G);
+        /// x
+        type Witness = G::ScalarField;
+        type ProverKey = DleqKey<G>;
 
         #[allow(non_snake_case)]
         fn prove<P: ProverChannel<Unit = u8>>(
@@ -138,6 +167,28 @@ ia_core::impl_preprocessing_argument! {
             let r = k + c * x;
             ch.send_prover_message(&r);
         }
+    }
+}
+
+impl<G: CurveGroup> Default for DleqVerifier<G> {
+    fn default() -> Self {
+        Self(core::marker::PhantomData)
+    }
+}
+
+ia_core::impl_preprocessing_argument! {
+    verifier impl<G> for DleqVerifier<G>
+    where
+        G: CurveGroup + PrimeGroup + Encoding + Deserialize,
+        G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
+    {
+        fn protocol_id(&self) -> impl AsRef<[u8]> {
+            dleq_protocol_id()
+        }
+
+        /// (u, v) — the per-claim DLEQ pair
+        type Instance = (G, G);
+        type VerifierKey = DleqKey<G>;
 
         #[allow(non_snake_case)]
         fn verify<V: VerifierChannel<Unit = u8>>(
@@ -180,13 +231,20 @@ fn main() {
     let h = g * x; // public key
 
     // -------- preprocessing step -------------------------------------------
-    // preprocessing_non_interactive_argument(body, sponge) is the stateless
-    // compiled wrapper; .preprocess(&(g, h)) runs body.preprocess(&(g, h)) once and
-    // returns (prover_key, verifier_key). Keys are
-    // then passed as inputs to prove/verify — the wrapper stores nothing.
-    let nia_dleq =
-        dsfs::preprocessing_non_interactive_argument(Dleq::<G>::default(), dsfs::Keccak::default());
-    let (proving_key, verifier_key) = nia_dleq.preprocess(&(g, h));
+    // The indexer derives both keys once. The prover and verifier roles are
+    // compiled independently and receive only their own key.
+    let indexer = DleqIndexer::<G>::default();
+    let prover = dsfs::preprocessing_non_interactive_argument_prover(
+        DleqProver::<G>::default(),
+        dsfs::Keccak::default(),
+    );
+    let verifier = dsfs::preprocessing_non_interactive_argument_verifier(
+        DleqVerifier::<G>::default(),
+        dsfs::Keccak::default(),
+    );
+    let (proving_key, verifier_key) = indexer
+        .preprocess_checked(&(g, h))
+        .expect("matching committed indices");
 
     // -------- inspect the preprocessed key directly ------------------------
     println!("Preprocessed public key:");
@@ -205,8 +263,8 @@ fn main() {
         let u = G::generator() * F::rand(&mut OsRng);
         let v = u * x;
         let instance = (u, v);
-        let proof = nia_dleq.prove(&proving_key, &session, &instance, &x);
-        nia_dleq
+        let proof = prover.prove(&proving_key, &session, &instance, &x);
+        verifier
             .verify(&verifier_key, &session, &instance, &proof)
             .expect("verify");
         println!(
@@ -224,8 +282,7 @@ fn main() {
 mod tests {
     use super::*;
     use ia_core::{
-        IntoProver, IntoVerifier, PreprocessingNonInteractiveArgumentProver,
-        PreprocessingNonInteractiveArgumentVerifier,
+        PreprocessingNonInteractiveArgumentProver, PreprocessingNonInteractiveArgumentVerifier,
     };
 
     type G = ark_curve25519::EdwardsProjective;
@@ -246,35 +303,42 @@ mod tests {
     fn dleq_roundtrip() {
         let session = spongefish::session!("dleq test");
         let (g, x, h) = keygen();
-        let nia = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
-            Dleq::<G>::default(),
+        let indexer = DleqIndexer::<G>::default();
+        let prover = dsfs::preprocessing_non_interactive_argument_prover::<_, [u8; 64], _>(
+            DleqProver::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let (pk, vk) = nia.preprocess(&(g, h));
+        let verifier = dsfs::preprocessing_non_interactive_argument_verifier::<_, [u8; 64], _>(
+            DleqVerifier::<G>::default(),
+            dsfs::Keccak::default(),
+        );
+        let (pk, vk) = indexer
+            .preprocess_checked(&(g, h))
+            .expect("matching committed indices");
 
         let u = G::generator() * F::rand(&mut OsRng);
         let v = u * x;
-        let proof = nia.prove(&pk, &session, &(u, v), &x);
-        nia.verify(&vk, &session, &(u, v), &proof)
+        let proof = prover.prove(&pk, &session, &(u, v), &x);
+        verifier
+            .verify(&vk, &session, &(u, v), &proof)
             .expect("verify under correct key");
     }
 
     #[test]
-    fn dleq_via_separate_prover_and_verifier_views() {
+    fn dleq_via_separate_prover_and_verifier_roles() {
         let session = spongefish::session!("dleq role split test");
         let (g, x, h) = keygen();
-        let nia = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
-            Dleq::<G>::default(),
-            dsfs::Keccak::default(),
-        );
-        let (pk, vk) = nia.preprocess(&(g, h));
+        let indexer = DleqIndexer::<G>::default();
+        let (pk, vk) = indexer
+            .preprocess_checked(&(g, h))
+            .expect("matching committed indices");
 
-        let prover_nia = dsfs::preprocessing_non_interactive_argument(
-            Dleq::<G>::default().into_prover(),
+        let prover_nia = dsfs::preprocessing_non_interactive_argument_prover(
+            DleqProver::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let verifier_nia = dsfs::preprocessing_non_interactive_argument(
-            Dleq::<G>::default().into_verifier(),
+        let verifier_nia = dsfs::preprocessing_non_interactive_argument_verifier(
+            DleqVerifier::<G>::default(),
             dsfs::Keccak::default(),
         );
 
@@ -302,22 +366,32 @@ mod tests {
         let (g, x_alice, h_alice) = keygen();
         let (_, _x_bob, h_bob) = keygen();
 
-        let nia = dsfs::preprocessing_non_interactive_argument(
-            Dleq::<G>::default(),
+        let indexer = DleqIndexer::<G>::default();
+        let prover = dsfs::preprocessing_non_interactive_argument_prover(
+            DleqProver::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let (pk_alice, _vk_alice) = nia.preprocess(&(g, h_alice));
-        let (_pk_bob, vk_bob) = nia.preprocess(&(g, h_bob));
+        let verifier = dsfs::preprocessing_non_interactive_argument_verifier(
+            DleqVerifier::<G>::default(),
+            dsfs::Keccak::default(),
+        );
+        let (pk_alice, _vk_alice) = indexer
+            .preprocess_checked(&(g, h_alice))
+            .expect("matching committed indices");
+        let (_pk_bob, vk_bob) = indexer
+            .preprocess_checked(&(g, h_bob))
+            .expect("matching committed indices");
         assert_ne!(pk_alice.committed_index(), vk_bob.committed_index());
 
         // Alice produces a valid DLEQ for (u, u^x_alice).
         let u = G::generator() * F::rand(&mut OsRng);
         let v_alice = u * x_alice;
-        let proof = nia.prove(&pk_alice, &session, &(u, v_alice), &x_alice);
+        let proof = prover.prove(&pk_alice, &session, &(u, v_alice), &x_alice);
 
         // Verifying under Bob's key rejects — the bound public key differs.
         assert!(
-            nia.verify(&vk_bob, &session, &(u, v_alice), &proof)
+            verifier
+                .verify(&vk_bob, &session, &(u, v_alice), &proof)
                 .is_err()
         );
     }
@@ -329,16 +403,27 @@ mod tests {
     fn dleq_rejects_inconsistent_pair() {
         let session = spongefish::session!("dleq test");
         let (g, x, h) = keygen();
-        let nia = dsfs::preprocessing_non_interactive_argument(
-            Dleq::<G>::default(),
+        let indexer = DleqIndexer::<G>::default();
+        let prover = dsfs::preprocessing_non_interactive_argument_prover(
+            DleqProver::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let (pk, vk) = nia.preprocess(&(g, h));
+        let verifier = dsfs::preprocessing_non_interactive_argument_verifier(
+            DleqVerifier::<G>::default(),
+            dsfs::Keccak::default(),
+        );
+        let (pk, vk) = indexer
+            .preprocess_checked(&(g, h))
+            .expect("matching committed indices");
 
         let u = G::generator() * F::rand(&mut OsRng);
         let v_wrong = u * F::rand(&mut OsRng); // not u^x
-        let proof = nia.prove(&pk, &session, &(u, v_wrong), &x);
-        assert!(nia.verify(&vk, &session, &(u, v_wrong), &proof).is_err());
+        let proof = prover.prove(&pk, &session, &(u, v_wrong), &x);
+        assert!(
+            verifier
+                .verify(&vk, &session, &(u, v_wrong), &proof)
+                .is_err()
+        );
     }
 
     /// The proving key carries the tagged committed index derived from the
@@ -346,11 +431,9 @@ mod tests {
     #[test]
     fn dleq_proving_key_carries_tagged_committed_index() {
         let (g, _x, h) = keygen();
-        let nia = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
-            Dleq::<G>::default(),
-            dsfs::Keccak::default(),
-        );
-        let (pk, _vk) = nia.preprocess(&(g, h));
+        let (pk, _vk) = DleqIndexer::<G>::default()
+            .preprocess_checked(&(g, h))
+            .expect("matching committed indices");
         assert!(pk.committed_index().as_bytes().starts_with(b"dleq:vk:v1"));
     }
 }

@@ -1,56 +1,67 @@
-//! Trivial preprocessing adapters for plain protocols in mixed compositions.
+//! Role-specific trivial preprocessing adapters for plain protocols.
 
 use crate::{
-    ArgumentCore, InteractiveArgumentProver, InteractiveArgumentVerifier,
-    InteractiveReductionProver, InteractiveReductionVerifier, PreprocessingCore,
+    ArgumentCore, ArgumentProverCore, Indexer, InteractiveArgumentProver,
+    InteractiveArgumentVerifier, InteractiveReductionProver, InteractiveReductionVerifier,
     PreprocessingInteractiveArgumentProver, PreprocessingInteractiveArgumentVerifier,
     PreprocessingInteractiveReductionProver, PreprocessingInteractiveReductionVerifier,
-    ProtocolCore, ProverChannel, ReductionCore, VerificationResult, VerifierChannel,
+    ProtocolCore, ProverChannel, ReductionCore, ReductionProverCore, VerificationResult,
+    VerifierChannel,
 };
 
-/// Wraps a plain interactive argument as a preprocessing interactive argument
-/// with unit index and unit keys (empty committed index).
-///
-/// Intended for the *inner* slot of a heterogeneous preprocessing composition so that
-/// a plain protocol can sit beside a real indexed component. Wrapping a plain
-/// protocol with this adapter and pushing it through preprocessing DSFS at the top
-/// level will NOT produce the same bytes as the plain DSFS path — the preprocessing
-/// transcript absorbs `IndexedInstance { committed_index: empty, instance: x }`
-/// instead of the bare `x`. Use the plain DSFS path for top-level plain
-/// protocols.
-///
-/// The core impls only need [`ArgumentCore`], and each leaf half only needs the
-/// matching inner half, so wrapping a prover-only (or verifier-only) inner
-/// protocol yields a prover-only (or verifier-only) adapter.
-pub struct TrivialIndexedArgument<A>(pub A);
+/// Indexer for a plain protocol embedded in a preprocessing composition.
+pub struct TrivialIndexer<T>(pub T);
 
-impl<A: ProtocolCore> ProtocolCore for TrivialIndexedArgument<A> {
+impl<T: ProtocolCore> ProtocolCore for TrivialIndexer<T> {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         self.0.protocol_id()
     }
 }
 
-impl<A: ArgumentCore> ArgumentCore for TrivialIndexedArgument<A> {
-    type Instance = A::Instance;
-    type Witness = A::Witness;
+impl<T: ArgumentCore> ArgumentCore for TrivialIndexer<T> {
+    type Instance = T::Instance;
 }
 
-impl<A: ArgumentCore> PreprocessingCore for TrivialIndexedArgument<A> {
+impl<T: ReductionCore> ReductionCore for TrivialIndexer<T> {
+    type SourceInstance = T::SourceInstance;
+    type TargetInstance = T::TargetInstance;
+}
+
+impl<T: ProtocolCore> Indexer for TrivialIndexer<T> {
     type Index = ();
     type ProverKey = ();
     type VerifierKey = ();
 
-    fn preprocess(&self, _: &()) -> ((), ()) {
+    fn preprocess(&self, _: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
         ((), ())
     }
 }
 
-impl<A: InteractiveArgumentProver> PreprocessingInteractiveArgumentProver
-    for TrivialIndexedArgument<A>
+/// Plain argument prover exposed through the preprocessing prover interface.
+pub struct TrivialIndexedArgumentProver<P>(pub P);
+
+impl<P: ProtocolCore> ProtocolCore for TrivialIndexedArgumentProver<P> {
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        self.0.protocol_id()
+    }
+}
+
+impl<P: ArgumentCore> ArgumentCore for TrivialIndexedArgumentProver<P> {
+    type Instance = P::Instance;
+}
+
+impl<P: ArgumentProverCore> ArgumentProverCore for TrivialIndexedArgumentProver<P> {
+    type Witness = P::Witness;
+}
+
+impl<P: InteractiveArgumentProver> PreprocessingInteractiveArgumentProver
+    for TrivialIndexedArgumentProver<P>
 {
-    fn prove<P: ProverChannel<Unit = u8>>(
+    type ProverKey = ();
+
+    fn prove<C: ProverChannel<Unit = u8>>(
         &self,
-        ch: &mut P,
+        ch: &mut C,
         _: &Self::ProverKey,
         instance: &Self::Instance,
         witness: &Self::Witness,
@@ -59,12 +70,27 @@ impl<A: InteractiveArgumentProver> PreprocessingInteractiveArgumentProver
     }
 }
 
-impl<A: InteractiveArgumentVerifier> PreprocessingInteractiveArgumentVerifier
-    for TrivialIndexedArgument<A>
+/// Plain argument verifier exposed through the preprocessing verifier interface.
+pub struct TrivialIndexedArgumentVerifier<V>(pub V);
+
+impl<V: ProtocolCore> ProtocolCore for TrivialIndexedArgumentVerifier<V> {
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        self.0.protocol_id()
+    }
+}
+
+impl<V: ArgumentCore> ArgumentCore for TrivialIndexedArgumentVerifier<V> {
+    type Instance = V::Instance;
+}
+
+impl<V: InteractiveArgumentVerifier> PreprocessingInteractiveArgumentVerifier
+    for TrivialIndexedArgumentVerifier<V>
 {
-    fn verify<V: VerifierChannel<Unit = u8>>(
+    type VerifierKey = ();
+
+    fn verify<C: VerifierChannel<Unit = u8>>(
         &self,
-        ch: &mut V,
+        ch: &mut C,
         _: &Self::VerifierKey,
         instance: &Self::Instance,
     ) -> VerificationResult<()> {
@@ -72,38 +98,33 @@ impl<A: InteractiveArgumentVerifier> PreprocessingInteractiveArgumentVerifier
     }
 }
 
-/// Reduction counterpart to [`TrivialIndexedArgument`].
-pub struct TrivialIndexedReduction<R>(pub R);
+/// Plain reduction prover exposed through the preprocessing prover interface.
+pub struct TrivialIndexedReductionProver<P>(pub P);
 
-impl<R: ProtocolCore> ProtocolCore for TrivialIndexedReduction<R> {
+impl<P: ProtocolCore> ProtocolCore for TrivialIndexedReductionProver<P> {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         self.0.protocol_id()
     }
 }
 
-impl<R: ReductionCore> ReductionCore for TrivialIndexedReduction<R> {
-    type SourceInstance = R::SourceInstance;
-    type TargetInstance = R::TargetInstance;
-    type SourceWitness = R::SourceWitness;
-    type TargetWitness = R::TargetWitness;
+impl<P: ReductionCore> ReductionCore for TrivialIndexedReductionProver<P> {
+    type SourceInstance = P::SourceInstance;
+    type TargetInstance = P::TargetInstance;
 }
 
-impl<R: ReductionCore> PreprocessingCore for TrivialIndexedReduction<R> {
-    type Index = ();
-    type ProverKey = ();
-    type VerifierKey = ();
-
-    fn preprocess(&self, _: &()) -> ((), ()) {
-        ((), ())
-    }
+impl<P: ReductionProverCore> ReductionProverCore for TrivialIndexedReductionProver<P> {
+    type SourceWitness = P::SourceWitness;
+    type TargetWitness = P::TargetWitness;
 }
 
-impl<R: InteractiveReductionProver> PreprocessingInteractiveReductionProver
-    for TrivialIndexedReduction<R>
+impl<P: InteractiveReductionProver> PreprocessingInteractiveReductionProver
+    for TrivialIndexedReductionProver<P>
 {
-    fn prove<P: ProverChannel<Unit = u8>>(
+    type ProverKey = ();
+
+    fn prove<C: ProverChannel<Unit = u8>>(
         &self,
-        ch: &mut P,
+        ch: &mut C,
         _: &Self::ProverKey,
         instance: &Self::SourceInstance,
         witness: &Self::SourceWitness,
@@ -112,12 +133,28 @@ impl<R: InteractiveReductionProver> PreprocessingInteractiveReductionProver
     }
 }
 
-impl<R: InteractiveReductionVerifier> PreprocessingInteractiveReductionVerifier
-    for TrivialIndexedReduction<R>
+/// Plain reduction verifier exposed through the preprocessing verifier interface.
+pub struct TrivialIndexedReductionVerifier<V>(pub V);
+
+impl<V: ProtocolCore> ProtocolCore for TrivialIndexedReductionVerifier<V> {
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        self.0.protocol_id()
+    }
+}
+
+impl<V: ReductionCore> ReductionCore for TrivialIndexedReductionVerifier<V> {
+    type SourceInstance = V::SourceInstance;
+    type TargetInstance = V::TargetInstance;
+}
+
+impl<V: InteractiveReductionVerifier> PreprocessingInteractiveReductionVerifier
+    for TrivialIndexedReductionVerifier<V>
 {
-    fn verify<V: VerifierChannel<Unit = u8>>(
+    type VerifierKey = ();
+
+    fn verify<C: VerifierChannel<Unit = u8>>(
         &self,
-        ch: &mut V,
+        ch: &mut C,
         _: &Self::VerifierKey,
         instance: &Self::SourceInstance,
     ) -> VerificationResult<Self::TargetInstance> {

@@ -3,9 +3,9 @@
 use super::{ChainedReduction, ReducedArgument};
 use crate::channel::{ProverChannel, VerifierChannel};
 use crate::{
-    ArgumentSecurity, InteractiveArgument, InteractiveArgumentProver, InteractiveArgumentVerifier,
-    InteractiveReduction, InteractiveReductionProver, InteractiveReductionVerifier,
-    ReductionSecurity, SecurityProfile, VerificationResult,
+    ArgumentSecurity, InteractiveArgumentProver, InteractiveArgumentVerifier,
+    InteractiveReductionProver, InteractiveReductionVerifier, ReductionSecurity, SecurityProfile,
+    VerificationResult,
 };
 
 impl<First, Second> InteractiveReductionProver for ChainedReduction<First, Second>
@@ -30,10 +30,7 @@ where
 impl<First, Second> InteractiveReductionVerifier for ChainedReduction<First, Second>
 where
     First: InteractiveReductionVerifier,
-    Second: InteractiveReductionVerifier<
-            SourceInstance = First::TargetInstance,
-            SourceWitness = First::TargetWitness,
-        >,
+    Second: InteractiveReductionVerifier<SourceInstance = First::TargetInstance>,
 {
     fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
@@ -47,11 +44,9 @@ where
 
 impl<First, Second> ReductionSecurity for ChainedReduction<First, Second>
 where
-    First: InteractiveReduction + ReductionSecurity,
-    Second: InteractiveReduction<
-            SourceInstance = First::TargetInstance,
-            SourceWitness = First::TargetWitness,
-        > + ReductionSecurity<SourceBound = First::TargetBound>,
+    First: InteractiveReductionVerifier + ReductionSecurity,
+    Second: InteractiveReductionVerifier<SourceInstance = First::TargetInstance>
+        + ReductionSecurity<SourceBound = First::TargetBound>,
 {
     type SourceParams = First::SourceParams;
     type SourceBound = First::SourceBound;
@@ -109,7 +104,7 @@ where
 impl<R, A> InteractiveArgumentVerifier for ReducedArgument<R, A>
 where
     R: InteractiveReductionVerifier,
-    A: InteractiveArgumentVerifier<Instance = R::TargetInstance, Witness = R::TargetWitness>,
+    A: InteractiveArgumentVerifier<Instance = R::TargetInstance>,
 {
     fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
@@ -123,8 +118,8 @@ where
 
 impl<R, A> ArgumentSecurity for ReducedArgument<R, A>
 where
-    R: InteractiveReduction + ReductionSecurity,
-    A: InteractiveArgument<Instance = R::TargetInstance, Witness = R::TargetWitness>
+    R: InteractiveReductionVerifier + ReductionSecurity,
+    A: InteractiveArgumentVerifier<Instance = R::TargetInstance>
         + ArgumentSecurity<InstanceBound = R::TargetBound>,
 {
     type InstanceParams = R::SourceParams;
@@ -157,7 +152,10 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ArgumentCore, ProtocolCore, ReductionCore, SecurityErrorBound, VerifierChannel};
+    use crate::{
+        ArgumentCore, ArgumentProverCore, ProtocolCore, ReductionCore, ReductionProverCore,
+        SecurityErrorBound, VerifierChannel,
+    };
 
     #[derive(Default)]
     struct SizedReduction;
@@ -171,6 +169,9 @@ mod tests {
     impl ReductionCore for SizedReduction {
         type SourceInstance = usize;
         type TargetInstance = usize;
+    }
+
+    impl ReductionProverCore for SizedReduction {
         type SourceWitness = ();
         type TargetWitness = ();
     }
@@ -244,6 +245,9 @@ mod tests {
 
     impl ArgumentCore for BoundedArgument {
         type Instance = usize;
+    }
+
+    impl ArgumentProverCore for BoundedArgument {
         type Witness = ();
     }
 

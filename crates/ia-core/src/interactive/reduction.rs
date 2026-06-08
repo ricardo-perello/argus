@@ -1,14 +1,11 @@
-//! Interactive oracle reduction traits: the prover half
-//! ([`InteractiveReductionProver`]), the verifier half
-//! ([`InteractiveReductionVerifier`]), and their conjunction
-//! ([`InteractiveReduction`]).
+//! Interactive oracle reduction prover and verifier roles.
 
-use crate::ReductionCore;
 use crate::VerificationResult;
 use crate::channel::{ProverChannel, VerifierChannel};
+use crate::{ReductionCore, ReductionProverCore};
 
 /// Prover half of an executable public-coin interactive oracle reduction.
-pub trait InteractiveReductionProver: ReductionCore {
+pub trait InteractiveReductionProver: ReductionProverCore {
     /// Prover logic: takes `(source_instance, source_witness)` and returns both the target
     /// instance and target witness.  In a public-coin protocol the prover can always compute
     /// the target instance (it sees the same transcript as the verifier).
@@ -29,15 +26,3 @@ pub trait InteractiveReductionVerifier: ReductionCore {
         instance: &Self::SourceInstance,
     ) -> VerificationResult<Self::TargetInstance>;
 }
-
-/// Executable public-coin interactive oracle reduction: both halves.
-///
-/// Unlike an `InteractiveArgument` whose verifier outputs accept/reject,
-/// an `InteractiveReduction` verifier outputs a **new instance** of a
-/// (potentially simpler) target relation. Marker conjunction of
-/// [`InteractiveReductionProver`] and [`InteractiveReductionVerifier`]; the
-/// blanket impl makes any type implementing both halves an `InteractiveReduction`
-/// automatically.
-pub trait InteractiveReduction: InteractiveReductionProver + InteractiveReductionVerifier {}
-
-impl<T: InteractiveReductionProver + InteractiveReductionVerifier> InteractiveReduction for T {}

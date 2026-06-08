@@ -1,66 +1,83 @@
-//! `SigmaIA<S>`: [`InteractiveArgument`] wrapper for any [`SigmaProtocol`].
+//! Role-first interactive-argument adapters for [`SigmaProtocol`].
 //!
-//! ## Design notes
-//!
-//! `SigmaIA<S>` maps the 3-message sigma protocol shape onto the IA channel API:
-//!   - prover: send commitment(s) → read challenge → send response(s)
-//!   - verifier: read commitment(s) → derive challenge → read response(s) → call verifier()
-//!
-//! **Protocol id:** `protocol_identifier()` (64-byte sigma-proofs label or runtime hash for
-//! compositions) is mixed with compilation info and session via spongefish
-//! [`spongefish::DomainSeparator::derive`] in DSFS.
-//!
-//! Note: SigmaIA proofs are NOT byte-for-byte compatible with sigma-proofs `Nizk` (different
-//! domain separator structure). For spec-compatible proofs use `sigma_bridge::prove/verify`.
-//!
-//! **Randomness:** Commit randomness is supplied as a `[u8; 32]` seed bundled into the
-//! witness: `type Witness = (S::Witness, [u8; 32])`. The seed is expanded via
-//! `ChaCha20Rng::from_seed` before calling `prover_commit`, keeping the prover deterministic.
-//!
-//! **Instance encoding:** `Encoding` is implemented for `SigmaIA<S>` by forwarding to
-//! `SigmaProtocol::instance_label()`.
+//! [`SigmaIA`] is the encoded public instance. [`SigmaIAProver`] and
+//! [`SigmaIAVerifier`] are independent executable roles that retain the exact
+//! 64-byte upstream protocol identifier, including identifiers computed from a
+//! runtime composition tree.
 
 extern crate alloc;
 
 use alloc::vec::Vec;
+use core::marker::PhantomData;
 
 use ia_core::{
-    ArgumentCore, InteractiveArgumentProver, InteractiveArgumentVerifier, ProtocolCore,
-    ProverChannel, VerificationError, VerificationResult, VerifierChannel,
+    ArgumentCore, ArgumentProverCore, InteractiveArgumentProver, InteractiveArgumentVerifier,
+    ProtocolCore, ProverChannel, VerificationError, VerificationResult, VerifierChannel,
 };
 use rand_chacha::rand_core::SeedableRng;
 use sigma_proofs::traits::SigmaProtocol;
 use spongefish::Encoding;
 
-/// Wraps a [`SigmaProtocol`] as an [`InteractiveArgument`].
-///
-/// `S` acts as both the protocol parameters and the public instance.
-/// The witness bundles `(S::Witness, commit_seed)` where `commit_seed: [u8; 32]`
-/// provides fresh randomness for `prover_commit` via `ChaCha20Rng`.
+/// Public sigma-protocol instance absorbed by DSFS.
 pub struct SigmaIA<S>(pub S);
 
-impl<S> ProtocolCore for SigmaIA<S>
-where
-    S: SigmaProtocol,
-{
-    fn protocol_id(&self) -> impl AsRef<[u8]> {
-        // The full 64-byte sigma-proofs identifier. For `ComposedRelation` this
-        // is computed at runtime from the composition tree; for canonical
-        // sigma protocols it is a static ASCII label zero-padded to 64 bytes.
-        // DSFS passes this with `SpongeInfo` and encoded session into `DomainSeparator::derive`.
-        self.0.protocol_identifier()
+/// Prover adapter for a sigma-protocol instance.
+pub struct SigmaIAProver<S> {
+    protocol_id: [u8; 64],
+    _protocol: PhantomData<S>,
+}
+
+/// Verifier adapter for a sigma-protocol instance.
+pub struct SigmaIAVerifier<S> {
+    protocol_id: [u8; 64],
+    _protocol: PhantomData<S>,
+}
+
+impl<S: SigmaProtocol> SigmaIAProver<S> {
+    #[must_use]
+    pub fn new(instance: &SigmaIA<S>) -> Self {
+        Self {
+            protocol_id: instance.0.protocol_identifier(),
+            _protocol: PhantomData,
+        }
     }
 }
 
-impl<S> ArgumentCore for SigmaIA<S>
-where
-    S: SigmaProtocol,
-{
+impl<S: SigmaProtocol> SigmaIAVerifier<S> {
+    #[must_use]
+    pub fn new(instance: &SigmaIA<S>) -> Self {
+        Self {
+            protocol_id: instance.0.protocol_identifier(),
+            _protocol: PhantomData,
+        }
+    }
+}
+
+impl<S> ProtocolCore for SigmaIAProver<S> {
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        self.protocol_id
+    }
+}
+
+impl<S> ProtocolCore for SigmaIAVerifier<S> {
+    fn protocol_id(&self) -> impl AsRef<[u8]> {
+        self.protocol_id
+    }
+}
+
+impl<S: SigmaProtocol> ArgumentCore for SigmaIAProver<S> {
     type Instance = SigmaIA<S>;
+}
+
+impl<S: SigmaProtocol> ArgumentProverCore for SigmaIAProver<S> {
     type Witness = (S::Witness, [u8; 32]);
 }
 
-impl<S> InteractiveArgumentProver for SigmaIA<S>
+impl<S: SigmaProtocol> ArgumentCore for SigmaIAVerifier<S> {
+    type Instance = SigmaIA<S>;
+}
+
+impl<S> InteractiveArgumentProver for SigmaIAProver<S>
 where
     S: SigmaProtocol,
 {
@@ -70,32 +87,31 @@ where
         instance: &SigmaIA<S>,
         witness: &(S::Witness, [u8; 32]),
     ) {
-        let (w, seed) = witness;
+        let (witness, seed) = witness;
         let mut rng = rand_chacha::ChaCha20Rng::from_seed(*seed);
 
         let (commitment, state) = instance
             .0
-            .prover_commit(w, &mut rng)
+            .prover_commit(witness, &mut rng)
             .expect("honest prover commit must not fail");
 
-        for c in &commitment {
-            ch.send_prover_message(c);
+        for value in &commitment {
+            ch.send_prover_message(value);
         }
 
         let challenge: S::Challenge = ch.read_verifier_message();
-
         let response = instance
             .0
             .prover_response(state, &challenge)
             .expect("honest prover response must not fail");
 
-        for r in &response {
-            ch.send_prover_message(r);
+        for value in &response {
+            ch.send_prover_message(value);
         }
     }
 }
 
-impl<S> InteractiveArgumentVerifier for SigmaIA<S>
+impl<S> InteractiveArgumentVerifier for SigmaIAVerifier<S>
 where
     S: SigmaProtocol,
 {
@@ -123,9 +139,6 @@ where
     }
 }
 
-/// Bridges [`SigmaProtocol::instance_label`] to spongefish's [`Encoding`] trait.
-///
-/// This lets DSFS absorb the sigma instance into the transcript via `.instance(instance)`.
 impl<S: SigmaProtocol> Encoding for SigmaIA<S> {
     fn encode(&self) -> impl AsRef<[u8]> {
         self.0.instance_label().as_ref().to_vec()

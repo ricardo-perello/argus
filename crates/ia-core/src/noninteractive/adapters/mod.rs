@@ -2,4 +2,4 @@
 
 mod narg_to_interactive;
 
-pub use narg_to_interactive::NargAsInteractiveArgument;
+pub use narg_to_interactive::{NargProverAsInteractiveArgument, NargVerifierAsInteractiveArgument};

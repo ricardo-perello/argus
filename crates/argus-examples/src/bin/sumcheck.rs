@@ -6,11 +6,10 @@ use spongefish::Encoding;
 use spongefish_dsfs as dsfs;
 
 use ia_core::prelude::*;
-use ia_core::{
-    ProverChannel, VerificationError, VerificationResult, VerifierChannel,
-};
+use ia_core::{ProverChannel, VerificationError, VerificationResult, VerifierChannel};
 
-struct Sumcheck;
+struct SumcheckProver;
+struct SumcheckVerifier;
 
 #[derive(Clone, Encoding)]
 struct Instance {
@@ -24,7 +23,7 @@ struct Instance {
     claimed_sum: Fr,
 }
 
-impl Sumcheck {
+impl SumcheckProver {
     fn expected_table_len(n: u32) -> Option<usize> {
         1usize.checked_shl(n)
     }
@@ -82,6 +81,12 @@ impl Sumcheck {
         debug_assert_eq!(table.len(), 1);
         debug_assert_eq!(table[0], claim);
     }
+}
+
+impl SumcheckVerifier {
+    fn expected_table_len(n: u32) -> Option<usize> {
+        1usize.checked_shl(n)
+    }
 
     fn verify_sumcheck<V: VerifierChannel<Unit = u8>>(
         ch: &mut V,
@@ -125,7 +130,7 @@ impl Sumcheck {
 }
 
 ia_core::impl_interactive_argument! {
-    impl InteractiveArgument for Sumcheck {
+    prover impl for SumcheckProver {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
             ia_core::pad_protocol_id(b"sumcheck proof")
         }
@@ -141,6 +146,17 @@ ia_core::impl_interactive_argument! {
         ) {
             Self::prove_sumcheck(ch, instance);
         }
+
+    }
+}
+
+ia_core::impl_interactive_argument! {
+    verifier impl for SumcheckVerifier {
+        fn protocol_id(&self) -> impl AsRef<[u8]> {
+            ia_core::pad_protocol_id(b"sumcheck proof")
+        }
+
+        type Instance = Instance;
 
         fn verify<V: VerifierChannel<Unit = u8>>(
             &self,
@@ -168,12 +184,16 @@ fn main() {
     };
 
     let session = spongefish::session!("argus examples");
-    let nia = dsfs::plain_non_interactive_argument(Sumcheck, dsfs::Keccak::default());
-    let proof = nia.prove(&session, &instance, &());
+    let prover =
+        dsfs::plain_non_interactive_argument_prover(SumcheckProver, dsfs::Keccak::default());
+    let verifier =
+        dsfs::plain_non_interactive_argument_verifier(SumcheckVerifier, dsfs::Keccak::default());
+    let proof = prover.prove(&session, &instance, &());
 
     println!("Sumcheck proof bytes:\n{}", hex::encode(proof.as_bytes()));
 
-    nia.verify(&session, &instance, &proof)
+    verifier
+        .verify(&session, &instance, &proof)
         .expect("Invalid proof");
 }
 
@@ -195,10 +215,16 @@ mod tests {
         };
 
         let session = spongefish::session!("argus examples");
-        let nia = dsfs::plain_non_interactive_argument(Sumcheck, dsfs::Keccak::default());
-        let proof = nia.prove(&session, &instance, &());
+        let prover =
+            dsfs::plain_non_interactive_argument_prover(SumcheckProver, dsfs::Keccak::default());
+        let verifier = dsfs::plain_non_interactive_argument_verifier(
+            SumcheckVerifier,
+            dsfs::Keccak::default(),
+        );
+        let proof = prover.prove(&session, &instance, &());
 
-        nia.verify(&session, &instance, &proof)
+        verifier
+            .verify(&session, &instance, &proof)
             .expect("sumcheck verification failed");
     }
 
@@ -216,14 +242,19 @@ mod tests {
         };
 
         let session = spongefish::session!("argus examples");
-        let nia = dsfs::plain_non_interactive_argument(Sumcheck, dsfs::Keccak::default());
-        let proof = nia.prove(&session, &instance, &());
+        let prover =
+            dsfs::plain_non_interactive_argument_prover(SumcheckProver, dsfs::Keccak::default());
+        let verifier = dsfs::plain_non_interactive_argument_verifier(
+            SumcheckVerifier,
+            dsfs::Keccak::default(),
+        );
+        let proof = prover.prove(&session, &instance, &());
 
         let bad_instance = Instance {
             claimed_sum: instance.claimed_sum + Fr::one(),
             ..instance
         };
 
-        assert!(nia.verify(&session, &bad_instance, &proof).is_err());
+        assert!(verifier.verify(&session, &bad_instance, &proof).is_err());
     }
 }

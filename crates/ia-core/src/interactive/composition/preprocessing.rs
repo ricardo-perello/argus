@@ -1,17 +1,17 @@
 //! Preprocessing interactive composition impls.
 
 use crate::{
-    PreprocessingCore, PreprocessingInteractiveArgumentProver,
-    PreprocessingInteractiveArgumentVerifier, PreprocessingInteractiveReductionProver,
-    PreprocessingInteractiveReductionVerifier, ProverChannel, VerificationResult, VerifierChannel,
+    Indexer, PreprocessingInteractiveArgumentProver, PreprocessingInteractiveArgumentVerifier,
+    PreprocessingInteractiveReductionProver, PreprocessingInteractiveReductionVerifier,
+    ProverChannel, VerificationResult, VerifierChannel,
 };
 
 use super::{ChainedReduction, ReducedArgument};
 
-impl<First, Second> PreprocessingCore for ChainedReduction<First, Second>
+impl<First, Second> Indexer for ChainedReduction<First, Second>
 where
-    First: PreprocessingCore,
-    Second: PreprocessingCore,
+    First: Indexer,
+    Second: Indexer,
 {
     type Index = (First::Index, Second::Index);
     type ProverKey = (First::ProverKey, Second::ProverKey);
@@ -32,6 +32,8 @@ where
             SourceWitness = First::TargetWitness,
         >,
 {
+    type ProverKey = (First::ProverKey, Second::ProverKey);
+
     fn prove<P: ProverChannel<Unit = u8>>(
         &self,
         ch: &mut P,
@@ -47,11 +49,10 @@ where
 impl<First, Second> PreprocessingInteractiveReductionVerifier for ChainedReduction<First, Second>
 where
     First: PreprocessingInteractiveReductionVerifier,
-    Second: PreprocessingInteractiveReductionVerifier<
-            SourceInstance = First::TargetInstance,
-            SourceWitness = First::TargetWitness,
-        >,
+    Second: PreprocessingInteractiveReductionVerifier<SourceInstance = First::TargetInstance>,
 {
+    type VerifierKey = (First::VerifierKey, Second::VerifierKey);
+
     fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,
@@ -63,10 +64,10 @@ where
     }
 }
 
-impl<R, A> PreprocessingCore for ReducedArgument<R, A>
+impl<R, A> Indexer for ReducedArgument<R, A>
 where
-    R: PreprocessingCore,
-    A: PreprocessingCore,
+    R: Indexer,
+    A: Indexer,
 {
     type Index = (R::Index, A::Index);
     type ProverKey = (R::ProverKey, A::ProverKey);
@@ -87,6 +88,8 @@ where
             Witness = R::TargetWitness,
         >,
 {
+    type ProverKey = (R::ProverKey, A::ProverKey);
+
     fn prove<P: ProverChannel<Unit = u8>>(
         &self,
         ch: &mut P,
@@ -102,11 +105,10 @@ where
 impl<R, A> PreprocessingInteractiveArgumentVerifier for ReducedArgument<R, A>
 where
     R: PreprocessingInteractiveReductionVerifier,
-    A: PreprocessingInteractiveArgumentVerifier<
-            Instance = R::TargetInstance,
-            Witness = R::TargetWitness,
-        >,
+    A: PreprocessingInteractiveArgumentVerifier<Instance = R::TargetInstance>,
 {
+    type VerifierKey = (R::VerifierKey, A::VerifierKey);
+
     fn verify<V: VerifierChannel<Unit = u8>>(
         &self,
         ch: &mut V,

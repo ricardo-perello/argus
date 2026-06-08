@@ -14,8 +14,7 @@
 //!    `index` once over the long-term key pair `(g, h = g^x)`. It ships the
 //!    `ProverKey` to the prover and the `VerifierKey` to the verifier (each
 //!    carries the committed index). Each party then constructs its own PNIA
-//!    and wraps it with `Prover` / `Verifier` (the optional role-typed
-//!    wrappers). The prover never holds `vk`; the verifier never holds `pk`
+//!    prover/verifier role. The prover never holds `vk`; the verifier never holds `pk`
 //!    or a `prove` method. Per claim, the prover sends `((u, v), proof)`.
 //!
 //! Run:  cargo run -p argus-examples --bin multiparty_threads
@@ -32,30 +31,34 @@ use spongefish_dsfs as dsfs;
 
 use ia_core::prelude::*;
 use ia_core::{
-    CommittedIndex, CommittedIndexBytes, Decoding, Deserialize, Encoding, NargProof,
-    PreprocessingCore, ProverChannel, VerificationError, VerificationResult, VerifierChannel,
+    CommittedIndex, CommittedIndexBytes, Decoding, Deserialize, Encoding, Indexer, NargProof,
+    ProverChannel, VerificationError, VerificationResult, VerifierChannel,
 };
 
 // ---------------------------------------------------------------------------
 // Schnorr body (plain) — knowledge of `x` such that `h = g * x`.
 // ---------------------------------------------------------------------------
 
-struct Schnorr<C: CurveGroup>(core::marker::PhantomData<C>);
+fn schnorr_protocol_id() -> [u8; 32] {
+    ia_core::pad_protocol_id(b"multiparty-schnorr")
+}
 
-impl<C: CurveGroup> Default for Schnorr<C> {
+struct SchnorrProver<C: CurveGroup>(core::marker::PhantomData<C>);
+
+impl<C: CurveGroup> Default for SchnorrProver<C> {
     fn default() -> Self {
         Self(core::marker::PhantomData)
     }
 }
 
 ia_core::impl_interactive_argument! {
-    impl<C> InteractiveArgument for Schnorr<C>
+    prover impl<C> for SchnorrProver<C>
     where
         C: CurveGroup + PrimeGroup + Encoding + Deserialize,
         C::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
     {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
-            ia_core::pad_protocol_id(b"multiparty-schnorr")
+            schnorr_protocol_id()
         }
 
         type Instance = [C; 2];
@@ -77,6 +80,28 @@ ia_core::impl_interactive_argument! {
             let r = k + c * x;
             ch.send_prover_message(&r);
         }
+    }
+}
+
+struct SchnorrVerifier<C: CurveGroup>(core::marker::PhantomData<C>);
+
+impl<C: CurveGroup> Default for SchnorrVerifier<C> {
+    fn default() -> Self {
+        Self(core::marker::PhantomData)
+    }
+}
+
+ia_core::impl_interactive_argument! {
+    verifier impl<C> for SchnorrVerifier<C>
+    where
+        C: CurveGroup + PrimeGroup + Encoding + Deserialize,
+        C::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
+    {
+        fn protocol_id(&self) -> impl AsRef<[u8]> {
+            schnorr_protocol_id()
+        }
+
+        type Instance = [C; 2];
 
         #[allow(non_snake_case)]
         fn verify<V: VerifierChannel<Unit = u8>>(
@@ -119,26 +144,28 @@ impl<C: CurveGroup + Encoding> CommittedIndex for DleqKey<C> {
     }
 }
 
-struct Dleq<C: CurveGroup>(core::marker::PhantomData<C>);
+fn dleq_protocol_id() -> [u8; 32] {
+    ia_core::pad_protocol_id(b"multiparty-dleq")
+}
 
-impl<C: CurveGroup> Default for Dleq<C> {
+struct DleqIndexer<C: CurveGroup>(core::marker::PhantomData<C>);
+
+impl<C: CurveGroup> Default for DleqIndexer<C> {
     fn default() -> Self {
         Self(core::marker::PhantomData)
     }
 }
 
 ia_core::impl_preprocessing_argument! {
-    impl<C> PreprocessingInteractiveArgument for Dleq<C>
+    indexer impl<C> for DleqIndexer<C>
     where
-        C: CurveGroup + PrimeGroup + Encoding + Deserialize,
-        C::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
+        C: CurveGroup + Encoding,
     {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
-            ia_core::pad_protocol_id(b"multiparty-dleq")
+            dleq_protocol_id()
         }
 
         type Instance = (C, C);
-        type Witness = C::ScalarField;
         type Index = (C, C);
         type ProverKey = DleqKey<C>;
         type VerifierKey = DleqKey<C>;
@@ -147,6 +174,30 @@ ia_core::impl_preprocessing_argument! {
             let key = DleqKey { g: ix.0, h: ix.1 };
             (key.clone(), key)
         }
+    }
+}
+
+struct DleqProver<C: CurveGroup>(core::marker::PhantomData<C>);
+
+impl<C: CurveGroup> Default for DleqProver<C> {
+    fn default() -> Self {
+        Self(core::marker::PhantomData)
+    }
+}
+
+ia_core::impl_preprocessing_argument! {
+    prover impl<C> for DleqProver<C>
+    where
+        C: CurveGroup + PrimeGroup + Encoding + Deserialize,
+        C::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
+    {
+        fn protocol_id(&self) -> impl AsRef<[u8]> {
+            dleq_protocol_id()
+        }
+
+        type Instance = (C, C);
+        type Witness = C::ScalarField;
+        type ProverKey = DleqKey<C>;
 
         #[allow(non_snake_case)]
         fn prove<P: ProverChannel<Unit = u8>>(
@@ -170,6 +221,29 @@ ia_core::impl_preprocessing_argument! {
             let r = k + c * x;
             ch.send_prover_message(&r);
         }
+    }
+}
+
+struct DleqVerifier<C: CurveGroup>(core::marker::PhantomData<C>);
+
+impl<C: CurveGroup> Default for DleqVerifier<C> {
+    fn default() -> Self {
+        Self(core::marker::PhantomData)
+    }
+}
+
+ia_core::impl_preprocessing_argument! {
+    verifier impl<C> for DleqVerifier<C>
+    where
+        C: CurveGroup + PrimeGroup + Encoding + Deserialize,
+        C::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
+    {
+        fn protocol_id(&self) -> impl AsRef<[u8]> {
+            dleq_protocol_id()
+        }
+
+        type Instance = (C, C);
+        type VerifierKey = DleqKey<C>;
 
         #[allow(non_snake_case)]
         fn verify<V: VerifierChannel<Unit = u8>>(
@@ -214,8 +288,8 @@ fn demo_two_machine_plain() {
     // PROVER machine. Holds the witness `x`. Builds its own prover-only compiled
     // NIA from the public body + sponge config.
     let prover = thread::spawn(move || {
-        let nia = dsfs::plain_non_interactive_argument(
-            Schnorr::<G>::default().into_prover(),
+        let nia = dsfs::plain_non_interactive_argument_prover(
+            SchnorrProver::<G>::default(),
             dsfs::Keccak::default(),
         );
         let proof = nia.prove(&session, &[g, h], &x);
@@ -226,8 +300,8 @@ fn demo_two_machine_plain() {
 
     // VERIFIER machine. Holds no witness. Same body + sponge config, verifier-only view.
     let verifier = thread::spawn(move || {
-        let nia = dsfs::plain_non_interactive_argument(
-            Schnorr::<G>::default().into_verifier(),
+        let nia = dsfs::plain_non_interactive_argument_verifier(
+            SchnorrVerifier::<G>::default(),
             dsfs::Keccak::default(),
         );
         let proof = proof_rx.recv().expect("recv proof");
@@ -266,11 +340,9 @@ fn demo_three_machine_preprocessed() {
 
     // SETUP / INDEXER machine. Runs once, never touches witnesses.
     let setup = thread::spawn(move || {
-        let pnia = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
-            Dleq::<G>::default(),
-            dsfs::Keccak::default(),
-        );
-        let (prover_key, verifier_key) = pnia.preprocess(&(g, h));
+        let (prover_key, verifier_key) = DleqIndexer::<G>::default()
+            .preprocess_checked(&(g, h))
+            .expect("matching committed indices");
         let ci_hex = hex::encode(prover_key.committed_index().as_bytes());
         pk_tx.send(prover_key).expect("ship prover key");
         vk_tx.send(verifier_key).expect("ship verifier key");
@@ -279,11 +351,11 @@ fn demo_three_machine_preprocessed() {
     });
 
     // PROVER machine. Receives only the proving key. Builds its own pnia from a
-    // prover-only body (`into_prover()`), so the compiled object has no verify
+    // prover-only body, so the compiled object has no verify
     // method; the proving key is passed explicitly on each `prove` call.
     let prover = thread::spawn(move || {
-        let pnia = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
-            Dleq::<G>::default().into_prover(),
+        let pnia = dsfs::preprocessing_non_interactive_argument_prover::<_, [u8; 64], _>(
+            DleqProver::<G>::default(),
             dsfs::Keccak::default(),
         );
         let prover_key = pk_rx.recv().expect("recv prover key");
@@ -301,11 +373,11 @@ fn demo_three_machine_preprocessed() {
     });
 
     // VERIFIER machine. Receives only the verifier key. Builds its own pnia from a
-    // verifier-only body (`into_verifier()`), so the compiled object has no `prove`
+    // verifier-only body, so the compiled object has no `prove`
     // method; the verifier key is passed explicitly on each `verify` call.
     let verifier = thread::spawn(move || {
-        let pnia = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
-            Dleq::<G>::default().into_verifier(),
+        let pnia = dsfs::preprocessing_non_interactive_argument_verifier::<_, [u8; 64], _>(
+            DleqVerifier::<G>::default(),
             dsfs::Keccak::default(),
         );
         let verifier_key = vk_rx.recv().expect("recv verifier key");
@@ -340,7 +412,7 @@ fn main() {
 mod tests {
     use super::*;
     use ia_core::{
-        IntoProver, IntoVerifier, NonInteractiveArgumentProver, NonInteractiveArgumentVerifier,
+        NonInteractiveArgumentProver, NonInteractiveArgumentVerifier,
         PreprocessingNonInteractiveArgumentProver, PreprocessingNonInteractiveArgumentVerifier,
     };
 
@@ -370,12 +442,12 @@ mod tests {
         let instance = [g, h];
         let session = spongefish::session!("multiparty / plain schnorr role split");
 
-        let prover = dsfs::plain_non_interactive_argument(
-            Schnorr::<G>::default().into_prover(),
+        let prover = dsfs::plain_non_interactive_argument_prover(
+            SchnorrProver::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let verifier = dsfs::plain_non_interactive_argument(
-            Schnorr::<G>::default().into_verifier(),
+        let verifier = dsfs::plain_non_interactive_argument_verifier(
+            SchnorrVerifier::<G>::default(),
             dsfs::Keccak::default(),
         );
 
@@ -391,24 +463,22 @@ mod tests {
     }
 
     #[test]
-    fn preprocessed_dleq_uses_separate_prover_and_verifier_views() {
+    fn preprocessed_dleq_uses_separate_prover_and_verifier_roles() {
         let g = G::generator();
         let x = F::rand(&mut OsRng);
         let h = g * x;
         let session = spongefish::session!("multiparty / preprocessed dleq role split");
 
-        let setup = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
-            Dleq::<G>::default(),
-            dsfs::Keccak::default(),
-        );
-        let (pk, vk) = setup.preprocess(&(g, h));
+        let (pk, vk) = DleqIndexer::<G>::default()
+            .preprocess_checked(&(g, h))
+            .expect("matching committed indices");
 
-        let prover_pnia = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
-            Dleq::<G>::default().into_prover(),
+        let prover_pnia = dsfs::preprocessing_non_interactive_argument_prover::<_, [u8; 64], _>(
+            DleqProver::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let verifier_pnia = dsfs::preprocessing_non_interactive_argument::<_, [u8; 64], _>(
-            Dleq::<G>::default().into_verifier(),
+        let verifier_pnia = dsfs::preprocessing_non_interactive_argument_verifier::<_, [u8; 64], _>(
+            DleqVerifier::<G>::default(),
             dsfs::Keccak::default(),
         );
 

@@ -9,9 +9,9 @@ use curve25519_dalek::{
 };
 use rand_core::SeedableRng;
 
-use ia_core::prelude::*;
 use ia_core::ProtocolCore;
-use sigma_bridge::{SigmaIA, SigmaProtocol};
+use ia_core::prelude::*;
+use sigma_bridge::{SigmaIA, SigmaIAProver, SigmaIAVerifier, SigmaProtocol};
 use sigma_proofs::LinearRelation;
 use sigma_proofs::linear_relation::CanonicalLinearRelation;
 use spongefish_dsfs as dsfs;
@@ -42,10 +42,18 @@ fn sigmaia_dsfs_roundtrip() {
     let sigma_witness = (witness, commit_seed);
 
     let session = spongefish::session!("sigmaia-roundtrip-test");
-    let nia = dsfs::plain_non_interactive_argument(instance, dsfs::Keccak::default());
+    let prover = dsfs::plain_non_interactive_argument_prover(
+        SigmaIAProver::new(&instance),
+        dsfs::Keccak::default(),
+    );
+    let verifier = dsfs::plain_non_interactive_argument_verifier(
+        SigmaIAVerifier::new(&instance),
+        dsfs::Keccak::default(),
+    );
 
-    let proof = nia.prove(&session, &nia.ia, &sigma_witness);
-    nia.verify(&session, &nia.ia, &proof)
+    let proof = prover.prove(&session, &instance, &sigma_witness);
+    verifier
+        .verify(&session, &instance, &proof)
         .expect("verification must succeed");
 }
 
@@ -56,7 +64,8 @@ fn sigmaia_protocol_id_is_full_sigma_proofs_identifier() {
     // SigmaIA::protocol_id(&self) now returns the full 64-byte sigma-proofs identifier
     // (as an `impl AsRef<[u8]>`), not the first 32 bytes.
     let full_id = instance.0.protocol_identifier();
-    let ia_id = instance.protocol_id();
+    let verifier = SigmaIAVerifier::new(&instance);
+    let ia_id = verifier.protocol_id();
 
     assert_eq!(
         ia_id.as_ref(),

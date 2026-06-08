@@ -25,29 +25,36 @@ use rand::rngs::OsRng;
 use spongefish_dsfs as dsfs;
 
 use argus_examples::bulletproofs::{
-    inner_product, ipa_round_error, msm, random_statement, IpaInstance, IpaWitness,
+    IpaInstance, IpaWitness, inner_product, ipa_round_error, msm, random_statement,
 };
 use ia_core::prelude::*;
 use ia_core::{
-    ArgumentSecurity, ChainedReduction, Decoding, Deserialize, Encoding,
-    ProverChannel, ReducedArgument, ReductionSecurity, SecurityErrorBound, SecurityProfile,
-    VerificationError, VerificationResult, VerifierChannel,
+    ArgumentSecurity, ChainedReduction, Decoding, Deserialize, Encoding, ProverChannel,
+    ReducedArgument, ReductionSecurity, SecurityErrorBound, SecurityProfile, VerificationError,
+    VerificationResult, VerifierChannel,
 };
 
 // ---------------------------------------------------------------------------
 // IpaFold: one folding round as a reduction (n -> n/2)
 // ---------------------------------------------------------------------------
 
-struct IpaFold<G: CurveGroup>(core::marker::PhantomData<G>);
+struct IpaFoldProver<G: CurveGroup>(core::marker::PhantomData<G>);
+struct IpaFoldVerifier<G: CurveGroup>(core::marker::PhantomData<G>);
 
-impl<G: CurveGroup> Default for IpaFold<G> {
+impl<G: CurveGroup> Default for IpaFoldProver<G> {
+    fn default() -> Self {
+        Self(core::marker::PhantomData)
+    }
+}
+
+impl<G: CurveGroup> Default for IpaFoldVerifier<G> {
     fn default() -> Self {
         Self(core::marker::PhantomData)
     }
 }
 
 ia_core::impl_interactive_reduction! {
-    impl<G> InteractiveReduction for IpaFold<G>
+    prover impl<G> for IpaFoldProver<G>
     where
         G: CurveGroup + PrimeGroup + Encoding + Deserialize,
         G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
@@ -94,6 +101,22 @@ ia_core::impl_interactive_reduction! {
             (IpaInstance { g, h, u, p }, IpaWitness { a, b })
         }
 
+    }
+}
+
+ia_core::impl_interactive_reduction! {
+    verifier impl<G> for IpaFoldVerifier<G>
+    where
+        G: CurveGroup + PrimeGroup + Encoding + Deserialize,
+        G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
+    {
+        fn protocol_id(&self) -> impl AsRef<[u8]> {
+            ia_core::pad_protocol_id(b"bulletproofs-ipa-fold")
+        }
+
+        type SourceInstance = IpaInstance<G>;
+        type TargetInstance = IpaInstance<G>;
+
         #[allow(non_snake_case)]
         fn verify<V: VerifierChannel<Unit = u8>>(
             &self,
@@ -118,7 +141,7 @@ ia_core::impl_interactive_reduction! {
     }
 }
 
-impl<G> ReductionSecurity for IpaFold<G>
+impl<G> ReductionSecurity for IpaFoldVerifier<G>
 where
     G: CurveGroup + PrimeGroup + Encoding + Deserialize,
     G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
@@ -152,16 +175,23 @@ where
 // IpaBase: size-1 decider
 // ---------------------------------------------------------------------------
 
-struct IpaBase<G: CurveGroup>(core::marker::PhantomData<G>);
+struct IpaBaseProver<G: CurveGroup>(core::marker::PhantomData<G>);
+struct IpaBaseVerifier<G: CurveGroup>(core::marker::PhantomData<G>);
 
-impl<G: CurveGroup> Default for IpaBase<G> {
+impl<G: CurveGroup> Default for IpaBaseProver<G> {
+    fn default() -> Self {
+        Self(core::marker::PhantomData)
+    }
+}
+
+impl<G: CurveGroup> Default for IpaBaseVerifier<G> {
     fn default() -> Self {
         Self(core::marker::PhantomData)
     }
 }
 
 ia_core::impl_interactive_argument! {
-    impl<G> InteractiveArgument for IpaBase<G>
+    prover impl<G> for IpaBaseProver<G>
     where
         G: CurveGroup + PrimeGroup + Encoding + Deserialize,
         G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
@@ -184,6 +214,21 @@ ia_core::impl_interactive_argument! {
             ch.send_prover_message(&witness.b[0]);
         }
 
+    }
+}
+
+ia_core::impl_interactive_argument! {
+    verifier impl<G> for IpaBaseVerifier<G>
+    where
+        G: CurveGroup + PrimeGroup + Encoding + Deserialize,
+        G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
+    {
+        fn protocol_id(&self) -> impl AsRef<[u8]> {
+            ia_core::pad_protocol_id(b"bulletproofs-ipa-base")
+        }
+
+        type Instance = IpaInstance<G>;
+
         fn verify<V: VerifierChannel<Unit = u8>>(
             &self,
             ch: &mut V,
@@ -203,7 +248,7 @@ ia_core::impl_interactive_argument! {
     }
 }
 
-impl<G> ArgumentSecurity for IpaBase<G>
+impl<G> ArgumentSecurity for IpaBaseVerifier<G>
 where
     G: CurveGroup + PrimeGroup + Encoding + Deserialize,
     G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
@@ -230,9 +275,12 @@ where
 }
 
 // Static composition for n = 8 (three folds: 8 -> 4 -> 2 -> 1, then decide).
-type IpaFold2<G> = ChainedReduction<IpaFold<G>, IpaFold<G>>;
-type IpaFold3<G> = ChainedReduction<IpaFold2<G>, IpaFold<G>>;
-type ComposedIpa<G> = ReducedArgument<IpaFold3<G>, IpaBase<G>>;
+type IpaFold2Prover<G> = ChainedReduction<IpaFoldProver<G>, IpaFoldProver<G>>;
+type IpaFold3Prover<G> = ChainedReduction<IpaFold2Prover<G>, IpaFoldProver<G>>;
+type ComposedIpaProver<G> = ReducedArgument<IpaFold3Prover<G>, IpaBaseProver<G>>;
+type IpaFold2Verifier<G> = ChainedReduction<IpaFoldVerifier<G>, IpaFoldVerifier<G>>;
+type IpaFold3Verifier<G> = ChainedReduction<IpaFold2Verifier<G>, IpaFoldVerifier<G>>;
+type ComposedIpaVerifier<G> = ReducedArgument<IpaFold3Verifier<G>, IpaBaseVerifier<G>>;
 
 // ---------------------------------------------------------------------------
 // Demo
@@ -245,11 +293,19 @@ fn main() {
     println!("=== Composed IPA: ReducedArgument<Fold.Fold.Fold, Base>, n = {n} ===\n");
     let (instance, witness) = random_statement::<Demo>(n, &mut OsRng);
     let session = spongefish::session!("bulletproofs ipa reduction example");
-    let nia =
-        dsfs::plain_non_interactive_argument(ComposedIpa::<Demo>::default(), dsfs::Keccak::default());
-    let narg = nia.prove(&session, &instance, &witness);
+    let prover = dsfs::plain_non_interactive_argument_prover(
+        ComposedIpaProver::<Demo>::default(),
+        dsfs::Keccak::default(),
+    );
+    let verifier = dsfs::plain_non_interactive_argument_verifier(
+        ComposedIpaVerifier::<Demo>::default(),
+        dsfs::Keccak::default(),
+    );
+    let narg = prover.prove(&session, &instance, &witness);
     println!("Proof: {} bytes", narg.as_bytes().len());
-    nia.verify(&session, &instance, &narg).expect("composed verification failed");
+    verifier
+        .verify(&session, &instance, &narg)
+        .expect("composed verification failed");
     println!("Verification succeeded (reduction form reproduces the monolithic loop)");
 }
 
@@ -267,12 +323,17 @@ mod tests {
     fn composed_ipa_roundtrip() {
         let (instance, witness) = random_statement::<G>(8, &mut OsRng);
         let session = spongefish::session!("bulletproofs ipa reduction test");
-        let nia = dsfs::plain_non_interactive_argument(
-            ComposedIpa::<G>::default(),
+        let prover = dsfs::plain_non_interactive_argument_prover(
+            ComposedIpaProver::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let narg = nia.prove(&session, &instance, &witness);
-        nia.verify(&session, &instance, &narg)
+        let verifier = dsfs::plain_non_interactive_argument_verifier(
+            ComposedIpaVerifier::<G>::default(),
+            dsfs::Keccak::default(),
+        );
+        let narg = prover.prove(&session, &instance, &witness);
+        verifier
+            .verify(&session, &instance, &narg)
             .expect("composed verification failed");
     }
 
@@ -281,11 +342,15 @@ mod tests {
         let (mut instance, witness) = random_statement::<G>(8, &mut OsRng);
         instance.p += G::generator();
         let session = spongefish::session!("bulletproofs ipa reduction test");
-        let nia = dsfs::plain_non_interactive_argument(
-            ComposedIpa::<G>::default(),
+        let prover = dsfs::plain_non_interactive_argument_prover(
+            ComposedIpaProver::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let narg = nia.prove(&session, &instance, &witness);
-        assert!(nia.verify(&session, &instance, &narg).is_err());
+        let verifier = dsfs::plain_non_interactive_argument_verifier(
+            ComposedIpaVerifier::<G>::default(),
+            dsfs::Keccak::default(),
+        );
+        let narg = prover.prove(&session, &instance, &witness);
+        assert!(verifier.verify(&session, &instance, &narg).is_err());
     }
 }

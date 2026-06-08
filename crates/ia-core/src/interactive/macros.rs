@@ -1,1025 +1,720 @@
-//! Authoring macros for the protocol trait hierarchy.
-//!
-//! Each `impl_*` macro lets an author write `prove` and `verify` in one block but
-//! emits them into the two **role half-traits** (`…Prover` / `…Verifier`) so the
-//! same body can be compiled prover-only or verifier-only. The split is performed
-//! by [`__ia_core_emit_prover_verifier!`], which partitions the method blob at the
-//! first top-level `fn verify`.
+//! Role-specific protocol authoring macros.
 
-/// Internal: emit a leaf `{ fn prove … fn verify … }` method blob as two impls —
-/// the prover trait gets everything up to `fn verify`, the verifier trait gets
-/// `fn verify` (with any attributes that precede it) and the rest.
-///
-/// Standard tt-muncher: the accumulator lives in the `[ … ]` group so it cannot
-/// run past `fn verify`. Authoring order is always prove-then-verify, matching
-/// every `impl_*` macro's documented shape. `fn verify` cannot appear at the top
-/// level of `prove` (its body is a single token tree), so the split is robust.
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __ia_core_emit_prover_verifier {
-    // Terminator: remaining tokens begin with (optional attrs then) `fn verify`.
-    (
-        [$($g:tt)*] [$ty:ty] [$($w:tt)*]
-        [$ptrait:path] [$vtrait:path]
-        [$($prove:tt)*]
-        $(#[$vattr:meta])* fn verify $($vrest:tt)*
-    ) => {
-        impl $($g)* $ptrait for $ty where $($w)* {
-            $($prove)*
-        }
-        impl $($g)* $vtrait for $ty where $($w)* {
-            $(#[$vattr])* fn verify $($vrest)*
-        }
+macro_rules! __ia_core_parse_role {
+    ([$emit:ident] [$($generics:tt)*] for $ty:ty where $($tail:tt)*) => {
+        $crate::__ia_core_parse_role_where!([$emit] [$($generics)*] [$ty] [] $($tail)*);
     };
-    // Munch one token from the unprocessed tail into the prove accumulator.
+    ([$emit:ident] [$($generics:tt)*] for $ty:ty { $($body:tt)* }) => {
+        $crate::$emit!([$($generics)*] [$ty] [] { $($body)* });
+    };
+    ([$emit:ident] [$($generics:tt)*] $next:tt $($rest:tt)*) => {
+        $crate::__ia_core_parse_role!([$emit] [$($generics)* $next] $($rest)*);
+    };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __ia_core_parse_role_where {
+    ([$emit:ident] [$($generics:tt)*] [$ty:ty] [$($where_clause:tt)*] { $($body:tt)* }) => {
+        $crate::$emit!([$($generics)*] [$ty] [$($where_clause)*] { $($body)* });
+    };
     (
-        [$($g:tt)*] [$ty:ty] [$($w:tt)*]
-        [$ptrait:path] [$vtrait:path]
-        [$($prove:tt)*]
+        [$emit:ident] [$($generics:tt)*] [$ty:ty] [$($where_clause:tt)*]
         $next:tt $($rest:tt)*
     ) => {
-        $crate::__ia_core_emit_prover_verifier! {
-            [$($g)*] [$ty] [$($w)*]
-            [$ptrait] [$vtrait]
-            [$($prove)* $next]
-            $($rest)*
-        }
+        $crate::__ia_core_parse_role_where!(
+            [$emit] [$($generics)*] [$ty] [$($where_clause)* $next] $($rest)*
+        );
     };
 }
 
-/// Implement a plain interactive argument using one author-facing impl block.
+/// Implement one native role of a plain interactive argument.
 #[macro_export]
 macro_rules! impl_interactive_argument {
-    (impl $($rest:tt)*) => {
-        $crate::__ia_core_parse_interactive_argument! { [] $($rest)* }
+    (prover impl $($rest:tt)*) => {
+        $crate::__ia_core_parse_role!([__ia_core_emit_argument_prover] [] $($rest)*);
+    };
+    (verifier impl $($rest:tt)*) => {
+        $crate::__ia_core_parse_role!([__ia_core_emit_argument_verifier] [] $($rest)*);
     };
 }
 
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __ia_core_parse_interactive_argument {
-    ([$($impl_generics:tt)*] InteractiveArgument for $ty:ty where $($tail:tt)*) => {
-        $crate::__ia_core_parse_interactive_argument_where! {
-            [$($impl_generics)*] [$ty] [] $($tail)*
-        }
-    };
+macro_rules! __ia_core_emit_argument_prover {
     (
-        [$($impl_generics:tt)*] InteractiveArgument for $ty:ty
-        $(where $($where_clause:tt)+)?
-        {
+        [$($generics:tt)*] [$ty:ty] [$($where_clause:tt)*] {
             $(#[$protocol_attr:meta])*
             fn protocol_id(&self) -> impl AsRef<[u8]> $protocol_body:block
-
             $(#[$instance_attr:meta])*
             type Instance = $instance:ty;
-
             $(#[$witness_attr:meta])*
             type Witness = $witness:ty;
-
             $($methods:tt)*
         }
     ) => {
-        impl $($impl_generics)* $crate::ProtocolCore for $ty
-        $(where $($where_clause)+)?
-        {
+        impl $($generics)* $crate::ProtocolCore for $ty where $($where_clause)* {
             $(#[$protocol_attr])*
             fn protocol_id(&self) -> impl AsRef<[u8]> $protocol_body
         }
-
-        impl $($impl_generics)* $crate::ArgumentCore for $ty
-        $(where $($where_clause)+)?
-        {
+        impl $($generics)* $crate::ArgumentCore for $ty where $($where_clause)* {
             $(#[$instance_attr])*
             type Instance = $instance;
-
+        }
+        impl $($generics)* $crate::ArgumentProverCore for $ty where $($where_clause)* {
             $(#[$witness_attr])*
             type Witness = $witness;
         }
-
-        $crate::__ia_core_emit_prover_verifier! {
-            [$($impl_generics)*] [$ty] [$($($where_clause)+)?]
-            [$crate::InteractiveArgumentProver] [$crate::InteractiveArgumentVerifier]
-            []
+        impl $($generics)* $crate::InteractiveArgumentProver for $ty where $($where_clause)* {
             $($methods)*
         }
-    };
-    ([$($impl_generics:tt)*] $next:tt $($rest:tt)*) => {
-        $crate::__ia_core_parse_interactive_argument! {
-            [$($impl_generics)* $next] $($rest)*
-        }
-    };
-    ([$($impl_generics:tt)*]) => {
-        compile_error!(
-            "impl_interactive_argument! could not parse this block. Expected `impl ... InteractiveArgument for Type { fn protocol_id(&self) -> impl AsRef<[u8]> { ... } type Instance = ...; type Witness = ...; fn prove(...) { ... } fn verify(...) -> VerificationResult<()> { ... } }`."
-        );
     };
 }
 
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __ia_core_parse_interactive_argument_where {
+macro_rules! __ia_core_emit_argument_verifier {
     (
-        [$($impl_generics:tt)*] [$ty:ty] [$($where_clause:tt)*]
-        {
+        [$($generics:tt)*] [$ty:ty] [$($where_clause:tt)*] {
             $(#[$protocol_attr:meta])*
             fn protocol_id(&self) -> impl AsRef<[u8]> $protocol_body:block
-
             $(#[$instance_attr:meta])*
             type Instance = $instance:ty;
-
-            $(#[$witness_attr:meta])*
-            type Witness = $witness:ty;
-
             $($methods:tt)*
         }
     ) => {
-        impl $($impl_generics)* $crate::ProtocolCore for $ty
-        where $($where_clause)*
-        {
+        impl $($generics)* $crate::ProtocolCore for $ty where $($where_clause)* {
             $(#[$protocol_attr])*
             fn protocol_id(&self) -> impl AsRef<[u8]> $protocol_body
         }
-
-        impl $($impl_generics)* $crate::ArgumentCore for $ty
-        where $($where_clause)*
-        {
+        impl $($generics)* $crate::ArgumentCore for $ty where $($where_clause)* {
             $(#[$instance_attr])*
             type Instance = $instance;
-
-            $(#[$witness_attr])*
-            type Witness = $witness;
         }
-
-        $crate::__ia_core_emit_prover_verifier! {
-            [$($impl_generics)*] [$ty] [$($where_clause)*]
-            [$crate::InteractiveArgumentProver] [$crate::InteractiveArgumentVerifier]
-            []
+        impl $($generics)* $crate::InteractiveArgumentVerifier for $ty where $($where_clause)* {
             $($methods)*
         }
     };
-    ([$($impl_generics:tt)*] [$ty:ty] [$($where_clause:tt)*] $next:tt $($rest:tt)*) => {
-        $crate::__ia_core_parse_interactive_argument_where! {
-            [$($impl_generics)*] [$ty] [$($where_clause)* $next] $($rest)*
-        }
-    };
-    ([$($impl_generics:tt)*] [$ty:ty] [$($where_clause:tt)*]) => {
-        compile_error!(
-            "impl_interactive_argument! could not parse this block after the `where` clause. Put `fn protocol_id` first, followed by `type Instance`, `type Witness`, then `prove` and `verify`."
-        );
-    };
 }
 
-/// Implement a plain interactive reduction using one author-facing impl block.
+/// Implement one native role of a plain interactive reduction.
 #[macro_export]
 macro_rules! impl_interactive_reduction {
-    (impl $($rest:tt)*) => {
-        $crate::__ia_core_parse_interactive_reduction! { [] $($rest)* }
+    (prover impl $($rest:tt)*) => {
+        $crate::__ia_core_parse_role!([__ia_core_emit_reduction_prover] [] $($rest)*);
+    };
+    (verifier impl $($rest:tt)*) => {
+        $crate::__ia_core_parse_role!([__ia_core_emit_reduction_verifier] [] $($rest)*);
     };
 }
 
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __ia_core_parse_interactive_reduction {
-    ([$($impl_generics:tt)*] InteractiveReduction for $ty:ty where $($tail:tt)*) => {
-        $crate::__ia_core_parse_interactive_reduction_where! {
-            [$($impl_generics)*] [$ty] [] $($tail)*
-        }
-    };
+macro_rules! __ia_core_emit_reduction_prover {
     (
-        [$($impl_generics:tt)*] InteractiveReduction for $ty:ty
-        $(where $($where_clause:tt)+)?
-        {
+        [$($generics:tt)*] [$ty:ty] [$($where_clause:tt)*] {
             $(#[$protocol_attr:meta])*
             fn protocol_id(&self) -> impl AsRef<[u8]> $protocol_body:block
-
             $(#[$source_instance_attr:meta])*
             type SourceInstance = $source_instance:ty;
-
             $(#[$target_instance_attr:meta])*
             type TargetInstance = $target_instance:ty;
-
             $(#[$source_witness_attr:meta])*
             type SourceWitness = $source_witness:ty;
-
             $(#[$target_witness_attr:meta])*
             type TargetWitness = $target_witness:ty;
-
             $($methods:tt)*
         }
     ) => {
-        impl $($impl_generics)* $crate::ProtocolCore for $ty
-        $(where $($where_clause)+)?
-        {
+        impl $($generics)* $crate::ProtocolCore for $ty where $($where_clause)* {
             $(#[$protocol_attr])*
             fn protocol_id(&self) -> impl AsRef<[u8]> $protocol_body
         }
-
-        impl $($impl_generics)* $crate::ReductionCore for $ty
-        $(where $($where_clause)+)?
-        {
+        impl $($generics)* $crate::ReductionCore for $ty where $($where_clause)* {
             $(#[$source_instance_attr])*
             type SourceInstance = $source_instance;
-
             $(#[$target_instance_attr])*
             type TargetInstance = $target_instance;
-
+        }
+        impl $($generics)* $crate::ReductionProverCore for $ty where $($where_clause)* {
             $(#[$source_witness_attr])*
             type SourceWitness = $source_witness;
-
             $(#[$target_witness_attr])*
             type TargetWitness = $target_witness;
         }
-
-        $crate::__ia_core_emit_prover_verifier! {
-            [$($impl_generics)*] [$ty] [$($($where_clause)+)?]
-            [$crate::InteractiveReductionProver] [$crate::InteractiveReductionVerifier]
-            []
+        impl $($generics)* $crate::InteractiveReductionProver for $ty where $($where_clause)* {
             $($methods)*
         }
-    };
-    ([$($impl_generics:tt)*] $next:tt $($rest:tt)*) => {
-        $crate::__ia_core_parse_interactive_reduction! {
-            [$($impl_generics)* $next] $($rest)*
-        }
-    };
-    ([$($impl_generics:tt)*]) => {
-        compile_error!(
-            "impl_interactive_reduction! could not parse this block. Expected `impl ... InteractiveReduction for Type { fn protocol_id(&self) -> impl AsRef<[u8]> { ... } type SourceInstance = ...; type TargetInstance = ...; type SourceWitness = ...; type TargetWitness = ...; fn prove(...) -> (...) { ... } fn verify(...) -> VerificationResult<_> { ... } }`."
-        );
     };
 }
 
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __ia_core_parse_interactive_reduction_where {
+macro_rules! __ia_core_emit_reduction_verifier {
     (
-        [$($impl_generics:tt)*] [$ty:ty] [$($where_clause:tt)*]
-        {
+        [$($generics:tt)*] [$ty:ty] [$($where_clause:tt)*] {
             $(#[$protocol_attr:meta])*
             fn protocol_id(&self) -> impl AsRef<[u8]> $protocol_body:block
-
             $(#[$source_instance_attr:meta])*
             type SourceInstance = $source_instance:ty;
-
             $(#[$target_instance_attr:meta])*
             type TargetInstance = $target_instance:ty;
-
-            $(#[$source_witness_attr:meta])*
-            type SourceWitness = $source_witness:ty;
-
-            $(#[$target_witness_attr:meta])*
-            type TargetWitness = $target_witness:ty;
-
             $($methods:tt)*
         }
     ) => {
-        impl $($impl_generics)* $crate::ProtocolCore for $ty
-        where $($where_clause)*
-        {
+        impl $($generics)* $crate::ProtocolCore for $ty where $($where_clause)* {
             $(#[$protocol_attr])*
             fn protocol_id(&self) -> impl AsRef<[u8]> $protocol_body
         }
-
-        impl $($impl_generics)* $crate::ReductionCore for $ty
-        where $($where_clause)*
-        {
+        impl $($generics)* $crate::ReductionCore for $ty where $($where_clause)* {
             $(#[$source_instance_attr])*
             type SourceInstance = $source_instance;
-
             $(#[$target_instance_attr])*
             type TargetInstance = $target_instance;
-
-            $(#[$source_witness_attr])*
-            type SourceWitness = $source_witness;
-
-            $(#[$target_witness_attr])*
-            type TargetWitness = $target_witness;
         }
-
-        $crate::__ia_core_emit_prover_verifier! {
-            [$($impl_generics)*] [$ty] [$($where_clause)*]
-            [$crate::InteractiveReductionProver] [$crate::InteractiveReductionVerifier]
-            []
+        impl $($generics)* $crate::InteractiveReductionVerifier for $ty where $($where_clause)* {
             $($methods)*
         }
     };
-    ([$($impl_generics:tt)*] [$ty:ty] [$($where_clause:tt)*] $next:tt $($rest:tt)*) => {
-        $crate::__ia_core_parse_interactive_reduction_where! {
-            [$($impl_generics)*] [$ty] [$($where_clause)* $next] $($rest)*
-        }
-    };
-    ([$($impl_generics:tt)*] [$ty:ty] [$($where_clause:tt)*]) => {
-        compile_error!(
-            "impl_interactive_reduction! could not parse this block after the `where` clause. Put `fn protocol_id` first, followed by source/target instance and witness types, then `prove` and `verify`."
-        );
-    };
 }
 
-/// Implement a preprocessing interactive argument using one author-facing impl block.
+/// Implement one native role of a preprocessing interactive argument.
 #[macro_export]
 macro_rules! impl_preprocessing_argument {
-    (impl $($rest:tt)*) => {
-        $crate::__ia_core_parse_preprocessing_argument! { [] $($rest)* }
+    (indexer impl $($rest:tt)*) => {
+        $crate::__ia_core_parse_role!([__ia_core_emit_argument_indexer] [] $($rest)*);
+    };
+    (prover impl $($rest:tt)*) => {
+        $crate::__ia_core_parse_role!([__ia_core_emit_preprocessing_argument_prover] [] $($rest)*);
+    };
+    (verifier impl $($rest:tt)*) => {
+        $crate::__ia_core_parse_role!([__ia_core_emit_preprocessing_argument_verifier] [] $($rest)*);
     };
 }
 
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __ia_core_parse_preprocessing_argument {
-    ([$($impl_generics:tt)*] IndexedInteractiveArgument for $ty:ty where $($tail:tt)*) => {
-        compile_error!(
-            "`IndexedInteractiveArgument` was renamed to `PreprocessingInteractiveArgument`. Use `impl_preprocessing_argument! { impl ... PreprocessingInteractiveArgument for Type { ... } }`."
-        );
-    };
-    ([$($impl_generics:tt)*] IndexedInteractiveArgument for $ty:ty { $($body:tt)* }) => {
-        compile_error!(
-            "`IndexedInteractiveArgument` was renamed to `PreprocessingInteractiveArgument`. Use `impl_preprocessing_argument! { impl ... PreprocessingInteractiveArgument for Type { ... } }`."
-        );
-    };
-    ([$($impl_generics:tt)*] PreprocessingInteractiveArgument for $ty:ty where $($tail:tt)*) => {
-        $crate::__ia_core_parse_preprocessing_argument_where! {
-            [$($impl_generics)*] [$ty] [] $($tail)*
-        }
-    };
+macro_rules! __ia_core_emit_argument_indexer {
     (
-        [$($impl_generics:tt)*] PreprocessingInteractiveArgument for $ty:ty
-        $(where $($where_clause:tt)+)?
-        {
+        [$($generics:tt)*] [$ty:ty] [$($where_clause:tt)*] {
             $(#[$protocol_attr:meta])*
             fn protocol_id(&self) -> impl AsRef<[u8]> $protocol_body:block
-
             $(#[$instance_attr:meta])*
             type Instance = $instance:ty;
-
-            $(#[$witness_attr:meta])*
-            type Witness = $witness:ty;
-
             $(#[$index_attr:meta])*
             type Index = $index:ty;
-
             $(#[$prover_key_attr:meta])*
             type ProverKey = $prover_key:ty;
-
             $(#[$verifier_key_attr:meta])*
             type VerifierKey = $verifier_key:ty;
-
-            $(#[$preprocess_fn_attr:meta])*
-            fn preprocess(&self, $ix:ident: &Self::Index) -> (Self::ProverKey, Self::VerifierKey)
-                $preprocess_body:block
-
             $($methods:tt)*
         }
     ) => {
-        impl $($impl_generics)* $crate::ProtocolCore for $ty
-        $(where $($where_clause)+)?
-        {
+        impl $($generics)* $crate::ProtocolCore for $ty where $($where_clause)* {
             $(#[$protocol_attr])*
             fn protocol_id(&self) -> impl AsRef<[u8]> $protocol_body
         }
-
-        impl $($impl_generics)* $crate::ArgumentCore for $ty
-        $(where $($where_clause)+)?
-        {
+        impl $($generics)* $crate::ArgumentCore for $ty where $($where_clause)* {
             $(#[$instance_attr])*
             type Instance = $instance;
-
-            $(#[$witness_attr])*
-            type Witness = $witness;
         }
-
-        impl $($impl_generics)* $crate::PreprocessingCore for $ty
-        $(where $($where_clause)+)?
-        {
+        impl $($generics)* $crate::Indexer for $ty where $($where_clause)* {
             $(#[$index_attr])*
             type Index = $index;
-
             $(#[$prover_key_attr])*
             type ProverKey = $prover_key;
-
             $(#[$verifier_key_attr])*
             type VerifierKey = $verifier_key;
-
-            $(#[$preprocess_fn_attr])*
-            fn preprocess(&self, $ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey)
-                $preprocess_body
-        }
-
-        $crate::__ia_core_emit_prover_verifier! {
-            [$($impl_generics)*] [$ty] [$($($where_clause)+)?]
-            [$crate::PreprocessingInteractiveArgumentProver]
-            [$crate::PreprocessingInteractiveArgumentVerifier]
-            []
             $($methods)*
         }
-    };
-    ([$($impl_generics:tt)*] $next:tt $($rest:tt)*) => {
-        $crate::__ia_core_parse_preprocessing_argument! {
-            [$($impl_generics)* $next] $($rest)*
-        }
-    };
-    ([$($impl_generics:tt)*]) => {
-        compile_error!(
-            "impl_preprocessing_argument! could not parse this block. Expected `impl ... PreprocessingInteractiveArgument for Type { fn protocol_id(...) { ... } type Instance = ...; type Witness = ...; type Index = ...; type ProverKey = ...; type VerifierKey = ...; fn preprocess(...) -> (...) { ... } fn prove(...) { ... } fn verify(...) -> VerificationResult<()> { ... } }`."
-        );
     };
 }
 
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __ia_core_parse_preprocessing_argument_where {
+macro_rules! __ia_core_emit_preprocessing_argument_prover {
     (
-        [$($impl_generics:tt)*] [$ty:ty] [$($where_clause:tt)*]
-        {
+        [$($generics:tt)*] [$ty:ty] [$($where_clause:tt)*] {
             $(#[$protocol_attr:meta])*
             fn protocol_id(&self) -> impl AsRef<[u8]> $protocol_body:block
-
             $(#[$instance_attr:meta])*
             type Instance = $instance:ty;
-
             $(#[$witness_attr:meta])*
             type Witness = $witness:ty;
-
-            $(#[$index_attr:meta])*
-            type Index = $index:ty;
-
             $(#[$prover_key_attr:meta])*
             type ProverKey = $prover_key:ty;
-
-            $(#[$verifier_key_attr:meta])*
-            type VerifierKey = $verifier_key:ty;
-
-            $(#[$preprocess_fn_attr:meta])*
-            fn preprocess(&self, $ix:ident: &Self::Index) -> (Self::ProverKey, Self::VerifierKey)
-                $preprocess_body:block
-
             $($methods:tt)*
         }
     ) => {
-        impl $($impl_generics)* $crate::ProtocolCore for $ty
-        where $($where_clause)*
-        {
+        impl $($generics)* $crate::ProtocolCore for $ty where $($where_clause)* {
             $(#[$protocol_attr])*
             fn protocol_id(&self) -> impl AsRef<[u8]> $protocol_body
         }
-
-        impl $($impl_generics)* $crate::ArgumentCore for $ty
-        where $($where_clause)*
-        {
+        impl $($generics)* $crate::ArgumentCore for $ty where $($where_clause)* {
             $(#[$instance_attr])*
             type Instance = $instance;
-
+        }
+        impl $($generics)* $crate::ArgumentProverCore for $ty where $($where_clause)* {
             $(#[$witness_attr])*
             type Witness = $witness;
         }
-
-        impl $($impl_generics)* $crate::PreprocessingCore for $ty
+        impl $($generics)* $crate::PreprocessingInteractiveArgumentProver for $ty
         where $($where_clause)*
         {
-            $(#[$index_attr])*
-            type Index = $index;
-
             $(#[$prover_key_attr])*
             type ProverKey = $prover_key;
-
-            $(#[$verifier_key_attr])*
-            type VerifierKey = $verifier_key;
-
-            $(#[$preprocess_fn_attr])*
-            fn preprocess(&self, $ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey)
-                $preprocess_body
-        }
-
-        $crate::__ia_core_emit_prover_verifier! {
-            [$($impl_generics)*] [$ty] [$($where_clause)*]
-            [$crate::PreprocessingInteractiveArgumentProver]
-            [$crate::PreprocessingInteractiveArgumentVerifier]
-            []
             $($methods)*
         }
     };
-    ([$($impl_generics:tt)*] [$ty:ty] [$($where_clause:tt)*] $next:tt $($rest:tt)*) => {
-        $crate::__ia_core_parse_preprocessing_argument_where! {
-            [$($impl_generics)*] [$ty] [$($where_clause)* $next] $($rest)*
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __ia_core_emit_preprocessing_argument_verifier {
+    (
+        [$($generics:tt)*] [$ty:ty] [$($where_clause:tt)*] {
+            $(#[$protocol_attr:meta])*
+            fn protocol_id(&self) -> impl AsRef<[u8]> $protocol_body:block
+            $(#[$instance_attr:meta])*
+            type Instance = $instance:ty;
+            $(#[$verifier_key_attr:meta])*
+            type VerifierKey = $verifier_key:ty;
+            $($methods:tt)*
         }
-    };
-    ([$($impl_generics:tt)*] [$ty:ty] [$($where_clause:tt)*]) => {
-        compile_error!(
-            "impl_preprocessing_argument! could not parse this block after the `where` clause. Put `fn protocol_id` first, then `Instance`/`Witness`, preprocessing key types, `preprocess`, `prove`, and `verify`."
-        );
+    ) => {
+        impl $($generics)* $crate::ProtocolCore for $ty where $($where_clause)* {
+            $(#[$protocol_attr])*
+            fn protocol_id(&self) -> impl AsRef<[u8]> $protocol_body
+        }
+        impl $($generics)* $crate::ArgumentCore for $ty where $($where_clause)* {
+            $(#[$instance_attr])*
+            type Instance = $instance;
+        }
+        impl $($generics)* $crate::PreprocessingInteractiveArgumentVerifier for $ty
+        where $($where_clause)*
+        {
+            $(#[$verifier_key_attr])*
+            type VerifierKey = $verifier_key;
+            $($methods)*
+        }
     };
 }
 
-/// Implement a preprocessing interactive reduction using one author-facing impl block.
+/// Implement one native role of a preprocessing interactive reduction.
 #[macro_export]
 macro_rules! impl_preprocessing_reduction {
-    (impl $($rest:tt)*) => {
-        $crate::__ia_core_parse_preprocessing_reduction! { [] $($rest)* }
+    (indexer impl $($rest:tt)*) => {
+        $crate::__ia_core_parse_role!([__ia_core_emit_reduction_indexer] [] $($rest)*);
+    };
+    (prover impl $($rest:tt)*) => {
+        $crate::__ia_core_parse_role!([__ia_core_emit_preprocessing_reduction_prover] [] $($rest)*);
+    };
+    (verifier impl $($rest:tt)*) => {
+        $crate::__ia_core_parse_role!([__ia_core_emit_preprocessing_reduction_verifier] [] $($rest)*);
     };
 }
 
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __ia_core_parse_preprocessing_reduction {
-    ([$($impl_generics:tt)*] IndexedInteractiveReduction for $ty:ty where $($tail:tt)*) => {
-        compile_error!(
-            "`IndexedInteractiveReduction` was renamed to `PreprocessingInteractiveReduction`. Use `impl_preprocessing_reduction! { impl ... PreprocessingInteractiveReduction for Type { ... } }`."
-        );
-    };
-    ([$($impl_generics:tt)*] IndexedInteractiveReduction for $ty:ty { $($body:tt)* }) => {
-        compile_error!(
-            "`IndexedInteractiveReduction` was renamed to `PreprocessingInteractiveReduction`. Use `impl_preprocessing_reduction! { impl ... PreprocessingInteractiveReduction for Type { ... } }`."
-        );
-    };
-    ([$($impl_generics:tt)*] PreprocessingInteractiveReduction for $ty:ty where $($tail:tt)*) => {
-        $crate::__ia_core_parse_preprocessing_reduction_where! {
-            [$($impl_generics)*] [$ty] [] $($tail)*
-        }
-    };
+macro_rules! __ia_core_emit_reduction_indexer {
     (
-        [$($impl_generics:tt)*] PreprocessingInteractiveReduction for $ty:ty
-        $(where $($where_clause:tt)+)?
-        {
+        [$($generics:tt)*] [$ty:ty] [$($where_clause:tt)*] {
             $(#[$protocol_attr:meta])*
             fn protocol_id(&self) -> impl AsRef<[u8]> $protocol_body:block
-
             $(#[$source_instance_attr:meta])*
             type SourceInstance = $source_instance:ty;
-
             $(#[$target_instance_attr:meta])*
             type TargetInstance = $target_instance:ty;
-
-            $(#[$source_witness_attr:meta])*
-            type SourceWitness = $source_witness:ty;
-
-            $(#[$target_witness_attr:meta])*
-            type TargetWitness = $target_witness:ty;
-
             $(#[$index_attr:meta])*
             type Index = $index:ty;
-
             $(#[$prover_key_attr:meta])*
             type ProverKey = $prover_key:ty;
-
             $(#[$verifier_key_attr:meta])*
             type VerifierKey = $verifier_key:ty;
-
-            $(#[$preprocess_fn_attr:meta])*
-            fn preprocess(&self, $ix:ident: &Self::Index) -> (Self::ProverKey, Self::VerifierKey)
-                $preprocess_body:block
-
             $($methods:tt)*
         }
     ) => {
-        impl $($impl_generics)* $crate::ProtocolCore for $ty
-        $(where $($where_clause)+)?
-        {
+        impl $($generics)* $crate::ProtocolCore for $ty where $($where_clause)* {
             $(#[$protocol_attr])*
             fn protocol_id(&self) -> impl AsRef<[u8]> $protocol_body
         }
-
-        impl $($impl_generics)* $crate::ReductionCore for $ty
-        $(where $($where_clause)+)?
-        {
+        impl $($generics)* $crate::ReductionCore for $ty where $($where_clause)* {
             $(#[$source_instance_attr])*
             type SourceInstance = $source_instance;
-
             $(#[$target_instance_attr])*
             type TargetInstance = $target_instance;
-
-            $(#[$source_witness_attr])*
-            type SourceWitness = $source_witness;
-
-            $(#[$target_witness_attr])*
-            type TargetWitness = $target_witness;
         }
-
-        impl $($impl_generics)* $crate::PreprocessingCore for $ty
-        $(where $($where_clause)+)?
-        {
+        impl $($generics)* $crate::Indexer for $ty where $($where_clause)* {
             $(#[$index_attr])*
             type Index = $index;
-
             $(#[$prover_key_attr])*
             type ProverKey = $prover_key;
-
             $(#[$verifier_key_attr])*
             type VerifierKey = $verifier_key;
-
-            $(#[$preprocess_fn_attr])*
-            fn preprocess(&self, $ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey)
-                $preprocess_body
-        }
-
-        $crate::__ia_core_emit_prover_verifier! {
-            [$($impl_generics)*] [$ty] [$($($where_clause)+)?]
-            [$crate::PreprocessingInteractiveReductionProver]
-            [$crate::PreprocessingInteractiveReductionVerifier]
-            []
             $($methods)*
         }
-    };
-    ([$($impl_generics:tt)*] $next:tt $($rest:tt)*) => {
-        $crate::__ia_core_parse_preprocessing_reduction! {
-            [$($impl_generics)* $next] $($rest)*
-        }
-    };
-    ([$($impl_generics:tt)*]) => {
-        compile_error!(
-            "impl_preprocessing_reduction! could not parse this block. Expected `impl ... PreprocessingInteractiveReduction for Type { fn protocol_id(...) { ... } type SourceInstance = ...; type TargetInstance = ...; type SourceWitness = ...; type TargetWitness = ...; type Index = ...; type ProverKey = ...; type VerifierKey = ...; fn preprocess(...) -> (...) { ... } fn prove(...) -> (...) { ... } fn verify(...) -> VerificationResult<_> { ... } }`."
-        );
     };
 }
 
 #[doc(hidden)]
 #[macro_export]
-macro_rules! __ia_core_parse_preprocessing_reduction_where {
+macro_rules! __ia_core_emit_preprocessing_reduction_prover {
     (
-        [$($impl_generics:tt)*] [$ty:ty] [$($where_clause:tt)*]
-        {
+        [$($generics:tt)*] [$ty:ty] [$($where_clause:tt)*] {
             $(#[$protocol_attr:meta])*
             fn protocol_id(&self) -> impl AsRef<[u8]> $protocol_body:block
-
             $(#[$source_instance_attr:meta])*
             type SourceInstance = $source_instance:ty;
-
             $(#[$target_instance_attr:meta])*
             type TargetInstance = $target_instance:ty;
-
             $(#[$source_witness_attr:meta])*
             type SourceWitness = $source_witness:ty;
-
             $(#[$target_witness_attr:meta])*
             type TargetWitness = $target_witness:ty;
-
-            $(#[$index_attr:meta])*
-            type Index = $index:ty;
-
             $(#[$prover_key_attr:meta])*
             type ProverKey = $prover_key:ty;
-
-            $(#[$verifier_key_attr:meta])*
-            type VerifierKey = $verifier_key:ty;
-
-            $(#[$preprocess_fn_attr:meta])*
-            fn preprocess(&self, $ix:ident: &Self::Index) -> (Self::ProverKey, Self::VerifierKey)
-                $preprocess_body:block
-
             $($methods:tt)*
         }
     ) => {
-        impl $($impl_generics)* $crate::ProtocolCore for $ty
-        where $($where_clause)*
-        {
+        impl $($generics)* $crate::ProtocolCore for $ty where $($where_clause)* {
             $(#[$protocol_attr])*
             fn protocol_id(&self) -> impl AsRef<[u8]> $protocol_body
         }
-
-        impl $($impl_generics)* $crate::ReductionCore for $ty
-        where $($where_clause)*
-        {
+        impl $($generics)* $crate::ReductionCore for $ty where $($where_clause)* {
             $(#[$source_instance_attr])*
             type SourceInstance = $source_instance;
-
             $(#[$target_instance_attr])*
             type TargetInstance = $target_instance;
-
+        }
+        impl $($generics)* $crate::ReductionProverCore for $ty where $($where_clause)* {
             $(#[$source_witness_attr])*
             type SourceWitness = $source_witness;
-
             $(#[$target_witness_attr])*
             type TargetWitness = $target_witness;
         }
-
-        impl $($impl_generics)* $crate::PreprocessingCore for $ty
+        impl $($generics)* $crate::PreprocessingInteractiveReductionProver for $ty
         where $($where_clause)*
         {
-            $(#[$index_attr])*
-            type Index = $index;
-
             $(#[$prover_key_attr])*
             type ProverKey = $prover_key;
-
-            $(#[$verifier_key_attr])*
-            type VerifierKey = $verifier_key;
-
-            $(#[$preprocess_fn_attr])*
-            fn preprocess(&self, $ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey)
-                $preprocess_body
-        }
-
-        $crate::__ia_core_emit_prover_verifier! {
-            [$($impl_generics)*] [$ty] [$($where_clause)*]
-            [$crate::PreprocessingInteractiveReductionProver]
-            [$crate::PreprocessingInteractiveReductionVerifier]
-            []
             $($methods)*
         }
     };
-    ([$($impl_generics:tt)*] [$ty:ty] [$($where_clause:tt)*] $next:tt $($rest:tt)*) => {
-        $crate::__ia_core_parse_preprocessing_reduction_where! {
-            [$($impl_generics)*] [$ty] [$($where_clause)* $next] $($rest)*
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __ia_core_emit_preprocessing_reduction_verifier {
+    (
+        [$($generics:tt)*] [$ty:ty] [$($where_clause:tt)*] {
+            $(#[$protocol_attr:meta])*
+            fn protocol_id(&self) -> impl AsRef<[u8]> $protocol_body:block
+            $(#[$source_instance_attr:meta])*
+            type SourceInstance = $source_instance:ty;
+            $(#[$target_instance_attr:meta])*
+            type TargetInstance = $target_instance:ty;
+            $(#[$verifier_key_attr:meta])*
+            type VerifierKey = $verifier_key:ty;
+            $($methods:tt)*
         }
-    };
-    ([$($impl_generics:tt)*] [$ty:ty] [$($where_clause:tt)*]) => {
-        compile_error!(
-            "impl_preprocessing_reduction! could not parse this block after the `where` clause. Put `fn protocol_id` first, then source/target instance and witness types, preprocessing key types, `preprocess`, `prove`, and `verify`."
-        );
+    ) => {
+        impl $($generics)* $crate::ProtocolCore for $ty where $($where_clause)* {
+            $(#[$protocol_attr])*
+            fn protocol_id(&self) -> impl AsRef<[u8]> $protocol_body
+        }
+        impl $($generics)* $crate::ReductionCore for $ty where $($where_clause)* {
+            $(#[$source_instance_attr])*
+            type SourceInstance = $source_instance;
+            $(#[$target_instance_attr])*
+            type TargetInstance = $target_instance;
+        }
+        impl $($generics)* $crate::PreprocessingInteractiveReductionVerifier for $ty
+        where $($where_clause)*
+        {
+            $(#[$verifier_key_attr])*
+            type VerifierKey = $verifier_key;
+            $($methods)*
+        }
     };
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        CommittedIndex, CommittedIndexBytes, Decoding, Encoding, InteractiveArgumentProver,
-        InteractiveArgumentVerifier, InteractiveReductionProver, InteractiveReductionVerifier,
-        NargSerialize, PreprocessingCore, PreprocessingInteractiveArgumentProver,
-        PreprocessingInteractiveArgumentVerifier, ProverChannel, ReducedArgument,
-        VerificationError, VerificationResult, VerifierChannel, pad_protocol_id,
-    };
-    use alloc::vec::Vec;
     use core::marker::PhantomData;
 
-    #[derive(Default)]
-    struct TestProver {
-        proof: Vec<u8>,
-    }
+    use crate::{
+        ArgumentCore, ArgumentProverCore, Indexer, PreprocessingInteractiveArgumentProver,
+        PreprocessingInteractiveArgumentVerifier, PreprocessingInteractiveReductionProver,
+        PreprocessingInteractiveReductionVerifier, ProtocolCore, ProverChannel, ReductionCore,
+        ReductionProverCore, VerificationResult, VerifierChannel,
+    };
 
-    impl ProverChannel for TestProver {
-        type Unit = u8;
-
-        fn send_prover_message<PM: Encoding<[u8]> + NargSerialize>(&mut self, msg: &PM) {
-            msg.serialize_into_narg(&mut self.proof);
-        }
-
-        fn read_verifier_message<VM: Decoding<[u8]>>(&mut self) -> VM {
-            VM::decode(Default::default())
-        }
-    }
-
-    struct TestVerifier<'a> {
-        proof: &'a [u8],
-    }
-
-    impl VerifierChannel for TestVerifier<'_> {
-        type Unit = u8;
-
-        fn read_prover_message<PM: Encoding<[u8]> + crate::Deserialize>(
-            &mut self,
-        ) -> VerificationResult<PM> {
-            PM::deserialize(&mut self.proof)
-        }
-
-        fn send_verifier_message<VM: Decoding<[u8]>>(&mut self) -> VM {
-            VM::decode(Default::default())
-        }
-    }
-
-    struct MacroArg<const OFFSET: u32>;
+    struct ArgProver;
+    struct ArgVerifier;
 
     crate::impl_interactive_argument! {
-        impl<const OFFSET: u32> InteractiveArgument for MacroArg<OFFSET> {
-            fn protocol_id(&self) -> impl AsRef<[u8]> {
-                pad_protocol_id(b"macro-arg")
-            }
-
-            type Instance = u32;
-            type Witness = u32;
-
-            #[allow(non_snake_case)]
-            fn prove<P: ProverChannel<Unit = u8>>(
-                &self,
-                ch: &mut P,
-                x: &Self::Instance,
-                w: &Self::Witness,
-            ) {
-                let M = *x + *w + OFFSET;
-                ch.send_prover_message(&M);
-            }
-
-            fn verify<V: VerifierChannel<Unit = u8>>(
-                &self,
-                ch: &mut V,
-                x: &Self::Instance,
-            ) -> VerificationResult<()> {
-                let m: u32 = ch.read_prover_message()?;
-                if m >= *x { Ok(()) } else { Err(VerificationError) }
-            }
+        prover impl for ArgProver {
+            fn protocol_id(&self) -> impl AsRef<[u8]> { b"macro-arg" }
+            type Instance = u8;
+            type Witness = u16;
+            fn prove<C: ProverChannel<Unit = u8>>(
+                &self, _: &mut C, _: &Self::Instance, _: &Self::Witness
+            ) {}
         }
     }
 
-    #[test]
-    fn plain_argument_macro_runs_through_channel() {
-        let ia = MacroArg::<2>;
-        let mut prover = TestProver::default();
-        ia.prove(&mut prover, &3, &4);
-        let mut verifier = TestVerifier {
-            proof: &prover.proof,
-        };
-        ia.verify(&mut verifier, &3).expect("macro IA verifies");
-        assert!(verifier.proof.is_empty());
+    crate::impl_interactive_argument! {
+        verifier impl for ArgVerifier {
+            fn protocol_id(&self) -> impl AsRef<[u8]> { b"macro-arg" }
+            type Instance = u8;
+            fn verify<C: VerifierChannel<Unit = u8>>(
+                &self, _: &mut C, _: &Self::Instance
+            ) -> VerificationResult<()> { Ok(()) }
+        }
     }
 
-    struct MacroReduction;
+    struct ReductionProver;
+    struct ReductionVerifier;
 
     crate::impl_interactive_reduction! {
-        impl InteractiveReduction for MacroReduction {
-            fn protocol_id(&self) -> impl AsRef<[u8]> {
-                pad_protocol_id(b"macro-red")
-            }
-
+        prover impl for ReductionProver {
+            fn protocol_id(&self) -> impl AsRef<[u8]> { b"macro-reduction" }
             type SourceInstance = u8;
-            type TargetInstance = u8;
-            type SourceWitness = u8;
-            type TargetWitness = u8;
-
-            fn prove<P: ProverChannel<Unit = u8>>(
-                &self,
-                _ch: &mut P,
-                instance: &Self::SourceInstance,
-                witness: &Self::SourceWitness,
-            ) -> (Self::TargetInstance, Self::TargetWitness) {
-                (instance + 1, witness + 1)
-            }
-
-            fn verify<V: VerifierChannel<Unit = u8>>(
-                &self,
-                _ch: &mut V,
-                instance: &Self::SourceInstance,
-            ) -> VerificationResult<Self::TargetInstance> {
-                Ok(instance + 1)
-            }
+            type TargetInstance = u16;
+            type SourceWitness = u32;
+            type TargetWitness = u64;
+            fn prove<C: ProverChannel<Unit = u8>>(
+                &self, _: &mut C, _: &Self::SourceInstance, _: &Self::SourceWitness
+            ) -> (Self::TargetInstance, Self::TargetWitness) { (0, 0) }
         }
     }
 
-    #[test]
-    fn plain_reduction_macro_returns_target() {
-        let red = MacroReduction;
-        let mut prover = TestProver::default();
-        assert_eq!(red.prove(&mut prover, &10, &20), (11, 21));
-        let mut verifier = TestVerifier { proof: &[] };
-        assert_eq!(red.verify(&mut verifier, &10).expect("valid"), 11);
-    }
-
-    #[derive(Clone, PartialEq, Eq)]
-    struct Vk(u32);
-
-    impl CommittedIndex for Vk {
-        fn committed_index(&self) -> CommittedIndexBytes {
-            CommittedIndexBytes::new(alloc::vec![self.0 as u8])
+    crate::impl_interactive_reduction! {
+        verifier impl for ReductionVerifier {
+            fn protocol_id(&self) -> impl AsRef<[u8]> { b"macro-reduction" }
+            type SourceInstance = u8;
+            type TargetInstance = u16;
+            fn verify<C: VerifierChannel<Unit = u8>>(
+                &self, _: &mut C, _: &Self::SourceInstance
+            ) -> VerificationResult<Self::TargetInstance> { Ok(0) }
         }
     }
 
-    struct MacroPreArg;
+    struct ArgumentIndexer;
+    struct IndexedArgumentProver;
+    struct IndexedArgumentVerifier;
 
     crate::impl_preprocessing_argument! {
-        impl PreprocessingInteractiveArgument for MacroPreArg {
-            fn protocol_id(&self) -> impl AsRef<[u8]> {
-                pad_protocol_id(b"macro-pre-arg")
-            }
-
-            type Instance = u32;
-            type Witness = u32;
-            type Index = u32;
-            type ProverKey = Vk;
-            type VerifierKey = Vk;
-
-            fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
-                (Vk(*ix), Vk(*ix))
-            }
-
-            fn prove<P: ProverChannel<Unit = u8>>(
-                &self,
-                ch: &mut P,
-                pk: &Self::ProverKey,
-                instance: &Self::Instance,
-                witness: &Self::Witness,
-            ) {
-                ch.send_prover_message(&(pk.0 + *instance + *witness));
-            }
-
-            fn verify<V: VerifierChannel<Unit = u8>>(
-                &self,
-                ch: &mut V,
-                vk: &Self::VerifierKey,
-                instance: &Self::Instance,
-            ) -> VerificationResult<()> {
-                let msg: u32 = ch.read_prover_message()?;
-                if msg >= vk.0 + *instance { Ok(()) } else { Err(VerificationError) }
+        indexer impl for ArgumentIndexer {
+            fn protocol_id(&self) -> impl AsRef<[u8]> { b"macro-indexed-arg" }
+            type Instance = u8;
+            type Index = ();
+            type ProverKey = ();
+            type VerifierKey = ();
+            fn preprocess(&self, _: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+                ((), ())
             }
         }
     }
 
-    #[test]
-    fn preprocessing_argument_macro_emits_keyed_prove_verify() {
-        // The macro should emit PreprocessingCore (preprocess) plus keyed prove/verify.
-        let body = MacroPreArg;
-        let (pk, vk) = body.preprocess(&7u32);
-        let mut prover = TestProver::default();
-        body.prove(&mut prover, &pk, &2u32, &3u32);
-        let mut verifier = TestVerifier {
-            proof: &prover.proof,
-        };
-        body.verify(&mut verifier, &vk, &2u32)
-            .expect("macro preprocessing IA verifies through the channel");
+    crate::impl_preprocessing_argument! {
+        prover impl for IndexedArgumentProver {
+            fn protocol_id(&self) -> impl AsRef<[u8]> { b"macro-indexed-arg" }
+            type Instance = u8;
+            type Witness = u16;
+            type ProverKey = ();
+            fn prove<C: ProverChannel<Unit = u8>>(
+                &self, _: &mut C, _: &Self::ProverKey, _: &Self::Instance, _: &Self::Witness
+            ) {}
+        }
     }
 
-    struct MacroPreReduction;
+    crate::impl_preprocessing_argument! {
+        verifier impl for IndexedArgumentVerifier {
+            fn protocol_id(&self) -> impl AsRef<[u8]> { b"macro-indexed-arg" }
+            type Instance = u8;
+            type VerifierKey = ();
+            fn verify<C: VerifierChannel<Unit = u8>>(
+                &self, _: &mut C, _: &Self::VerifierKey, _: &Self::Instance
+            ) -> VerificationResult<()> { Ok(()) }
+        }
+    }
+
+    struct ReductionIndexer;
+    struct IndexedReductionProver;
+    struct IndexedReductionVerifier;
 
     crate::impl_preprocessing_reduction! {
-        impl PreprocessingInteractiveReduction for MacroPreReduction {
-            fn protocol_id(&self) -> impl AsRef<[u8]> {
-                pad_protocol_id(b"macro-pre-red")
-            }
-
-            type SourceInstance = u32;
-            type TargetInstance = u32;
-            type SourceWitness = u32;
-            type TargetWitness = u32;
-            type Index = u32;
-            type ProverKey = Vk;
-            type VerifierKey = Vk;
-
-            fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
-                (Vk(*ix), Vk(*ix))
-            }
-
-            fn prove<P: ProverChannel<Unit = u8>>(
-                &self,
-                _ch: &mut P,
-                pk: &Self::ProverKey,
-                instance: &Self::SourceInstance,
-                witness: &Self::SourceWitness,
-            ) -> (Self::TargetInstance, Self::TargetWitness) {
-                (instance + pk.0, witness + pk.0)
-            }
-
-            fn verify<V: VerifierChannel<Unit = u8>>(
-                &self,
-                _ch: &mut V,
-                vk: &Self::VerifierKey,
-                instance: &Self::SourceInstance,
-            ) -> VerificationResult<Self::TargetInstance> {
-                Ok(instance + vk.0)
+        indexer impl for ReductionIndexer {
+            fn protocol_id(&self) -> impl AsRef<[u8]> { b"macro-indexed-red" }
+            type SourceInstance = u8;
+            type TargetInstance = u16;
+            type Index = ();
+            type ProverKey = ();
+            type VerifierKey = ();
+            fn preprocess(&self, _: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
+                ((), ())
             }
         }
     }
 
-    #[test]
-    fn preprocessing_reduction_macro_composes_with_preprocessing_argument() {
-        let composed = ReducedArgument::new(MacroPreReduction, MacroPreArg);
-        let (pk, vk) = composed.preprocess(&(5, 5));
-        let mut prover = TestProver::default();
-        composed.prove(&mut prover, &pk, &1, &2);
-        let mut verifier = TestVerifier {
-            proof: &prover.proof,
-        };
-        composed
-            .verify(&mut verifier, &vk, &1)
-            .expect("composed preprocessing macro protocol verifies");
+    crate::impl_preprocessing_reduction! {
+        prover impl for IndexedReductionProver {
+            fn protocol_id(&self) -> impl AsRef<[u8]> { b"macro-indexed-red" }
+            type SourceInstance = u8;
+            type TargetInstance = u16;
+            type SourceWitness = u32;
+            type TargetWitness = u64;
+            type ProverKey = ();
+            fn prove<C: ProverChannel<Unit = u8>>(
+                &self,
+                _: &mut C,
+                _: &Self::ProverKey,
+                _: &Self::SourceInstance,
+                _: &Self::SourceWitness,
+            ) -> (Self::TargetInstance, Self::TargetWitness) { (0, 0) }
+        }
     }
 
-    trait Marker {}
-    impl Marker for u8 {}
+    crate::impl_preprocessing_reduction! {
+        verifier impl for IndexedReductionVerifier {
+            fn protocol_id(&self) -> impl AsRef<[u8]> { b"macro-indexed-red" }
+            type SourceInstance = u8;
+            type TargetInstance = u16;
+            type VerifierKey = ();
+            fn verify<C: VerifierChannel<Unit = u8>>(
+                &self, _: &mut C, _: &Self::VerifierKey, _: &Self::SourceInstance
+            ) -> VerificationResult<Self::TargetInstance> { Ok(0) }
+        }
+    }
 
-    struct GenericMacroArg<T, const N: usize>(PhantomData<T>);
+    struct GenericProver<T>(PhantomData<T>);
 
     crate::impl_interactive_argument! {
-        impl<T, const N: usize> InteractiveArgument for GenericMacroArg<T, N>
+        prover impl<T> for GenericProver<T>
         where
-            T: Marker,
+            T: Copy,
         {
-            fn protocol_id(&self) -> impl AsRef<[u8]> {
-                pad_protocol_id(b"generic-macro")
-            }
-
-            type Instance = u8;
-            type Witness = u8;
-
-            fn prove<P: ProverChannel<Unit = u8>>(
-                &self,
-                _ch: &mut P,
-                _instance: &Self::Instance,
-                _witness: &Self::Witness,
-            ) {
-                let _ = N;
-            }
-
-            fn verify<V: VerifierChannel<Unit = u8>>(
-                &self,
-                _ch: &mut V,
-                _instance: &Self::Instance,
-            ) -> VerificationResult<()> {
-                Ok(())
-            }
+            fn protocol_id(&self) -> impl AsRef<[u8]> { b"macro-generic" }
+            type Instance = T;
+            type Witness = T;
+            fn prove<C: ProverChannel<Unit = u8>>(
+                &self, _: &mut C, _: &Self::Instance, _: &Self::Witness
+            ) {}
         }
     }
 
     #[test]
-    fn macro_supports_generics_const_generics_and_where_clauses() {
-        let arg = GenericMacroArg::<u8, 4>(PhantomData);
-        let mut prover = TestProver::default();
-        arg.prove(&mut prover, &0, &0);
-        let mut verifier = TestVerifier { proof: &[] };
-        arg.verify(&mut verifier, &0).expect("generic macro IA");
+    fn argument_roles_have_matching_public_shape() {
+        fn check<
+            P: ArgumentProverCore<Instance = u8, Witness = u16>,
+            V: ArgumentCore<Instance = u8>,
+        >(
+            _: P,
+            _: V,
+        ) {
+        }
+        check(ArgProver, ArgVerifier);
+    }
+
+    #[test]
+    fn argument_roles_keep_protocol_id() {
+        assert_eq!(
+            ArgProver.protocol_id().as_ref(),
+            ArgVerifier.protocol_id().as_ref()
+        );
+    }
+
+    #[test]
+    fn reduction_roles_have_matching_public_shape() {
+        fn check<
+            P: ReductionProverCore<
+                    SourceInstance = u8,
+                    TargetInstance = u16,
+                    SourceWitness = u32,
+                    TargetWitness = u64,
+                >,
+            V: ReductionCore<SourceInstance = u8, TargetInstance = u16>,
+        >(
+            _: P,
+            _: V,
+        ) {
+        }
+        check(ReductionProver, ReductionVerifier);
+    }
+
+    #[test]
+    fn argument_indexer_owns_public_shape_and_keys() {
+        fn check<
+            I: ArgumentCore<Instance = u8> + Indexer<Index = (), ProverKey = (), VerifierKey = ()>,
+        >(
+            _: I,
+        ) {
+        }
+        check(ArgumentIndexer);
+        assert!(ArgumentIndexer.preprocess_checked(&()).is_ok());
+    }
+
+    #[test]
+    fn preprocessing_argument_roles_own_one_key_each() {
+        fn check<
+            P: PreprocessingInteractiveArgumentProver<Instance = u8, Witness = u16, ProverKey = ()>,
+            V: PreprocessingInteractiveArgumentVerifier<Instance = u8, VerifierKey = ()>,
+        >(
+            _: P,
+            _: V,
+        ) {
+        }
+        check(IndexedArgumentProver, IndexedArgumentVerifier);
+    }
+
+    #[test]
+    fn reduction_indexer_owns_public_shape_and_keys() {
+        fn check<
+            I: ReductionCore<SourceInstance = u8, TargetInstance = u16>
+                + Indexer<Index = (), ProverKey = (), VerifierKey = ()>,
+        >(
+            _: I,
+        ) {
+        }
+        check(ReductionIndexer);
+    }
+
+    #[test]
+    fn preprocessing_reduction_roles_own_one_key_each() {
+        fn check<
+            P: PreprocessingInteractiveReductionProver<
+                    SourceInstance = u8,
+                    TargetInstance = u16,
+                    SourceWitness = u32,
+                    TargetWitness = u64,
+                    ProverKey = (),
+                >,
+            V: PreprocessingInteractiveReductionVerifier<
+                    SourceInstance = u8,
+                    TargetInstance = u16,
+                    VerifierKey = (),
+                >,
+        >(
+            _: P,
+            _: V,
+        ) {
+        }
+        check(IndexedReductionProver, IndexedReductionVerifier);
+    }
+
+    #[test]
+    fn macro_parser_accepts_generics_and_where_clauses() {
+        fn check<P: ArgumentProverCore<Instance = u32, Witness = u32>>(_: P) {}
+        check(GenericProver::<u32>(PhantomData));
+    }
+
+    #[test]
+    fn indexer_exposes_no_execution_requirement() {
+        fn accepts_indexer<I: Indexer>(_: &I) {}
+        accepts_indexer(&ArgumentIndexer);
+        accepts_indexer(&ReductionIndexer);
     }
 }
