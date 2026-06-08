@@ -30,8 +30,8 @@ blake3 = "1.5"
 
 [patch.crates-io]
 ark-crypto-primitives = { git = "https://github.com/arkworks-rs/crypto-primitives.git", branch = "release/0.6.0" }
-spongefish = { git = "https://github.com/ricardo-perello/spongefish.git", branch = "main" }
-spongefish-dsfs = { git = "https://github.com/ricardo-perello/spongefish.git", branch = "main" }
+spongefish = { git = "https://github.com/ricardo-perello/spongefish.git", branch = "codex/role-first-architecture" }
+spongefish-dsfs = { git = "https://github.com/ricardo-perello/spongefish.git", branch = "codex/role-first-architecture" }
 
 [patch."https://github.com/ricardo-perello/argus.git"]
 ia-core = { path = "crates/ia-core" }
