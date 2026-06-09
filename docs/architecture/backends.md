@@ -21,7 +21,7 @@ let verifier = spongefish_dsfs::plain_non_interactive_argument_verifier(
 For preprocessing protocols, indexing remains outside DSFS:
 
 ```rust
-let (pk, vk) = indexer.preprocess_checked(&index)?;
+let (pk, vk) = indexer.preprocess(&index);
 let prover = spongefish_dsfs::preprocessing_non_interactive_argument_prover(
     prover_body,
     sponge.clone(),

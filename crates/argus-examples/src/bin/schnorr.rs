@@ -46,7 +46,10 @@ impl<G: CurveGroup> Default for SchnorrVerifier<G> {
 }
 
 ia_core::impl_interactive_argument! {
-    prover impl<G> for SchnorrProver<G>
+    impl<G> {
+        prover: SchnorrProver<G>,
+        verifier: SchnorrVerifier<G>,
+    }
     where
         G: CurveGroup + PrimeGroup + Encoding + Deserialize,
         G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
@@ -69,21 +72,6 @@ ia_core::impl_interactive_argument! {
             let r = k + c * witness;
             ch.send_prover_message(&r);
         }
-    }
-}
-
-ia_core::impl_interactive_argument! {
-    verifier impl<G> for SchnorrVerifier<G>
-    where
-        G: CurveGroup + PrimeGroup + Encoding + Deserialize,
-        G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
-    {
-        fn protocol_id(&self) -> impl AsRef<[u8]> {
-            ia_core::pad_protocol_id(b"schnorr")
-        }
-
-        /// [generator, public_key]
-        type Instance = [G; 2];
 
         #[allow(non_snake_case)]
         fn verify<V: VerifierChannel<Unit = u8>>(&self, ch: &mut V, instance: &[G; 2]) -> VerificationResult<()> {

@@ -56,8 +56,8 @@ struct FoldPairsProver;
 #[derive(Default)]
 struct FoldPairsVerifier;
 
-ia_core::impl_interactive_reduction! {
-prover impl for FoldPairsProver {
+ia_core::impl_interactive_reduction_prover! {
+    impl for FoldPairsProver {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"fold pairs")
     }
@@ -94,8 +94,8 @@ prover impl for FoldPairsProver {
 }
 }
 
-ia_core::impl_interactive_reduction! {
-verifier impl for FoldPairsVerifier {
+ia_core::impl_interactive_reduction_verifier! {
+    impl for FoldPairsVerifier {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"fold pairs")
     }
@@ -164,8 +164,8 @@ struct AccumulateProver;
 #[derive(Default)]
 struct AccumulateVerifier;
 
-ia_core::impl_interactive_reduction! {
-prover impl for AccumulateProver {
+ia_core::impl_interactive_reduction_prover! {
+    impl for AccumulateProver {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"accumulate")
     }
@@ -209,8 +209,8 @@ prover impl for AccumulateProver {
 }
 }
 
-ia_core::impl_interactive_reduction! {
-verifier impl for AccumulateVerifier {
+ia_core::impl_interactive_reduction_verifier! {
+    impl for AccumulateVerifier {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"accumulate")
     }
@@ -286,8 +286,8 @@ struct EqualityCheckProver;
 #[derive(Default)]
 struct EqualityCheckVerifier;
 
-ia_core::impl_interactive_argument! {
-prover impl for EqualityCheckProver {
+ia_core::impl_interactive_argument_prover! {
+    impl for EqualityCheckProver {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"equality check")
     }
@@ -300,8 +300,8 @@ prover impl for EqualityCheckProver {
 }
 }
 
-ia_core::impl_interactive_argument! {
-verifier impl for EqualityCheckVerifier {
+ia_core::impl_interactive_argument_verifier! {
+    impl for EqualityCheckVerifier {
     fn protocol_id(&self) -> impl AsRef<[u8]> {
         ia_core::pad_protocol_id(b"equality check")
     }

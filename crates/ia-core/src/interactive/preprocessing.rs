@@ -108,7 +108,7 @@ mod tests {
     use crate::preprocessing::{INDEXED_INSTANCE_TAG, VK_PAIR_TAG};
     use crate::{
         ArgumentProverCore, CommittedIndex, CommittedIndexBytes, Decoding, Deserialize, Encoding,
-        IndexedInstance, IndexedInstanceRef, Indexer, IndexingError, InteractiveArgumentProver,
+        IndexedInstance, IndexedInstanceRef, Indexer, InteractiveArgumentProver,
         InteractiveArgumentVerifier, NargSerialize, ProtocolCore, ReducedArgument,
         ReductionProverCore, TrivialIndexer, VerificationError, pad_protocol_id,
     };
@@ -246,48 +246,10 @@ mod tests {
         assert!(vk.committed_index().is_empty());
     }
 
-    // ---- preprocess_checked guard ----
-
-    /// A buggy preprocessing implementation: the prover key and verifier key disagree on their
-    /// committed index. The compiled prover/verifier would derive divergent
-    /// transcripts; `preprocess_checked` must catch this at preprocessing time.
-    struct MismatchedKeys;
-
-    impl ProtocolCore for MismatchedKeys {
-        fn protocol_id(&self) -> impl AsRef<[u8]> {
-            pad_protocol_id(b"mismatched-keys")
-        }
-    }
-
-    impl ArgumentCore for MismatchedKeys {
-        type Instance = ();
-    }
-
-    impl Indexer for MismatchedKeys {
-        type Index = ();
-        type ProverKey = ByteVk;
-        type VerifierKey = ByteVk;
-
-        fn preprocess(&self, _: &Self::Index) -> (Self::ProverKey, Self::VerifierKey) {
-            (ByteVk(vec![1]), ByteVk(vec![2]))
-        }
-    }
-
     #[test]
-    fn preprocess_checked_accepts_agreeing_keys() {
-        // EqualsKey returns `((), EqualsKeyVk(ix))`; () and the vk agree (() is
-        // empty, but here both keys are the same byte) — use AddPk which returns
-        // two equal AddPkVk values.
-        let (pk, vk) = AddPk.preprocess_checked(&7u8).unwrap();
+    fn indexer_returns_matching_committed_indices() {
+        let (pk, vk) = AddPk.preprocess(&7u8);
         assert_eq!(pk.committed_index(), vk.committed_index());
-    }
-
-    #[test]
-    fn preprocess_checked_rejects_mismatched_committed_index() {
-        assert_eq!(
-            MismatchedKeys.preprocess_checked(&()),
-            Err(IndexingError::CommittedIndexMismatch)
-        );
     }
 
     // ---- Preprocessing composition tests ----

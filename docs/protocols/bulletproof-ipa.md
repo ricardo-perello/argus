@@ -45,8 +45,8 @@ P' = x²·L + P + x⁻²·R
 
 After `log2(n)` rounds the witness is two scalars, sent in the clear. The proof
 is **`O(log n)`**: for `n = 8` it is 256 bytes (3 rounds × 2 points + 2 final
-scalars). The same `prove`/`verify` body runs non-interactively through DSFS and
-interactively through `live-channel`.
+scalars). The native prover and verifier roles run non-interactively through
+DSFS and interactively through `live-channel`.
 
 Protocol 1 is **not** zero-knowledge (the folded `a, b` are revealed); the
 `SecurityProfile` tracks soundness only.
@@ -56,17 +56,27 @@ Protocol 1 is **not** zero-knowledge (the folded `a, b` are revealed); the
 The monolithic loop is exactly `log2(n)` copies of a single reduction. The
 example also expresses it that way:
 
-- `IpaFold` — an `InteractiveReduction` with `Source = Target = IpaInstance<G>`
-  that performs one round (`n -> n/2`).
-- `IpaBase` — an `InteractiveArgument` that decides the size-1 statement
+- `IpaFoldProver` / `IpaFoldVerifier` perform one reduction round
+  (`n -> n/2`).
+- `IpaBaseProver` / `IpaBaseVerifier` decide the size-1 statement
   (`P == a·g₀ + b·h₀ + a·b·u`).
 
 For `n = 8` these compose statically, mirroring the `composition` example:
 
 ```rust
-type IpaFold2<G>   = ChainedReduction<IpaFold<G>, IpaFold<G>>;
-type IpaFold3<G>   = ChainedReduction<IpaFold2<G>, IpaFold<G>>;
-type ComposedIpa<G> = ReducedArgument<IpaFold3<G>, IpaBase<G>>;
+type IpaFold2Prover<G> =
+    ChainedReduction<IpaFoldProver<G>, IpaFoldProver<G>>;
+type IpaFold3Prover<G> =
+    ChainedReduction<IpaFold2Prover<G>, IpaFoldProver<G>>;
+type ComposedIpaProver<G> =
+    ReducedArgument<IpaFold3Prover<G>, IpaBaseProver<G>>;
+
+type IpaFold2Verifier<G> =
+    ChainedReduction<IpaFoldVerifier<G>, IpaFoldVerifier<G>>;
+type IpaFold3Verifier<G> =
+    ChainedReduction<IpaFold2Verifier<G>, IpaFoldVerifier<G>>;
+type ComposedIpaVerifier<G> =
+    ReducedArgument<IpaFold3Verifier<G>, IpaBaseVerifier<G>>;
 ```
 
 `composed_ipa_matches_monolithic` checks that both forms verify the *same*
@@ -120,8 +130,8 @@ Unlike the bare IPA, the range proof **is** zero-knowledge: the blinding
 ## What It Demonstrates
 
 - A mature, deployed protocol fitting the Argus channel with no oracle layer.
-- The same body running through DSFS and `live-channel`.
-- `InteractiveReduction` self-composition via `ChainedReduction` /
+- The same role pair running through DSFS and `live-channel`.
+- Role-specific reduction composition via `ChainedReduction` /
   `ReducedArgument`, recovering a hand-written recursive loop.
 - A reduction-to-inner-product (`RangeProof`) reusing the IPA as a subroutine.
 

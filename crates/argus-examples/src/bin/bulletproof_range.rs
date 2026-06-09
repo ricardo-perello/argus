@@ -96,8 +96,8 @@ struct RangeWitness<F> {
 // Protocol
 // ---------------------------------------------------------------------------
 
-ia_core::impl_interactive_argument! {
-    prover impl<G> for RangeProofProver<G>
+ia_core::impl_interactive_argument_prover! {
+    impl<G> for RangeProofProver<G>
     where
         G: CurveGroup + PrimeGroup + Encoding + Deserialize,
         G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
@@ -191,8 +191,8 @@ ia_core::impl_interactive_argument! {
     }
 }
 
-ia_core::impl_interactive_argument! {
-    verifier impl<G> for RangeProofVerifier<G>
+ia_core::impl_interactive_argument_verifier! {
+    impl<G> for RangeProofVerifier<G>
     where
         G: CurveGroup + PrimeGroup + Encoding + Deserialize,
         G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,

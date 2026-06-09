@@ -1,25 +1,28 @@
 # Advanced Patterns
 
-The advanced examples are mostly combinations of the same primitives:
-preprocessing, reductions, composition, and backend-owned transcript binding.
+The advanced examples combine native roles, preprocessing, reductions,
+composition, and backend-owned transcript binding.
 
 ## Asymmetric Preprocessing
 
-`preprocessed_lookup` demonstrates asymmetric keys:
+`preprocessed_lookup` uses three types:
 
 ```text
-Index       = public lookup table
-ProverKey   = table + Merkle tree
-VerifierKey = Merkle root + table length
-Instance    = (row, claimed value)
-Witness     = ()
+LookupIndexer
+LookupProver
+LookupVerifier
 ```
 
-The prover sends the opened leaf and Merkle siblings. The verifier reconstructs
-the root and checks it against `vk.root`.
+The indexer derives:
 
-The table binding happens through `CommittedIndex`, not through manual
-transcript calls in the protocol body.
+```text
+ProverKey   = table plus Merkle tree
+VerifierKey = Merkle root plus table length
+```
+
+The prover sends the opened leaf and authentication path. The verifier checks the
+opening against its compact key. The table binding happens through
+`CommittedIndex`, not through protocol-local transcript calls.
 
 ```bash
 cargo run -p argus-examples --bin preprocessed_lookup
@@ -27,72 +30,50 @@ cargo run -p argus-examples --bin preprocessed_lookup
 
 ## WARP
 
-WARP is expressed as preprocessing reductions plus a final argument:
+WARP exposes independent role families:
 
 ```text
-WarpReduction : preprocessing reduction
-  source instance/witness -> accumulated instance/witness
-
-WarpDecider : preprocessing argument
-  accumulated instance/witness -> accept/reject
-
-FullWarp : preprocessing argument
-  run the reduction, then run the decider
+WarpReductionIndexer / Prover / Verifier
+WarpDeciderIndexer   / Prover / Verifier
+FullWarpIndexer      / Prover / Verifier
 ```
 
-This is the place where Argus's distinction between reductions and arguments is
-useful. The reduction produces a new claim; the decider proves that the final
-claim is valid.
+`FullWarp` remains manually single-indexed so its committed-index encoding and
+proof transcript stay unchanged. See [WARP](../protocols/warp.md).
 
-See [WARP](../protocols/warp.md) for the case study.
+## No Role Views or Recombination
 
-## Prover / Verifier Roles
+Production code does not wrap a complete body and hide one method. It authors
+the desired capability on a concrete type:
 
-Each leaf execution trait is split into a prover half and a verifier half (for
-example `InteractiveArgumentProver` / `InteractiveArgumentVerifier`), with the
-familiar full trait as their conjunction. Authoring is unchanged — the macro
-emits both halves from one block — but you can now compile and hold *one* role:
-
-```rust
-use ia_core::prelude::*;
-
-// Ergonomic role views over a full body:
-let prover   = dsfs::plain_non_interactive_argument(body.into_prover(),   dsfs::Keccak::default());
-let verifier = dsfs::plain_non_interactive_argument(body.into_verifier(), dsfs::Keccak::default());
+```rust,ignore
+let prover = dsfs::plain_non_interactive_argument_prover(
+    native_prover_body,
+    dsfs::Keccak::default(),
+);
+let verifier = dsfs::plain_non_interactive_argument_verifier(
+    native_verifier_body,
+    dsfs::Keccak::default(),
+);
 ```
 
-`into_prover()` / `into_verifier()` (the `ProverOnly<T>` / `VerifierOnly<T>`
-wrappers) expose only one executable half — an API boundary; the wrapped body
-still contains both algorithms. A *genuinely* one-sided body — a type that
-implements only `…Verifier` — goes further: the other algorithm does not exist
-for it at all (the recursion-relevant case).
+There are no `into_prover` / `into_verifier` views, full conjunction traits,
+`CombinedIA`, or `CombinedNarg`. If an application needs both roles, it keeps
+the two values side by side. This preserves an actual dependency boundary:
+verifier-only code does not contain the prover implementation.
 
-For preprocessing protocols, keys are passed explicitly on each call; there is no
-stateful key-binding wrapper:
+## Compiled Roles as Interactive Roles
 
-```rust
-let proof = prover.prove(&pk, &session, &instance, &witness);
-verifier.verify(&vk, &session, &instance, &proof)?;
-```
+When a compiled NARG must be embedded as a one-message interactive argument, use
+the matching adapter:
 
-The capability boundary is key possession: proving needs the prover key,
-verification needs the verifier key. Two independently-built halves can be
-recombined — `CombinedIA` at the body level, `spongefish_dsfs::CombinedNarg` at
-the compiled-NARG level.
+- `NargProverAsInteractiveArgument`
+- `NargVerifierAsInteractiveArgument`
 
-See [Prover/Verifier Split](../prover-verifier-split-presentation.md) for the full
-picture.
+These adapters remain role-specific and do not reconstruct a combined object.
 
 ## External Compatibility
 
-Some code exists to match external proof layouts. In this workspace,
-`sigma-bridge` does that for selected `sigma-proofs` paths.
-
-Compatibility work usually belongs in:
-
-- the bridge crate,
-- DSFS transcript initialization,
-- protocol-id wiring,
-- golden vector tests.
-
-It should not leak sponge operations into ordinary protocol implementations.
+Compatibility work belongs in the bridge crate, DSFS transcript initialization,
+protocol-id wiring, and golden-vector tests. `sigma-bridge` is the main example.
+Sponge operations should not leak into ordinary protocol implementations.

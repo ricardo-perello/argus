@@ -2,9 +2,9 @@
 
 Argus separates protocol logic from execution mechanics.
 
-A protocol implementation describes a public-coin conversation against the
-channel traits in `ia-core`. A backend then executes that conversation. The same
-protocol object can be:
+A protocol implementation describes a public-coin conversation as independent
+prover and verifier roles against the channel traits in `ia-core`. A backend
+then executes those roles. The same role pair can be:
 
 - compiled by `spongefish-dsfs` into a non-interactive proof,
 - run by `live-channel` as an interactive protocol, or
@@ -60,10 +60,11 @@ flowchart LR
     E --> G["Interactive execution"]
 ```
 
-Preprocessing protocols use the same boundary. Setup derives a prover key and a
-verifier key; the DSFS wrapper stores neither. During proving and verification
-the caller supplies the relevant key, and the backend binds the corresponding
-committed-index bytes before the first challenge.
+Preprocessing protocols add an independent indexer. It derives a prover key and
+a verifier key; the DSFS wrappers store neither and do not forward indexing.
+During proving and verification the caller supplies the relevant key, and the
+backend binds the corresponding committed-index bytes before the first
+challenge.
 
 ## Security Layer
 

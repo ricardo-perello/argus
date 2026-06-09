@@ -1,124 +1,70 @@
 # First Argument
 
-The easiest way to implement an Argus protocol is to write the interactive
-conversation first. This chapter uses Schnorr as the running example.
+This chapter uses Schnorr to show native prover and verifier authoring.
 
 The relation is:
 
 ```text
-R_schnorr = { ((G, X), x) : X = x · G }
+R_schnorr = { ((G, X), x) : X = x * G }
 ```
 
-The protocol proves knowledge of `x` such that `X = x · G`:
+The public instance is `(G, X)` and the private witness is `x`.
 
-```text
-Common input: (G, X)
+## Define Native Roles
 
-  Prover P(x)                                  Verifier V(G, X)
-  -----------                                  ----------------
+Use distinct concrete types. This is what prevents verifier-only code from
+acquiring the witness algorithm through its type:
 
-  sample k
-  K = k · G
-
-        K ----------------------------------->
-
-                                                sample public c
-
-        <----------------------------------- c
-
-  r = k + c · x
-
-        r ----------------------------------->
-
-                                                accept iff
-                                                G · r = K + c · X
+```rust,ignore
+struct SchnorrProver<G: CurveGroup>(core::marker::PhantomData<G>);
+struct SchnorrVerifier<G: CurveGroup>(core::marker::PhantomData<G>);
 ```
 
-The Argus implementation should mirror that diagram. The public data goes in
-`Instance`; the private data goes in `Witness`:
+Both roles use the same protocol identifier and public instance type. The
+shared macro writes that common shape once while still emitting separate impls.
 
-```text
-Instance = (G, X)
-Witness  = x
-```
-
-## Put Data in the Right Place
-
-First decide what data belongs to the protocol object, the instance, and the
-witness. For Schnorr, all mathematical data is either public instance data or
-private witness data. The protocol object only names the protocol family and
-the curve type:
-
-```rust
-// No statement or witness data lives here. Those are passed as `Instance`
-// and `Witness` below. This type just selects the Schnorr protocol over `G`.
-struct Schnorr<G: CurveGroup>(core::marker::PhantomData<G>);
-
-impl<G: CurveGroup> Default for Schnorr<G> {
-    fn default() -> Self {
-        Self(core::marker::PhantomData)
-    }
-}
-```
-
-## Implement the Argument
-
-Most authors use the macro surface. It expands into the underlying core traits,
-but keeps the author block close to the mathematical protocol.
-
-```rust
+```rust,ignore
 ia_core::impl_interactive_argument! {
-    impl<G> InteractiveArgument for Schnorr<G>
+    impl<G> {
+        prover: SchnorrProver<G>,
+        verifier: SchnorrVerifier<G>,
+    }
     where
-        // The channel sends group elements and field elements as byte strings.
         G: CurveGroup + PrimeGroup + Encoding + Deserialize,
         G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
     {
-        // Domain-separation label for this protocol body.
         fn protocol_id(&self) -> impl AsRef<[u8]> {
             ia_core::pad_protocol_id(b"schnorr")
         }
 
-        // Public statement: generator and public key.
         type Instance = [G; 2];
-        // Private witness: secret scalar x with X = x * G.
         type Witness = G::ScalarField;
 
-        #[allow(non_snake_case)]
-        fn prove<P: ProverChannel<Unit = u8>>(
+        fn prove<C: ProverChannel<Unit = u8>>(
             &self,
-            ch: &mut P,
-            instance: &[G; 2],
-            witness: &G::ScalarField,
+            channel: &mut C,
+            instance: &Self::Instance,
+            witness: &Self::Witness,
         ) {
-            // First prover message: commitment K = k * G.
             let k = G::ScalarField::rand(&mut OsRng);
-            let K = instance[0] * k;
-            ch.send_prover_message(&K);
+            let commitment = instance[0] * k;
 
-            // Public-coin challenge from whichever backend is running us.
-            let c: G::ScalarField = ch.read_verifier_message();
-
-            // Final prover message: response r = k + c * x.
-            let r = k + c * witness;
-            ch.send_prover_message(&r);
+            channel.send_prover_message(&commitment);
+            let challenge: G::ScalarField = channel.read_verifier_message();
+            let response = k + challenge * witness;
+            channel.send_prover_message(&response);
         }
 
-        #[allow(non_snake_case)]
-        fn verify<V: VerifierChannel<Unit = u8>>(
+        fn verify<C: VerifierChannel<Unit = u8>>(
             &self,
-            ch: &mut V,
-            instance: &[G; 2],
+            channel: &mut C,
+            instance: &Self::Instance,
         ) -> VerificationResult<()> {
-            let (G_gen, X) = (instance[0], instance[1]);
+            let commitment: G = channel.read_prover_message()?;
+            let challenge: G::ScalarField = channel.send_verifier_message();
+            let response: G::ScalarField = channel.read_prover_message()?;
 
-            // Same transcript shape as the prover: read K, produce c, read r.
-            let K: G = ch.read_prover_message()?;
-            let c: G::ScalarField = ch.send_verifier_message();
-            let r: G::ScalarField = ch.read_prover_message()?;
-
-            // Relation check implied by the Schnorr transcript.
-            if G_gen * r == K + X * c {
+            if instance[0] * response == commitment + instance[1] * challenge {
                 Ok(())
             } else {
                 Err(VerificationError)
@@ -128,38 +74,28 @@ ia_core::impl_interactive_argument! {
 }
 ```
 
-The full version lives in
+`Witness` and `prove` are emitted only for `SchnorrProver`; `verify` is emitted
+only for `SchnorrVerifier`. Use the suffix macros when the two roles need
+different bounds or are maintained separately.
+
+The prover sends a commitment, reads a challenge, and sends a response. The
+verifier reads the same commitment, produces the same public-coin position, and
+reads the response. Neither role says how the challenge is implemented:
+
+- DSFS squeezes it from the transcript.
+- `live-channel` samples it and sends it to the prover.
+
+The full implementation is in
 `crates/argus-examples/src/bin/schnorr.rs`.
-
-## Read the Block as a Protocol
-
-The prover code sends `K`, reads `c`, then sends `r`. The verifier code reads
-`K`, sends `c`, then reads `r`.
-
-Neither side says where `c` comes from. That is why the same body can run in two
-ways:
-
-- DSFS squeezes `c` from a transcript.
-- `live-channel` samples `c` and sends it to the prover.
-
-The next two chapters show both executions:
-[Compile with DSFS](dsfs.md) and [Run Interactively](live.md).
 
 ## Protocol IDs
 
-`protocol_id` is domain-separation input. Leaf protocols often use:
+`protocol_id` is domain-separation input. Both roles of one protocol must return
+the same identifier. If a backend changes sponge choice, salt policy, or proof
+layout, the backend-level protocol identifier must also be reviewed.
 
-```rust
-ia_core::pad_protocol_id(b"schnorr")
-```
+## Add Security Metadata
 
-For composed protocols, Argus derives protocol IDs from the component tree using
-injective encodings. If a backend changes sponge choice, salt policy, or proof
-layout, that backend-level protocol identifier must also be reviewed.
-
-## Add Security Metadata Later
-
-The executable protocol does not require a security profile. When the protocol
-is ready, implement `ArgumentSecurity` to record soundness, knowledge soundness,
-HVZK, and challenge length metadata. This is separate from the channel
-conversation so examples and tests can first focus on behavior.
+Implement `ArgumentSecurity` on `SchnorrVerifier`, not on the prover. Security
+metadata describes verifier rounds and public-instance-dependent bounds; it does
+not require witness capability.

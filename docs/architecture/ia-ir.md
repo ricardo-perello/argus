@@ -31,16 +31,16 @@ Plain protocols receive all public statement data as the instance.
 Preprocessing protocols use three independent roles:
 
 ```text
-indexer.preprocess_checked(index)
-    -> Result<(prover_key, verifier_key), IndexingError>
+indexer.preprocess(index)
+    -> (prover_key, verifier_key)
 prover.prove(pk, instance, witness)
 verifier.verify(vk, instance)
 ```
 
-Both keys implement `CommittedIndex`. The checked indexing path rejects keys
-whose committed-index bytes differ in debug and release builds. DSFS binds the
+Both keys implement `CommittedIndex`. The indexer contract requires equal
+committed-index bytes for keys derived from the same index. DSFS binds the
 role's key commitment together with the ordinary instance before the first
-challenge.
+challenge; violating the contract makes the transcripts diverge.
 
 ## Trait Shape
 

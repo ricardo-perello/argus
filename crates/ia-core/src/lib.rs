@@ -41,8 +41,7 @@ pub const fn pad_protocol_id(label: &[u8]) -> [u8; 32] {
 
 pub use channel::{ProverChannel, VerifierChannel};
 pub use core::{
-    ArgumentCore, ArgumentProverCore, Indexer, IndexingError, ProtocolCore, ReductionCore,
-    ReductionProverCore,
+    ArgumentCore, ArgumentProverCore, Indexer, ProtocolCore, ReductionCore, ReductionProverCore,
 };
 pub use interactive::{
     ChainedReduction, InteractiveArgumentProver, InteractiveArgumentVerifier,

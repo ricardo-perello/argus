@@ -96,8 +96,8 @@ impl<G: CurveGroup> Default for DleqIndexer<G> {
     }
 }
 
-ia_core::impl_preprocessing_argument! {
-    indexer impl<G> for DleqIndexer<G>
+ia_core::impl_preprocessing_argument_indexer! {
+    impl<G> for DleqIndexer<G>
     where
         G: CurveGroup + Encoding,
     {
@@ -129,8 +129,8 @@ impl<G: CurveGroup> Default for DleqProver<G> {
     }
 }
 
-ia_core::impl_preprocessing_argument! {
-    prover impl<G> for DleqProver<G>
+ia_core::impl_preprocessing_argument_prover! {
+    impl<G> for DleqProver<G>
     where
         G: CurveGroup + PrimeGroup + Encoding + Deserialize,
         G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
@@ -176,8 +176,8 @@ impl<G: CurveGroup> Default for DleqVerifier<G> {
     }
 }
 
-ia_core::impl_preprocessing_argument! {
-    verifier impl<G> for DleqVerifier<G>
+ia_core::impl_preprocessing_argument_verifier! {
+    impl<G> for DleqVerifier<G>
     where
         G: CurveGroup + PrimeGroup + Encoding + Deserialize,
         G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
@@ -242,9 +242,7 @@ fn main() {
         DleqVerifier::<G>::default(),
         dsfs::Keccak::default(),
     );
-    let (proving_key, verifier_key) = indexer
-        .preprocess_checked(&(g, h))
-        .expect("matching committed indices");
+    let (proving_key, verifier_key) = indexer.preprocess(&(g, h));
 
     // -------- inspect the preprocessed key directly ------------------------
     println!("Preprocessed public key:");
@@ -312,9 +310,7 @@ mod tests {
             DleqVerifier::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let (pk, vk) = indexer
-            .preprocess_checked(&(g, h))
-            .expect("matching committed indices");
+        let (pk, vk) = indexer.preprocess(&(g, h));
 
         let u = G::generator() * F::rand(&mut OsRng);
         let v = u * x;
@@ -329,9 +325,7 @@ mod tests {
         let session = spongefish::session!("dleq role split test");
         let (g, x, h) = keygen();
         let indexer = DleqIndexer::<G>::default();
-        let (pk, vk) = indexer
-            .preprocess_checked(&(g, h))
-            .expect("matching committed indices");
+        let (pk, vk) = indexer.preprocess(&(g, h));
 
         let prover_nia = dsfs::preprocessing_non_interactive_argument_prover(
             DleqProver::<G>::default(),
@@ -375,12 +369,8 @@ mod tests {
             DleqVerifier::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let (pk_alice, _vk_alice) = indexer
-            .preprocess_checked(&(g, h_alice))
-            .expect("matching committed indices");
-        let (_pk_bob, vk_bob) = indexer
-            .preprocess_checked(&(g, h_bob))
-            .expect("matching committed indices");
+        let (pk_alice, _vk_alice) = indexer.preprocess(&(g, h_alice));
+        let (_pk_bob, vk_bob) = indexer.preprocess(&(g, h_bob));
         assert_ne!(pk_alice.committed_index(), vk_bob.committed_index());
 
         // Alice produces a valid DLEQ for (u, u^x_alice).
@@ -412,9 +402,7 @@ mod tests {
             DleqVerifier::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let (pk, vk) = indexer
-            .preprocess_checked(&(g, h))
-            .expect("matching committed indices");
+        let (pk, vk) = indexer.preprocess(&(g, h));
 
         let u = G::generator() * F::rand(&mut OsRng);
         let v_wrong = u * F::rand(&mut OsRng); // not u^x
@@ -431,9 +419,7 @@ mod tests {
     #[test]
     fn dleq_proving_key_carries_tagged_committed_index() {
         let (g, _x, h) = keygen();
-        let (pk, _vk) = DleqIndexer::<G>::default()
-            .preprocess_checked(&(g, h))
-            .expect("matching committed indices");
+        let (pk, _vk) = DleqIndexer::<G>::default().preprocess(&(g, h));
         assert!(pk.committed_index().as_bytes().starts_with(b"dleq:vk:v1"));
     }
 }

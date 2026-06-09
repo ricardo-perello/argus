@@ -10,12 +10,13 @@ and proof layout become entangled with the mathematical protocol. That is the
 right level of abstraction for a transcript backend. It is not the right level
 for a reusable IA or IR.
 
-Argus separates those jobs. A protocol is written as a pure channel program:
-the prover sends messages and reads public coins; the verifier reads messages
-and sends public coins. A backend gives those operations concrete meaning.
+Argus separates those jobs. A protocol family is written as native prover and
+verifier channel programs: the prover sends messages and reads public coins;
+the verifier reads messages and sends public coins. A backend gives those
+operations concrete meaning.
 
 ```text
-protocol body
+prover role + verifier role
     |
     v
 ia-core channels
@@ -27,9 +28,10 @@ ia-core channels
     +-- future compiler target, such as IOP + commitment -> IA
 ```
 
-This makes the IA layer useful in both directions. It can be consumed by DSFS,
-run directly as an interactive protocol, or serve as the output interface for a
-future compiler that lowers a richer formalism into an interactive argument.
+This makes the IA layer useful in both directions. Its roles can be consumed by
+DSFS, run directly as an interactive protocol, or serve as the output interface
+for a future compiler that lowers a richer formalism into an interactive
+argument.
 
 ## Where To Start
 
@@ -40,7 +42,7 @@ future compiler that lowers a richer formalism into an interactive argument.
 - [Author Guide](author-guide/overview.md): how to write protocols.
 - [Transcript Invariants](security/transcript-invariants.md): rules for backend
   and transcript changes.
-- [Final Report](final-report.md): six-page academic report.
+- [Final Report](final-report.md): point-in-time academic project report.
 
 ## Project Shape
 

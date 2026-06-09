@@ -14,9 +14,10 @@ ProtocolCore
 └── Indexer                   (Index, ProverKey, VerifierKey)
 ```
 
-`Indexer::preprocess_checked` returns
-`Result<(ProverKey, VerifierKey), IndexingError>` and rejects committed-index
-mismatches in all build modes.
+`Indexer::preprocess` returns `(ProverKey, VerifierKey)`. Implementations must
+ensure both keys produce identical `CommittedIndex` bytes. DSFS binds those
+bytes independently on the proving and verification paths, so violating the
+contract makes every proof fail to verify.
 
 ## Executable Roles
 
@@ -39,11 +40,15 @@ are no full conjunction traits, role views, or recombination adapters.
 
 ## Authoring Macros
 
-Each invocation authors one native role:
+The short macros author related native roles from one shared declaration:
 
 ```rust
 ia_core::impl_interactive_argument! {
-    prover impl for MyProver {
+    impl {
+        prover: MyProver,
+        verifier: MyVerifier,
+    }
+    {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
             ia_core::pad_protocol_id(b"my-protocol")
         }
@@ -59,21 +64,38 @@ ia_core::impl_interactive_argument! {
         ) {
             // Channel-only prover logic.
         }
+
+        fn verify<C: VerifierChannel<Unit = u8>>(
+            &self,
+            channel: &mut C,
+            instance: &Self::Instance,
+        ) -> VerificationResult<()> {
+            // Channel-only verifier logic.
+        }
     }
 }
 ```
 
-The `verifier` form omits witness types. Preprocessing macros also accept an
-`indexer` form. Argument indexers declare `Instance`; reduction indexers declare
-`SourceInstance` and `TargetInstance`, allowing security metadata to live on the
-indexer.
+The macro emits independent prover and verifier implementations. Witness types
+and `prove` are routed only to the prover; `verify` is routed only to the
+verifier. Preprocessing shared macros similarly emit an independent indexer.
 
-Available macros:
+Shared macros:
 
 - `impl_interactive_argument!`
 - `impl_interactive_reduction!`
 - `impl_preprocessing_argument!`
 - `impl_preprocessing_reduction!`
+
+Use the role-specific suffix forms when roles need different generic bounds or
+live in separate modules:
+
+- `impl_interactive_argument_prover!` / `impl_interactive_argument_verifier!`
+- `impl_interactive_reduction_prover!` / `impl_interactive_reduction_verifier!`
+- `impl_preprocessing_argument_indexer!`,
+  `impl_preprocessing_argument_prover!`, and
+  `impl_preprocessing_argument_verifier!`
+- the corresponding `impl_preprocessing_reduction_*` macros
 
 ## Non-Interactive Vocabulary
 

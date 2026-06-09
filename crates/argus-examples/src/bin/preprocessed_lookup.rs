@@ -163,14 +163,29 @@ fn lookup_protocol_id() -> [u8; 32] {
     ia_core::pad_protocol_id(b"preprocessed-merkle-lookup")
 }
 
+#[derive(Default)]
+struct LookupIndexer;
+
+#[derive(Default)]
+struct LookupProver;
+
+#[derive(Default)]
+struct LookupVerifier;
+
 ia_core::impl_preprocessing_argument! {
-    indexer impl for LookupIndexer {
+    impl {
+        indexer: LookupIndexer,
+        prover: LookupProver,
+        verifier: LookupVerifier,
+    }
+    {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
             lookup_protocol_id()
         }
 
         /// Per-claim instance is (i, claimed_value).
         type Instance = (u32, u32);
+        type Witness = ();
         type Index = Vec<u32>;
         type ProverKey = LookupProverKey;
         type VerifierKey = LookupVerifierKey;
@@ -188,24 +203,6 @@ ia_core::impl_preprocessing_argument! {
             let vk = LookupVerifierKey { root, n };
             (pk, vk)
         }
-    }
-}
-
-#[derive(Default)]
-struct LookupIndexer;
-
-#[derive(Default)]
-struct LookupProver;
-
-ia_core::impl_preprocessing_argument! {
-    prover impl for LookupProver {
-        fn protocol_id(&self) -> impl AsRef<[u8]> {
-            lookup_protocol_id()
-        }
-
-        type Instance = (u32, u32);
-        type Witness = ();
-        type ProverKey = LookupProverKey;
 
         fn prove<P: ProverChannel<Unit = u8>>(
             &self,
@@ -226,20 +223,6 @@ ia_core::impl_preprocessing_argument! {
                 ch.send_prover_message(sibling.as_bytes());
             }
         }
-    }
-}
-
-#[derive(Default)]
-struct LookupVerifier;
-
-ia_core::impl_preprocessing_argument! {
-    verifier impl for LookupVerifier {
-        fn protocol_id(&self) -> impl AsRef<[u8]> {
-            lookup_protocol_id()
-        }
-
-        type Instance = (u32, u32);
-        type VerifierKey = LookupVerifierKey;
 
         fn verify<V: VerifierChannel<Unit = u8>>(
             &self,
@@ -296,9 +279,7 @@ fn main() {
         LookupVerifier,
         dsfs::Keccak::default(),
     );
-    let (proving_key, verifier_key) = indexer
-        .preprocess_checked(&table)
-        .expect("matching committed indices");
+    let (proving_key, verifier_key) = indexer.preprocess(&table);
 
     // The asymmetry, straight off the keys: the prover key holds the full
     // table + tree (O(n)); the verifier key is just root + n (O(1)).
@@ -358,9 +339,7 @@ mod tests {
             LookupVerifier,
             dsfs::Keccak::default(),
         );
-        let (pk, vk) = indexer
-            .preprocess_checked(&table)
-            .expect("matching committed indices");
+        let (pk, vk) = indexer.preprocess(&table);
 
         for i in 0u32..table.len() as u32 {
             let y = table[i as usize];
@@ -385,9 +364,7 @@ mod tests {
             LookupVerifier,
             dsfs::Keccak::default(),
         );
-        let (pk, vk) = indexer
-            .preprocess_checked(&table)
-            .expect("matching committed indices");
+        let (pk, vk) = indexer.preprocess(&table);
 
         let proof = prover.prove(&pk, &session, &(3, table[3]), &());
         // Same proof bytes, but claim a different value -> reject.
@@ -413,12 +390,8 @@ mod tests {
             LookupVerifier,
             dsfs::Keccak::default(),
         );
-        let (pk_a, _vk_a) = indexer
-            .preprocess_checked(&table_a)
-            .expect("matching committed indices");
-        let (_pk_b, vk_b) = indexer
-            .preprocess_checked(&table_b)
-            .expect("matching committed indices");
+        let (pk_a, _vk_a) = indexer.preprocess(&table_a);
+        let (_pk_b, vk_b) = indexer.preprocess(&table_b);
         assert_ne!(pk_a.committed_index(), vk_b.committed_index());
 
         // Open table_a at index 5 (unperturbed in both).
@@ -436,9 +409,7 @@ mod tests {
     fn lookup_via_separate_prover_and_verifier_roles() {
         let session = spongefish::session!("preprocessed lookup wrappers test");
         let table = sample_table();
-        let (pk, vk) = LookupIndexer
-            .preprocess_checked(&table)
-            .expect("matching committed indices");
+        let (pk, vk) = LookupIndexer.preprocess(&table);
 
         let prover_nia = dsfs::preprocessing_non_interactive_argument_prover(
             LookupProver,
@@ -465,12 +436,8 @@ mod tests {
     fn pk_grows_with_table_vk_stays_small() {
         let small = (0..2u32).collect::<Vec<_>>();
         let large = (0..1024u32).collect::<Vec<_>>();
-        let (pk_small, _vk_small) = LookupIndexer
-            .preprocess_checked(&small)
-            .expect("matching committed indices");
-        let (pk_large, _vk_large) = LookupIndexer
-            .preprocess_checked(&large)
-            .expect("matching committed indices");
+        let (pk_small, _vk_small) = LookupIndexer.preprocess(&small);
+        let (pk_large, _vk_large) = LookupIndexer.preprocess(&large);
 
         // PK scales with the table; VK is a fixed 36 bytes (root + n) by construction.
         assert_eq!(pk_small.table.len(), 2);

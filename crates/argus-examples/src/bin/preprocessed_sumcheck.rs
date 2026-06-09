@@ -169,8 +169,19 @@ fn sumcheck_protocol_id() -> [u8; 32] {
 #[derive(Default)]
 struct SumcheckIndexer;
 
+#[derive(Default)]
+struct SumcheckProver;
+
+#[derive(Default)]
+struct SumcheckVerifier;
+
 ia_core::impl_preprocessing_reduction! {
-    indexer impl for SumcheckIndexer {
+    impl {
+        indexer: SumcheckIndexer,
+        prover: SumcheckProver,
+        verifier: SumcheckVerifier,
+    }
+    {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
             sumcheck_protocol_id()
         }
@@ -179,6 +190,8 @@ ia_core::impl_preprocessing_reduction! {
         type SourceInstance = Fr;
         /// ((r_1, r_2), v)
         type TargetInstance = ((Fr, Fr), Fr);
+        type SourceWitness = ();
+        type TargetWitness = ();
         type Index = [Fr; 4];
         type ProverKey = SumcheckProverKey;
         type VerifierKey = SumcheckVerifierKey;
@@ -190,23 +203,6 @@ ia_core::impl_preprocessing_reduction! {
             };
             (pk, vk)
         }
-    }
-}
-
-#[derive(Default)]
-struct SumcheckProver;
-
-ia_core::impl_preprocessing_reduction! {
-    prover impl for SumcheckProver {
-        fn protocol_id(&self) -> impl AsRef<[u8]> {
-            sumcheck_protocol_id()
-        }
-
-        type SourceInstance = Fr;
-        type TargetInstance = ((Fr, Fr), Fr);
-        type SourceWitness = ();
-        type TargetWitness = ();
-        type ProverKey = SumcheckProverKey;
 
         fn prove<P: ProverChannel<Unit = u8>>(
             &self,
@@ -231,21 +227,6 @@ ia_core::impl_preprocessing_reduction! {
             let v = line(q2, r2);
             (((r1, r2), v), ())
         }
-    }
-}
-
-#[derive(Default)]
-struct SumcheckVerifier;
-
-ia_core::impl_preprocessing_reduction! {
-    verifier impl for SumcheckVerifier {
-        fn protocol_id(&self) -> impl AsRef<[u8]> {
-            sumcheck_protocol_id()
-        }
-
-        type SourceInstance = Fr;
-        type TargetInstance = ((Fr, Fr), Fr);
-        type VerifierKey = SumcheckVerifierKey;
 
         fn verify<V: VerifierChannel<Unit = u8>>(
             &self,
@@ -312,9 +293,7 @@ fn main() {
         SumcheckVerifier,
         dsfs::Keccak::default(),
     );
-    let (proving_key, verifier_key) = indexer
-        .preprocess_checked(&coeffs)
-        .expect("matching committed indices");
+    let (proving_key, verifier_key) = indexer.preprocess(&coeffs);
 
     // Inspect the verifier key + committed index directly.
     println!("Preprocessed keys:");
@@ -393,9 +372,7 @@ mod tests {
             SumcheckVerifier,
             dsfs::Keccak::default(),
         );
-        let (pk, vk) = indexer
-            .preprocess_checked(&coeffs)
-            .expect("matching committed indices");
+        let (pk, vk) = indexer.preprocess(&coeffs);
 
         let (proof, _target_p, ()) = prover.prove(&pk, &session, &t, &());
         let ((r1, r2), v) = verifier.verify(&vk, &session, &t, &proof).expect("verify");
@@ -408,9 +385,7 @@ mod tests {
         let session = spongefish::session!("preprocessed sumcheck role split test");
         let coeffs = sample_coeffs();
         let t = sum_over_hypercube(&coeffs);
-        let (pk, vk) = SumcheckIndexer
-            .preprocess_checked(&coeffs)
-            .expect("matching committed indices");
+        let (pk, vk) = SumcheckIndexer.preprocess(&coeffs);
 
         let prover_nir = dsfs::preprocessing_non_interactive_reduction_prover(
             SumcheckProver,
@@ -455,9 +430,7 @@ mod tests {
             SumcheckVerifier,
             dsfs::Keccak::default(),
         );
-        let (pk, vk) = indexer
-            .preprocess_checked(&coeffs)
-            .expect("matching committed indices");
+        let (pk, vk) = indexer.preprocess(&coeffs);
 
         // Prover honestly runs on (its true) `coeffs`. But the caller
         // passes the wrong T as the source instance. The verifier reads
@@ -486,12 +459,8 @@ mod tests {
             SumcheckVerifier,
             dsfs::Keccak::default(),
         );
-        let (pk_a, _vk_a) = indexer
-            .preprocess_checked(&coeffs_a)
-            .expect("matching committed indices");
-        let (_pk_b, vk_b) = indexer
-            .preprocess_checked(&coeffs_b)
-            .expect("matching committed indices");
+        let (pk_a, _vk_a) = indexer.preprocess(&coeffs_a);
+        let (_pk_b, vk_b) = indexer.preprocess(&coeffs_b);
         assert_ne!(pk_a.committed_index(), vk_b.committed_index());
 
         let t_a = sum_over_hypercube(&coeffs_a);
@@ -504,9 +473,7 @@ mod tests {
     #[test]
     fn sumcheck_proving_key_carries_tagged_committed_index() {
         let coeffs = sample_coeffs();
-        let (pk, _vk) = SumcheckIndexer
-            .preprocess_checked(&coeffs)
-            .expect("matching committed indices");
+        let (pk, _vk) = SumcheckIndexer.preprocess(&coeffs);
         assert!(
             pk.committed_index()
                 .as_bytes()

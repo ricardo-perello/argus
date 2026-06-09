@@ -53,8 +53,8 @@ impl<G: CurveGroup> Default for IpaFoldVerifier<G> {
     }
 }
 
-ia_core::impl_interactive_reduction! {
-    prover impl<G> for IpaFoldProver<G>
+ia_core::impl_interactive_reduction_prover! {
+    impl<G> for IpaFoldProver<G>
     where
         G: CurveGroup + PrimeGroup + Encoding + Deserialize,
         G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
@@ -104,8 +104,8 @@ ia_core::impl_interactive_reduction! {
     }
 }
 
-ia_core::impl_interactive_reduction! {
-    verifier impl<G> for IpaFoldVerifier<G>
+ia_core::impl_interactive_reduction_verifier! {
+    impl<G> for IpaFoldVerifier<G>
     where
         G: CurveGroup + PrimeGroup + Encoding + Deserialize,
         G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
@@ -190,8 +190,8 @@ impl<G: CurveGroup> Default for IpaBaseVerifier<G> {
     }
 }
 
-ia_core::impl_interactive_argument! {
-    prover impl<G> for IpaBaseProver<G>
+ia_core::impl_interactive_argument_prover! {
+    impl<G> for IpaBaseProver<G>
     where
         G: CurveGroup + PrimeGroup + Encoding + Deserialize,
         G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
@@ -217,8 +217,8 @@ ia_core::impl_interactive_argument! {
     }
 }
 
-ia_core::impl_interactive_argument! {
-    verifier impl<G> for IpaBaseVerifier<G>
+ia_core::impl_interactive_argument_verifier! {
+    impl<G> for IpaBaseVerifier<G>
     where
         G: CurveGroup + PrimeGroup + Encoding + Deserialize,
         G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,

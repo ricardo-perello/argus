@@ -254,9 +254,8 @@ fn changed_relation_same_dimensions(r1cs: &R1CS<Fp>) -> R1CS<Fp> {
 
 fn committed_index(ix: &WarpIndex<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>) -> Vec<u8> {
     let indexer = WarpReductionIndexer::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
-    let (_, vk) = indexer
-        .preprocess_checked(ix)
-        .expect("matching committed indices");
+    let (pk, vk) = indexer.preprocess(ix);
+    assert_eq!(pk.committed_index(), vk.committed_index());
     vk.committed_index().as_bytes().to_vec()
 }
 
@@ -336,9 +335,7 @@ fn warp_decider_keys_share_the_same_commitment() {
     let (r1cs, code, _, _) = setup();
     let ix = warp_index(r1cs, code, 4, 4);
     let indexer = WarpDeciderIndexer::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default();
-    let (pk, vk) = indexer
-        .preprocess_checked(&ix)
-        .expect("decider keys must bind the same index");
+    let (pk, vk) = indexer.preprocess(&ix);
     assert_eq!(pk.committed_index(), vk.committed_index());
 }
 
@@ -409,12 +406,8 @@ fn warp_commitment_changes_when_merkle_params_change() {
     let ix_b = param_warp_index(r1cs, code, [3u8; 32], [2u8; 32]);
 
     let indexer = WarpReductionIndexer::<Fp, R1CS<Fp>, ReedSolomon<Fp>, ParamMT>::new();
-    let (_, vk_a) = indexer
-        .preprocess_checked(&ix_a)
-        .expect("matching committed indices");
-    let (_, vk_b) = indexer
-        .preprocess_checked(&ix_b)
-        .expect("matching committed indices");
+    let (_, vk_a) = indexer.preprocess(&ix_a);
+    let (_, vk_b) = indexer.preprocess(&ix_b);
 
     assert_ne!(vk_a.committed_index(), vk_b.committed_index());
 }
@@ -438,12 +431,8 @@ fn proof_rejects_with_wrong_verifier_key_same_dimensions() {
         WarpReductionVerifier::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default(),
         Keccak::default(),
     );
-    let (pk_a, _vk_a) = indexer
-        .preprocess_checked(&ix_a)
-        .expect("matching committed indices");
-    let (_pk_b, vk_b) = indexer
-        .preprocess_checked(&ix_b)
-        .expect("matching committed indices");
+    let (pk_a, _vk_a) = indexer.preprocess(&ix_a);
+    let (_pk_b, vk_b) = indexer.preprocess(&ix_b);
 
     let (proof, _, _) = prover.prove(&pk_a, &session, &instance, &witness);
     assert!(verifier.verify(&vk_b, &session, &instance, &proof).is_err());
@@ -480,9 +469,7 @@ fn proof_rejects_with_wrong_source_instance_same_index() {
         WarpReductionVerifier::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default(),
         Keccak::default(),
     );
-    let (pk, vk) = indexer
-        .preprocess_checked(&ix)
-        .expect("matching committed indices");
+    let (pk, vk) = indexer.preprocess(&ix);
 
     let (proof, _, _) = prover.prove(&pk, &session, &instance_a, &witness_a);
     assert!(
@@ -516,9 +503,7 @@ fn build_accumulator(
         WarpReductionProver::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default(),
         Keccak::default(),
     );
-    let (pk, _vk) = indexer
-        .preprocess_checked(&ix)
-        .expect("matching committed indices");
+    let (pk, _vk) = indexer.preprocess(&ix);
     let (_proof, target, target_w) = prover.prove(&pk, &session, &instance, &witness);
     (target.acc_instance, target_w)
 }
@@ -587,9 +572,7 @@ fn warp_reduction_accumulation_l2_nonzero() {
         WarpReductionVerifier::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default(),
         Keccak::default(),
     );
-    let (pk, vk) = indexer
-        .preprocess_checked(&ix)
-        .expect("matching committed indices");
+    let (pk, vk) = indexer.preprocess(&ix);
     let (proof, target_p, _) = prover.prove(&pk, &session, &instance, &witness);
     let target = verifier
         .verify(&vk, &session, &instance, &proof)
@@ -626,9 +609,7 @@ fn warp_ir_dsfs_prove_verify() {
         WarpReductionVerifier::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default(),
         Keccak::default(),
     );
-    let (pk, vk) = indexer
-        .preprocess_checked(&ix)
-        .expect("matching committed indices");
+    let (pk, vk) = indexer.preprocess(&ix);
     let (proof, target_p, _target_w) = prover.prove(&pk, &session, &instance, &witness);
 
     let target = verifier
@@ -653,12 +634,8 @@ fn full_warp_uses_single_index() {
     let reduction = WarpReductionIndexer::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default();
     assert_single_index(&full);
 
-    let (full_pk, full_vk) = full
-        .preprocess_checked(&ix)
-        .expect("matching committed indices");
-    let (reduction_pk, reduction_vk) = reduction
-        .preprocess_checked(&ix)
-        .expect("matching committed indices");
+    let (full_pk, full_vk) = full.preprocess(&ix);
+    let (reduction_pk, reduction_vk) = reduction.preprocess(&ix);
     assert_eq!(full_pk.committed_index(), reduction_pk.committed_index());
     assert_eq!(full_vk.committed_index(), reduction_vk.committed_index());
 }
@@ -679,9 +656,7 @@ fn full_warp_dsfs_roundtrip() {
         FullWarpVerifier::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default(),
         Keccak::default(),
     );
-    let (pk, vk) = indexer
-        .preprocess_checked(&ix)
-        .expect("matching committed indices");
+    let (pk, vk) = indexer.preprocess(&ix);
     let proof = prover.prove(&pk, &session, &instance, &witness);
 
     verifier

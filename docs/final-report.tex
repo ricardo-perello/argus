@@ -13,83 +13,68 @@
 \maketitle
 
 \begin{abstract}
-Argus is a Rust research prototype for describing public-coin interactive
-arguments and reductions as typed protocol objects. The project is motivated by
-a gap in the existing arkworks proof-system stack. Spongefish already provides
-Fiat--Shamir transcript machinery and non-interactive argument strings, but a
-protocol written directly against spongefish state is primarily an imperative
-transcript program: it calls transcript methods to record prover messages,
-derive verifier messages, and replay proof bytes. Such code is useful for
-building non-interactive proofs, but it is not a clean interface for the
-underlying interactive argument or reduction.
+Argus is a Rust interface layer for public-coin interactive arguments and
+reductions. It addresses a missing abstraction in the arkworks proof-system
+stack. Spongefish provides Fiat--Shamir transcript machinery, but protocols
+written directly against it interleave the mathematical message flow with
+sponge operations, proof serialization, and verifier replay. Such programs
+describe a compiled transcript rather than an interactive protocol that can be
+reused independently of its execution backend.
 
-Argus introduces that missing layer. A protocol author writes only the
-public-coin message flow: the prover sends prover messages and reads public
-verifier messages; the verifier reads prover messages and sends public verifier
-messages. A hand-written protocol in this interface can run interactively or
-compile through \texttt{spongefish-dsfs} into a non-interactive argument or
-reduction. The same interface can also be the thing produced by a future
-compiler: for example, an IOP-to-iBCS compiler could output an IA, and that IA
-could then run through the same backends. The main design result is a typed
-interface that covers arguments and reductions, interactive and
-non-interactive execution, and plain and preprocessed protocols without
-collapsing all cases into one maximal object. Executable protocols are further
-factored into prover and verifier capabilities. Authors can still describe a
-complete conversation at once, while DSFS can compile a genuinely one-sided
-body into a prover-only or verifier-only non-interactive object. This provides
-the dependency boundary needed by future recursion and accumulation code,
-where an outer prover may need an inner verifier without the inner prover.
+Argus expresses the prover, verifier, and optional indexer algorithms as typed
+channel programs. Protocol code sends and receives messages; backends own
+public-input binding, transcript ordering, challenge generation, proof bytes,
+and deterministic replay. The same interactive layer can run through a live
+backend, serve as input to the Duplex-Sponge Fiat--Shamir (DSFS) transformation,
+or become the output of a future compiler from a richer formalism such as an
+IOP with an iBCS commitment compiler. The production architecture makes each
+role a native type with only its own private data and dependencies. This keeps
+the IA/IR layer as the central abstraction while making it suitable for
+separate deployment, preprocessing, composition, and future recursion.
 \end{abstract}
 
 \section{Motivation}
 
-Many modern proof systems are easiest to describe as public-coin interactive
-protocols. A prover sends algebraic data, commitments, or oracle-derived
-messages; the verifier samples public randomness; and the protocol repeats
-until the verifier either accepts or computes a reduced target claim. In a
-non-interactive proof system, the same public randomness is produced by a
-Fiat--Shamir transcript. The implementation must therefore serialize prover
-messages, absorb them into a transcript, derive verifier challenges, and replay
-the same operations during verification.
+Many proof systems are naturally specified as public-coin conversations. The
+prover sends algebraic values, commitments, or oracle-derived messages; the
+verifier samples public randomness; and the process continues until the
+verifier accepts or produces a reduced claim. A non-interactive implementation
+must additionally serialize messages, absorb them into a transcript, derive
+challenges, and replay the same sequence during verification.
 
-Spongefish gives the arkworks ecosystem this transcript machinery. For example,
-the spongefish Schnorr example is written around prover and verifier transcript
-state: the prover records prover messages and asks the transcript for verifier
-messages, while the verifier reads messages from a non-interactive argument
-string, absorbs them, derives challenges, and checks end-of-file. This is the
-right level of abstraction for a transcript library. It is not the right level
-of abstraction for describing an interactive argument as a reusable protocol.
-The protocol and the compiled transcript are entangled in the same imperative
-code.
+Spongefish supplies this transcript machinery. Its Schnorr example, for
+instance, places transcript calls directly inside proving and verification:
+the prover records messages and requests challenges, while the verifier reads
+proof bytes, absorbs them, derives the same challenges, and checks
+end-of-file~\cite{spongefish-schnorr}. This is the right abstraction for a
+transcript library. It is not the right abstraction for describing an
+interactive argument as a reusable protocol. The protocol and its compiled
+transcript are entangled in one imperative program.
 
-Argus exists to separate these two concerns. The protocol-facing interface says
-only what the interactive protocol does: which messages the prover sends, which
-public messages the verifier sends, and what the verifier outputs. Transcript
-mechanics are delegated to a backend. This means the same protocol object can
-be used as an input to DSFS, as a live interactive protocol, or as a target
-interface for a future compiler that turns a richer formalism into an
-interactive argument.
+Argus inserts the missing protocol layer. A role describes only the
+mathematical conversation: which prover messages are sent, which public
+verifier messages are returned, and what the verifier outputs. An execution
+backend supplies the transport or transcript. Consequently, an IA or IR is not
+defined by DSFS. It can run interactively, be compiled into a non-interactive
+argument, or be generated by another compiler.
 
-This last point matters for the broader arkworks post-quantum direction. The
-planned \texttt{arkworks-pq} workspace is intended to provide trait surfaces and
-backends for vector commitments, Merkle trees, FRI/STIR/WHIR-style components,
-STARK ingredients, linear codes, binary-field primitives, and related
-hash-based SNARK infrastructure. Those systems need a clean argument layer.
-Long term, the desired shape is not merely
+This separation is useful for the planned arkworks post-quantum stack, which is
+expected to include vector commitments, Merkle trees, FRI/STIR/WHIR-style
+components, STARKs, linear codes, and binary-field primitives. The intended
+pipeline is not only
 \[
     IA \xrightarrow{DSFS} NARG,
 \]
-but also
+but eventually
 \[
     IOP \xrightarrow{iBCS} IA \xrightarrow{DSFS} NARG.
 \]
-In this pipeline, the IA interface is simultaneously a target language, a
-source language, and an executable object.
+The IA layer is therefore a backend input, a target for higher-level
+compilation, and an independently executable protocol interface.
 
-\section{Design Problem}
+\section{Design Objectives}
 
-The core design problem is a small matrix of protocol forms. Argus wants to
-represent:
+Argus covers three semantic axes:
 
 \begin{center}
 \begin{tabular}{c|c}
@@ -101,369 +86,233 @@ Setup model & plain / preprocessed
 \end{tabular}
 \end{center}
 
-These three binary choices give eight useful combinations. A plain interactive
-argument is the familiar accept/reject public-coin protocol. An interactive
-reduction outputs a target instance instead of a Boolean. A non-interactive
-argument or reduction is the DSFS-compiled form. A preprocessed protocol has an
-index, prover key, verifier key, and a committed representation of the indexed
-material that must be fixed before the first challenge.
+An argument ends in accept or reject. A reduction instead outputs an instance
+of a target relation. Non-interactive forms are produced by a backend such as
+DSFS. Preprocessed forms additionally use an index, a prover key, a verifier
+key, and a committed representation of the indexed material.
 
-One possible design is top-down: define one maximally general object, roughly a
-preprocessing interactive reduction, and recover all simpler objects by
-degeneration. A plain protocol has a trivial index. An argument is a reduction
-whose target is a unit type or whose verifier output is interpreted as
-accept/reject. Non-preprocessed protocols have dummy keys. This is compact, but
-it weakens the type meaning of the API. A plain interactive argument would
-appear to have preprocessing methods even when preprocessing is not part of the
-protocol.
+The interface must represent these forms without giving every type every
+operation. It must also avoid duplicating transcript logic across them, keep
+Rust's type checker useful, permit realistic protocol configuration, and
+preserve exact proof-format compatibility. Finally, the abstraction must model
+production ownership: proving, verification, and indexing may occur in
+different crates, binaries, or machines.
 
-Argus takes the opposite approach. It starts with a bottom-up capability tree.
-All protocol objects share protocol identity. Arguments add instance and
-witness types. Reductions add source and target relation types. Preprocessing
-adds an index, prover key, verifier key, and preprocessing function. Executable
-interactive protocols add channel methods, with prover and verifier execution
-represented as separate capabilities. Non-interactive protocols add
-session-bound proving and verification, again separated by role. The result is
-more traits, but each trait states an actual capability. A plain argument
-cannot accidentally call \texttt{preprocess()}, while a preprocessed argument
-exposes that capability explicitly. Likewise, a verifier-only body does not
-need to implement or depend on the corresponding prover algorithm.
+The role dimension is orthogonal to the protocol matrix. Each executable form
+has a prover role and a verifier role; preprocessing adds an indexer. Together,
+compatible roles realize an IA or IR, but no production type is required to
+contain the whole protocol. This is the central refinement from the first
+Argus prototype. The original unified body was convenient for research and
+helped validate the channel abstraction, but it coupled all consumers to all
+algorithms. The production interface retains the same interactive layer while
+making its roles native and independent.
 
-The second design requirement is to avoid duplicating machinery across the
-eight cases. The trait tree lets common structure be factored once: protocol
-identity, relation shape, channel execution, non-interactive proof vocabulary,
-preprocessing key derivation, and security metadata. Where a degeneration is
-useful, Argus provides it explicitly through adapters. For example, a plain
-protocol can be lifted into the preprocessing world by adding a trivial index
-and trivial keys, but this is an adapter rather than the core meaning of a
-plain argument.
+\section{Typed Channel Programs}
 
-\section{The Channel Interface}
+The channel traits form the boundary between protocol logic and execution
+machinery. A prover role may only send prover messages and read verifier
+messages. A verifier role may only read prover messages and send verifier
+messages. Protocol code has no sponge object, absorb call, Fiat--Shamir
+derivation, or proof-byte parser.
 
-The channel traits are the small boundary between protocol code and execution
-machinery. On the prover side, the protocol can only send prover messages and
-read verifier messages. On the verifier side, it can only read prover messages
-and send verifier messages. There is no sponge object in the protocol code, no
-explicit absorb call, no manual Fiat--Shamir challenge derivation, and no
-proof-byte parser.
+The live backend connects a compatible prover and verifier with Rust channels;
+the verifier samples actual public coins and transmits them to the prover.
+\texttt{spongefish-dsfs} interprets the same operations differently: prover
+messages are serialized into the NARG and absorbed, verifier messages are
+squeezed from the sponge, and verification replays the sequence from proof
+bytes. A future iBCS compiler can target the same role interfaces after
+translating oracle commitments and openings into an interactive argument.
 
-This gives three useful interpretations of the same code. With the live
-backend, the verifier samples actual public coins and sends them over Rust
-channels. With \texttt{spongefish-dsfs}, prover messages are appended to the
-non-interactive argument string and absorbed into the sponge; verifier messages
-are squeezed from the transcript; and verification replays the same sequence
-from proof bytes. In the future, an iBCS compiler could produce exactly this
-kind of channel program: it would translate an IOP plus commitment machinery
-into an IA expressed through the same message interface.
+This design centralizes the transcript invariants required by DSFS
+Construction~4.3~\cite{dsfs}. Protocol identity, session data, committed index
+where applicable, and the instance are bound before the first challenge. Every
+prover message is absorbed before the following challenge is squeezed.
+Verification is deterministic and rejects malformed proofs, including trailing
+bytes. Sponge operations occur only in the backend.
 
-The \texttt{spongefish-dsfs} crate is therefore part of the contribution. It is
-not just an external library call at the edge of the project. It implements the
-DSFS channel backend for the protocols written against Argus: prover channels,
-verifier channels, proof serialization, public-input binding, deterministic
-replay, and EOF checking. The transcript invariants are concentrated there:
-all public inputs are fixed before the first challenge, every prover message is
-absorbed before the next challenge is squeezed, verifier replay is
-deterministic, and malformed proof strings are rejected rather than accepted as
-prefixes.
+Channels do not prove that a protocol is secure. They impose an implementation
+discipline: protocol authors specify the conversation, while one reviewed
+backend controls transcript ordering and replay. Security still depends on the
+protocol analysis, the DSFS theorem, correct serialization, and the backend
+implementation.
 
-This separation also clarifies what Argus does not claim. Writing a protocol
-against channels is not a security proof. It only removes one common source of
-implementation error: protocol authors no longer decide when to absorb
-messages, when to squeeze challenges, or how to replay proof bytes. Those
-choices are centralized in the backend. The actual security still comes from
-the protocol analysis, the DSFS theorem being applied, and the correctness of
-the backend implementation.
+\section{Role-First Architecture}
 
-\section{Role Separation and Asymmetric Compilation}
+The unit of implementation is a deployable role; the unit of interoperability
+is the interactive protocol and its proof format. For arguments,
+\texttt{ArgumentCore} contains only the public instance type, while
+\texttt{ArgumentProverCore} adds the witness. Reduction cores similarly
+separate source and target instances from their witnesses. A verifier therefore
+does not name or import prover-private witness types.
 
-A complete protocol specification normally contains both algorithms: the
-prover describes how to produce each message, and the verifier describes how
-to check the resulting conversation. This makes a unified authoring interface
-natural. It does not follow, however, that every consumer should depend on both
-algorithms. In recursion and accumulation, an outer prover may execute an inner
-verifier inside another protocol or circuit. That outer prover should be able
-to depend on the inner verifier without also importing the inner prover.
+Executable traits are role-specific. For example, interactive arguments have
+separate prover and verifier traits, with corresponding reduction,
+non-interactive, and preprocessing forms. There are no full conjunction traits
+in the production API. Authors implement separate concrete prover and verifier
+types. Shared authoring macros can dispatch one declaration into independent
+role impls, while suffix macros support roles with different bounds or source
+locations. The two types may share a public format descriptor while carrying
+different local configuration and dependencies.
 
-Argus separates these concerns by factoring each executable leaf trait into a
-prover half and a verifier half. For an interactive argument, the relationship
-is
-\[
-  \texttt{InteractiveArgument}
-  =
-  \texttt{InteractiveArgumentProver}
-  +
-  \texttt{InteractiveArgumentVerifier}.
-\]
-The full trait is a method-free marker implemented automatically by every type
-that implements both halves. The same construction is applied uniformly to
-arguments and reductions, interactive and non-interactive execution, and plain
-and preprocessed protocols. Preprocessing itself remains on the shared
-preprocessing core because the indexer is neither a prover nor a verifier.
-
-This finer trait surface does not make ordinary protocol authoring
-role-by-role. The authoring macros still accept one block containing protocol
-identity, relation types, \texttt{prove}, and \texttt{verify}; they generate the
-two capability implementations. Thus authoring unity and dependency separation
-are independent design choices: the source definition can present one
-conversation while generic consumers request only the role they need.
-
-DSFS compilation follows the capabilities of its input:
+DSFS also compiles roles explicitly:
 \[
 \begin{aligned}
-  IA_P &\xrightarrow{DSFS} NIA_P,\\
-  IA_V &\xrightarrow{DSFS} NIA_V,\\
-  IA_P + IA_V &\xrightarrow{DSFS} NIA_P + NIA_V.
+  IA_P &\xrightarrow{DSFS_P} NIA_P,\\
+  IA_V &\xrightarrow{DSFS_V} NIA_V.
 \end{aligned}
 \]
-There is one compiler constructor rather than separate prover and verifier
-compilers. The wrapper gains a non-interactive proving implementation when its
-body implements the interactive prover half, and a verification implementation
-when its body implements the verifier half. A complete body therefore still
-compiles to a complete non-interactive argument, while a native one-sided body
-compiles without requiring the opposite algorithm.
+The prover wrapper contains only the prover body and exposes only proving; the
+verifier wrapper contains only the verifier body and exposes only
+verification. The backend does not reconstruct a complete protocol object. An
+application that needs both keeps the independently compiled values side by
+side. This is important for recursion and accumulation, where an outer prover
+may need an inner verifier without depending on the inner prover.
 
-Argus also provides role views of complete bodies. Calling
-\texttt{into\_prover()} or \texttt{into\_verifier()} is useful for party wiring
-and for preventing the wrong method from being called through a particular
-API. These views are not dependency boundaries: the wrapped type still
-contains a complete protocol implementation. Recursion requires a native
-verifier-only body, for which the prover implementation is absent from the
-type rather than merely hidden.
+Independent roles must agree on the public protocol contract:
+\texttt{protocol\_id}, instance and message encodings, sponge and salt policy,
+session encoding, committed-index encoding, and transcript layout. Associated
+types enforce much of the public shape at integration points; protocol
+identifiers and compatibility tests bind the remaining format choices.
+Matching this contract does not replace a correctness proof, but it makes
+deployment compatibility explicit rather than hiding it inside one concrete
+type.
 
-The two halves can be recombined when a complete object is required.
-\texttt{CombinedIA} joins compatible interactive bodies before compilation,
-while \texttt{CombinedNarg} joins independently compiled non-interactive
-halves. Associated types enforce agreement on the protocol shape, and
-construction checks the protocol identifiers in debug builds to catch
-accidentally mismatched halves. This refactor changes trait bounds and
-forwarding only: transcript state remains in the backend, and the absorb and
-squeeze sequence is unchanged.
+\section{Configuration, Indexing, and Domain Separation}
 
-\section{State and Domain Separation}
+Real protocols carry configuration that is neither a per-claim instance nor a
+witness. WHIR- and FRI-style systems may contain rates, folding schedules,
+query counts, code information, and hash choices. Argus permits each role to
+store immutable configuration in \texttt{\&self}. Prover-local performance
+settings, verifier resource limits, and indexer storage settings may differ.
 
-A central design question was whether protocol execution should be completely
-static. In the most austere design, \texttt{prove} and \texttt{verify} would
-take all parameters as explicit inputs: instance, witness, prover key, verifier
-key, or session. The protocol object itself would carry no meaningful
-configuration. This style is attractive because it makes hidden state hard to
-miss.
+Any configuration that changes the accepted language, message flow,
+challenges, proof layout, soundness profile, or transcript interpretation must
+be reflected in \texttt{protocol\_id(\&self)} or otherwise bound before the
+first challenge. Configuration that changes only local performance need not
+change the identifier. Transcript state itself is never role configuration:
+mutable sponge state and challenge counters belong to the backend.
 
-In practice, complex protocols often have configuration that is neither a
-per-claim instance nor a witness. WHIR-style and FRI-style protocols may carry
-rates, folding schedules, query counts, code information, hash choices, and
-other static protocol parameters. WARP has dimensions, code parameters,
-configuration, and relation descriptions. Keeping such information in
-\texttt{\&self} is convenient and often the most natural Rust representation.
-Argus therefore allows protocol objects to be stateful in this immutable
-configuration sense.
+For preprocessed protocols, indexing is a third independent production role:
+\[
+    i \longmapsto (pk_i,vk_i).
+\]
+Only the \texttt{Indexer} knows the index and both key types. The prover role
+names only its prover key; the verifier names only its verifier key and still
+does not name the witness. Keys remain explicit inputs rather than hidden state
+inside prepared protocol objects, so one compiled role can be reused across
+many indexes.
 
-This creates a hard domain-separation rule. Any data in \texttt{self} that
-affects the message flow, verifier challenges, accepted statements, proof
-layout, soundness profile, or transcript semantics must be reflected in
-\texttt{protocol\_id(\&self)} or otherwise absorbed as public input before the
-first challenge. The method is intentionally a method on \texttt{\&self},
-rather than only an associated constant, so configured protocol objects can
-identify the actual compiled protocol they represent.
-
-This distinction is important. It is acceptable for \texttt{self} to say which
-protocol is being run: for example, which code rate, folding schedule, or hash
-configuration is part of the protocol. It is not acceptable for \texttt{self}
-to secretly run the transcript: it should not contain a mutable sponge,
-Fiat--Shamir state, or hidden challenge counter. The backend channel owns that
-state. A useful review rule is: if changing \texttt{self} would make the
-verifier accept a different language, derive different challenges, or interpret
-proof bytes differently, then the domain separator must change too.
-
-\section{Preprocessing as Keys-as-Inputs}
-
-Preprocessing introduced a second statefulness question. Early designs stored
-preprocessing keys inside a prepared protocol object. Proving then looked like
-\texttt{prove(\&self, instance, witness)}, with \texttt{self.pk} used
-internally. This was ergonomic, but it blurred the distinction between the
-protocol description and party-specific execution material.
-
-Argus instead uses keys as explicit inputs:
-\texttt{preprocess(index)} returns a prover key and verifier key. At the
-interactive level, the body is run as
-\texttt{body.prove(ch, pk, instance, witness)} and
-\texttt{body.verify(ch, vk, instance)}. At the non-interactive level, DSFS hides
-the channel and adds a session and proof object:
-\texttt{pnia.prove(pk, session, instance, witness)} and
-\texttt{pnia.verify(vk, session, instance, proof)}. In both cases, the protocol
-body is not a prepared object containing a key.
-
-This is cleaner because the prover and verifier naturally hold different keys,
-and because the same compiled wrapper can be reused for many independently
-preprocessed indexes. The committed-index binding is also explicit: DSFS
-derives public input bytes from \texttt{pk.committed\_index()} on the prover
-side and \texttt{vk.committed\_index()} on the verifier side, then absorbs those
-bytes together with the per-claim instance before the first challenge.
-
-The prover/verifier trait split makes prepared key-carrying wrappers
-unnecessary. A preprocessing body can be compiled with only its prover or
-verifier capability, while the corresponding key remains an explicit argument
-to \texttt{prove} or \texttt{verify}. Capability separation and key possession
-are therefore represented independently: the type determines which algorithm
-is available, and the function argument determines which key is supplied.
+Both keys expose canonical committed-index bytes. The \texttt{Indexer} contract
+requires keys derived from the same index to expose identical bytes; Argus does
+not perform a runtime check. A violation makes prover and verifier initialize
+different transcripts, so verification fails. During execution, DSFS binds the
+relevant key commitment together with the ordinary instance before the first
+challenge. DSFS compiles executable roles only; it neither stores nor forwards
+the indexer.
 
 \section{Composition}
 
-Reductions are first-class because many proof systems do not end each
-interactive phase with accept/reject. A reduction transforms a source relation
-into a target relation. Sequential composition is therefore fundamental:
+Reductions are first-class because many proof systems transform a claim rather
+than immediately deciding it:
 \[
     R_0 \xrightarrow{IR_1} R_1 \xrightarrow{IR_2} R_2.
 \]
-Argus implements this with binary composition. Two reductions compose when the
-target instance and witness of the first match the source instance and witness
-of the second. Repeating the binary constructor gives arbitrary finite
-sequential chains, limited in practice by Rust type ergonomics and trait
-solving rather than by the abstraction.
+Binary chaining gives arbitrary finite sequential compositions, and a
+reduction followed by an argument becomes an argument for the original
+relation.
 
-A reduction followed by an argument is itself an argument for the original
-source relation. Argus represents this with a reduced-argument adapter. The
-prover first runs the reduction, obtaining a target instance and witness, then
-runs the final argument. The verifier computes the target instance by verifying
-the reduction and passes that target instance to the final argument verifier.
-
-Preprocessing composition is especially informative. Composition must combine
-not only protocol execution but also indexes, prover keys, verifier keys, and
-committed-index bytes. Argus represents composed indexes and keys structurally,
-routes each sub-key to the corresponding component, and relies on the backend
-to bind the combined committed index before the first challenge. For example,
-if a preprocessing reduction is followed by a preprocessing decider, the index,
-prover key, and verifier key are pairs. The composed prover routes the first
-prover key to the reduction and the second to the decider; the verifier routes
-the verifier keys analogously. If keys had been stored inside prepared protocol
-objects, this composition would require assembling hidden-state objects. With
-keys as inputs, it is just typed routing.
-
-Composition preserves role separation. A composed prover implementation
-depends only on the prover halves of its components, and the composed verifier
-depends only on their verifier halves. This requires separate prover-side and
-verifier-side forwarding implementations for each combinator. The additional
-boilerplate is a deliberate cost: a single combined implementation would
-reintroduce the dependency that the split was designed to remove.
-
-The current composition framework is intentionally sequential. It does not try
-to be a general protocol DAG language. That restriction keeps the API small and
-matches the main use cases: chains of reductions and a final decider or
-argument.
+Composition is role-specific. Prover composition relates target instances and
+target witnesses and invokes only prover components. Verifier composition
+relates only public target instances and invokes only verifier components; it
+has no witness equality bounds. Indexers compose separately, pairing their
+indexes, prover keys, verifier keys, and committed-index encodings. Thus the
+three production paths are
+\[
+\begin{array}{c}
+\text{prover components}\rightarrow\text{composed prover},\\
+\text{verifier components}\rightarrow\text{composed verifier},\\
+\text{indexers}\rightarrow\text{composed indexer}.
+\end{array}
+\]
+This introduces some forwarding boilerplate, but preserves the dependency
+boundary through composed protocols. The current model is deliberately
+sequential rather than a general protocol-DAG language.
 
 \section{Results}
 
-The project produced an executable interface layer with DSFS and live backends,
-examples, and case studies. Schnorr, sumcheck-style, and Bulletproofs protocols
-show the basic authoring model: the same channel code can compile through DSFS
-or run live.
+Argus implements the IA/IR trait layer, a live backend, the
+\texttt{spongefish-dsfs} compiler backend, composition adapters, security
+metadata, examples, and larger case studies. Schnorr and sumcheck demonstrate
+the basic channel model. Bulletproofs exercises both a direct logarithmic
+inner-product argument and the same computation expressed as a one-round
+reduction composed to a size-one decider~\cite{bulletproofs}.
 
-All eight executable protocol forms have separate prover and verifier
-capabilities, and DSFS compilation preserves whichever capabilities are
-present on the input body. Tests cover complete bodies, role views, native
-one-sided bodies, and recombination before and after compilation. Proofs
-produced through the asymmetric paths are byte-identical to the complete
-compile path, and the sigma-proofs SHAKE128 golden vectors continue to pass
-byte-for-byte. These checks provide evidence that the change is type-level and
-does not alter transcript semantics.
+WARP is the largest case study: a linear-time accumulation scheme for R1CS
+represented as preprocessing reductions followed by a final preprocessing
+argument~\cite{warp}. Its configuration, code information, Merkle parameters,
+and relation data are indexed, while fresh instances and accumulators remain
+per-claim inputs. The port also exposes the principal missing abstraction:
+oracle commitments and openings are currently encoded ad hoc as IA/IR
+messages. A general IOP-to-IA compiler should generate this layer instead.
 
-The largest case study is WARP, a linear-time accumulation scheme for R1CS,
-modeled as a preprocessing interactive reduction plus a final preprocessing
-interactive argument. Static material such as configuration, code information,
-Merkle parameters, and relation data belongs to the index and is represented by
-committed-index bytes; per-claim fresh instances and accumulators remain
-ordinary instances. The WARP protocol engine uses channels for messages and
-challenges and does not own a sponge.
-
-Bulletproofs gives a contrasting algebraic case study~\cite{bulletproofs}.
-Unlike WARP, it does not need oracle openings: each round sends group
-commitments and receives a field challenge, which fits the IA channel directly.
-The inner-product argument is implemented both as a direct logarithmic
-protocol and as a one-round reduction composed down to a size-one decider; the
-range proof then reduces to the same inner-product core. These examples show
-that Argus composition can reproduce a recursive hand-written protocol, while
-remaining example-grade rather than production implementations.
-
-Argus also includes instance-aware security metadata. Security profiles can be
-derived from concrete instances or explicit instance-family bounds, which is
-important when field size, round count, degree bounds, code parameters, or
-relation dimensions affect soundness. Composition combines these profiles along
-the reduction chain.
+The role-first migration covers argument and reduction roles in plain and
+preprocessed settings, with independent DSFS constructors and live execution.
+Tests check role-specific composition, indexing failures, deterministic replay,
+EOF rejection, and transcript compatibility. Existing proof fixtures remain
+byte-identical, including the sigma-proofs SHAKE128 vectors. The migration
+therefore changed ownership and dependencies without changing the underlying
+DSFS transcript.
 
 The sigma bridge is a smaller compatibility experiment. It rewrites the
-non-interactive sigma-proofs pipeline in the Argus style and shows that sigma
-protocols can be driven through the same IA-to-DSFS interface. The existing
-sigma-proofs Fiat--Shamir path is already used by other consumers, so the
-bridge remains compatibility-oriented evidence rather than the main
-contribution.
+non-interactive pipeline used by \texttt{sigma-proofs} in the Argus style.
+Because the existing upstream path is already used by other consumers, the
+bridge serves as interoperability evidence rather than a proposed replacement.
 
 \section{Limitations and Future Work}
 
 Argus is a research prototype and has not received production cryptographic
-review. The interface enforces important implementation discipline, but
-transcript discipline is only one part of proof-system security.
+review. Typed channels reduce transcript mistakes but do not establish protocol
+security.
 
-The most important missing piece is the IOP-to-IA compiler. The interface was
-designed so that an iBCS-style compiler can output an IA, but the current
-workspace does not yet implement that compiler. This is the natural next step
-for connecting Argus to the broader arkworks-pq direction.
+The most important missing component is the IOP-to-IA compiler. Implementing
+the iBCS step would test Argus as a target interface and replace WARP's ad hoc
+oracle-opening messages with a reusable compiler layer. A recursive or
+accumulation consumer should also validate the practical benefit of depending
+on a native verifier without the corresponding prover. Separate role types in
+one crate provide type-level isolation but not crate-level dependency
+isolation; demanding deployments may need separate format, prover, verifier,
+and indexer crates.
 
-The prover/verifier split supplies a prerequisite for that downstream work, but
-its principal benefit has not yet been exercised by an actual recursive or
-iBCS consumer in this workspace. Role views are sufficient for deployment
-wiring and API restriction, but they do not remove the opposite algorithm from
-the dependency graph. Future integration should validate native one-sided
-bodies in the intended setting: an outer prover that depends on an inner
-verifier. That experience may also suggest better authoring support for
-one-sided implementations and less repetitive role-preserving composition.
+The codec boundary remains close to Spongefish's serialization vocabulary. It
+is open whether \texttt{ia-core} should own smaller encoding traits and how
+field-element transcript alphabets should fit beside the current byte-oriented
+DSFS proof machinery. Public-coin branching also requires care: a verifier may
+choose its next public message as a deterministic function of the public
+transcript so far, but not from hidden verifier state or manual transcript
+operations.
 
-The codec boundary could also be improved. The current channel layer is close
-to spongefish's encoding and NARG serialization vocabulary. It remains open
-whether \texttt{NargSerialize} belongs on an abstract interactive channel
-trait, whether verifier reads should use \texttt{NargDeserialize} or the
-current \texttt{Deserialize} abstraction, and whether \texttt{ia-core} should
-own smaller codec traits. A related question is the sponge alphabet: channels
-already abstract the alphabet as a \texttt{Unit}, but the DSFS compiler, proof
-artifact, and sponge-parameter machinery remain byte-oriented. Supporting
-field-element transcripts should therefore be a backend extension, not a change
-to the message-flow abstraction.
-
-Another open point is public-coin branching. A verifier may inspect a prover
-message before choosing the next challenge type, as long as that choice is a
-deterministic public function of the instance and transcript so far. It would
-not fit Argus if the challenge depended on hidden verifier state or manual
-transcript operations.
-
-The WARP port illustrates why the IOP-to-IA compiler is the natural missing
-piece: its oracle commitments and openings are currently handled inside WARP
-with ordinary IA/IR messages, rather than generated by a general iBCS layer.
-Some WARP security terms are intentionally conservative and should be tightened
-against the exact analysis. Composition could also become more ergonomic:
-deeply nested chains and preprocessing tuples can become clumsy.
-
-Finally, the statefulness rule deserves continued review. Configuration in
-\texttt{self} is necessary for realistic protocols, but every
-behavior-affecting parameter must be reflected in domain separation. This
-should remain a review checklist item for future WHIR, STIR, FRI, and STARK
-components.
+Finally, independently authored roles can agree on types and protocol
+identifiers while still implementing inconsistent algorithms. Integration
+tests, format descriptors, and formal protocol specifications can improve this
+boundary, but the type system alone cannot prove semantic agreement. Deeply
+nested composition types and preprocessing tuples also remain ergonomically
+heavy.
 
 \section{Conclusion}
 
-Argus supplies a missing protocol layer in the arkworks proof-system stack. It
-lets authors describe arguments and reductions as typed public-coin channel
-programs, separates those descriptions from transcript mechanics, and provides
-DSFS and live backends for executing the same protocol objects. The design
-covers argument/reduction, interactive/non-interactive, and plain/preprocessed
-protocols through a bottom-up capability tree rather than a single maximal
-type. Within every executable form, prover and verifier algorithms are separate
-capabilities: complete protocols remain convenient to author, while one-sided
-types and asymmetric DSFS compilation allow consumers to depend on only the
-role they require.
+Argus contributes the interactive protocol layer that was missing between
+proof-system descriptions and transcript backends in the arkworks stack. It
+expresses public-coin arguments and reductions as typed channel programs,
+keeping transcript mechanics in DSFS or a live execution backend. The same
+layer can be consumed by DSFS, executed interactively, or targeted by a future
+iBCS compiler.
 
-The main lesson is that IA/IR is an interface in its own right: an input to
-DSFS, a target for future iBCS compilation, and a protocol that can run
-interactively. Once that layer exists, transcript discipline, preprocessing,
-composition, role separation, and security metadata become backend and
-type-system concerns rather than ad hoc code inside each protocol.
+The role-first architecture is the production realization of that contribution,
+not a replacement for it. Prover, verifier, and indexer algorithms are native
+independent roles that share a public protocol contract rather than one Rust
+object. This preserves the clean IA/IR abstraction while supporting realistic
+dependencies, configuration, preprocessing, deployment, composition, and
+future recursion.
 
 \begin{thebibliography}{9}
 

@@ -1,16 +1,24 @@
-# Role-First Prover, Verifier, and Indexer Architecture
+# Role-First Prover, Verifier, and Indexer Architecture Record
 
-**Status:** proposed implementation plan
+**Status:** implemented on `codex/role-first-architecture`
 
 **Decision date:** 2026-06-08
 
-**Baseline:** approach 3 from `docs/prover-verifier-split-presentation.md`
+**Implementation date:** 2026-06-09
 
 **Supersedes:** the production architecture proposed by
-`docs/prover-verifier-split-presentation.md`
+`docs/history/plans/prover-verifier-split-presentation.md`
 
-This plan replaces the current "full protocol body with optional role views" model
-with native, independently authored prover, verifier, and indexer roles.
+This document is the implementation record and migration rationale for the
+role-first architecture. Sections that discuss `PreprocessingCore`, role views,
+conjunction traits, `CombinedIA`, or `CombinedNarg` describe the superseded
+baseline that motivated the migration, not the current API. For concise current
+usage, see [Protocol Shapes](ia-ir.md), the
+[Author Guide](../author-guide/overview.md), and the
+[`ia-core` API](../api/ia-core.md).
+
+The implementation replaced the "full protocol body with optional role views"
+model with native, independently authored prover, verifier, and indexer roles.
 
 The production abstraction is no longer one value that contains every algorithm.
 Instead:
@@ -326,23 +334,13 @@ pub trait Indexer: ProtocolCore {
         &self,
         index: &Self::Index,
     ) -> (Self::ProverKey, Self::VerifierKey);
-
-    fn preprocess_checked(
-        &self,
-        index: &Self::Index,
-    ) -> Result<(Self::ProverKey, Self::VerifierKey), IndexingError> {
-        let (pk, vk) = self.preprocess(index);
-        if pk.committed_index() != vk.committed_index() {
-            return Err(IndexingError::CommittedIndexMismatch);
-        }
-        Ok((pk, vk))
-    }
 }
 ```
 
-This check is active in debug and release builds. A committed-index mismatch is
-an indexing error, not an optional diagnostic, because the generated keys would
-produce incompatible transcripts.
+The `Indexer` contract requires every returned key pair to satisfy
+`pk.committed_index() == vk.committed_index()`. Argus does not check this at
+runtime. A violation produces incompatible prover and verifier transcripts and
+therefore causes verification failure.
 
 The indexer:
 
@@ -528,128 +526,39 @@ struct MyProtocolIndexer {
 
 No wrapper transforms one of these types into another.
 
-### 5.2 Role-specific macros
+### 5.2 Shared and role-specific macros
 
-The existing macros change from "one block containing every role" to "one
-invocation implementing one native role."
-
-Proposed syntax:
+The short macro is the normal path when roles share generic bounds:
 
 ```rust
 ia_core::impl_interactive_argument! {
-    prover impl<G> for SchnorrProver<G>
+    impl<G> {
+        prover: SchnorrProver<G>,
+        verifier: SchnorrVerifier<G>,
+    }
     where
         G: CurveGroup,
     {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
             schnorr_protocol_id()
         }
-
         type Instance = SchnorrInstance<G>;
         type Witness = G::ScalarField;
-
-        fn prove<C: ProverChannel<Unit = u8>>(
-            &self,
-            channel: &mut C,
-            instance: &Self::Instance,
-            witness: &Self::Witness,
-        ) {
-            // Prover algorithm.
-        }
+        fn prove<C: ProverChannel<Unit = u8>>(/* ... */) { /* ... */ }
+        fn verify<C: VerifierChannel<Unit = u8>>(/* ... */)
+            -> VerificationResult<()> { /* ... */ }
     }
 }
 ```
 
-```rust
-ia_core::impl_interactive_argument! {
-    verifier impl<G> for SchnorrVerifier<G>
-    where
-        G: CurveGroup,
-    {
-        fn protocol_id(&self) -> impl AsRef<[u8]> {
-            schnorr_protocol_id()
-        }
+This is source-level dispatch only: it emits native impls for different
+concrete types and creates no conjunction trait or runtime wrapper. The same
+pattern applies to reductions and to three-role preprocessing protocols.
 
-        type Instance = SchnorrInstance<G>;
-
-        fn verify<C: VerifierChannel<Unit = u8>>(
-            &self,
-            channel: &mut C,
-            instance: &Self::Instance,
-        ) -> VerificationResult<()> {
-            // Verifier algorithm.
-        }
-    }
-}
-```
-
-For preprocessing protocols, a third invocation implements the indexer:
-
-```rust
-ia_core::impl_preprocessing_argument! {
-    indexer impl for LookupIndexer {
-        fn protocol_id(&self) -> impl AsRef<[u8]> {
-            lookup_protocol_id()
-        }
-
-        type Instance = LookupClaim;
-        type Index = LookupTable;
-        type ProverKey = LookupProverKey;
-        type VerifierKey = LookupVerifierKey;
-
-        fn preprocess(
-            &self,
-            index: &Self::Index,
-        ) -> (Self::ProverKey, Self::VerifierKey) {
-            // Indexer algorithm.
-        }
-    }
-}
-```
-
-The macro expansions are simple:
-
-| Role invocation | Impl blocks emitted |
-|---|---|
-| argument `prover` | `ProtocolCore`, `ArgumentCore`, `ArgumentProverCore`, `InteractiveArgumentProver` |
-| argument `verifier` | `ProtocolCore`, `ArgumentCore`, `InteractiveArgumentVerifier` |
-| reduction `prover` | `ProtocolCore`, `ReductionCore`, `ReductionProverCore`, `InteractiveReductionProver` |
-| reduction `verifier` | `ProtocolCore`, `ReductionCore`, `InteractiveReductionVerifier` |
-| preprocessing argument `indexer` | `ProtocolCore`, `ArgumentCore`, `Indexer` |
-| preprocessing reduction `indexer` | `ProtocolCore`, `ReductionCore`, `Indexer` |
-| preprocessing argument `prover` | argument prover core impls plus `PreprocessingInteractiveArgumentProver` |
-| preprocessing argument `verifier` | argument verifier core impls plus `PreprocessingInteractiveArgumentVerifier` |
-| preprocessing reduction `prover` | reduction prover core impls plus `PreprocessingInteractiveReductionProver` |
-| preprocessing reduction `verifier` | reduction verifier core impls plus `PreprocessingInteractiveReductionVerifier` |
-
-One concrete type should appear in only one role invocation. This intentionally
-prevents the macros from implementing both roles on the same type.
-
-### 5.3 Optional R&D macro
-
-A later convenience macro may place several role declarations in one source
-block:
-
-```rust
-ia_core::impl_interactive_argument! {
-    roles {
-        prover impl for EchoProver {
-            // ...
-        }
-
-        verifier impl for EchoVerifier {
-            // ...
-        }
-    }
-}
-```
-
-It must still emit implementations for different concrete types. It is only a
-source-authoring convenience.
-
-It does not create a dependency boundary if both declarations live in the same
-crate. Production code that needs separate dependencies should place the role
-invocations in separate crates.
+When roles require different bounds or live in separate crates, use the suffix
+forms such as `impl_interactive_argument_prover!`,
+`impl_interactive_argument_verifier!`, and the preprocessing
+`*_indexer!`/`*_prover!`/`*_verifier!` macros.
 
 ### 5.4 Suggested crate layout
 
@@ -702,8 +611,8 @@ pub struct EchoVerifier {
     pub reject_zero: bool,
 }
 
-ia_core::impl_interactive_argument! {
-    prover impl for EchoProver {
+ia_core::impl_interactive_argument_prover! {
+    impl for EchoProver {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
             echo_argument_id()
         }
@@ -722,8 +631,8 @@ ia_core::impl_interactive_argument! {
     }
 }
 
-ia_core::impl_interactive_argument! {
-    verifier impl for EchoVerifier {
+ia_core::impl_interactive_argument_verifier! {
+    impl for EchoVerifier {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
             echo_argument_id()
         }
@@ -808,8 +717,8 @@ pub struct ScaleVerifier {
     pub strict: bool,
 }
 
-ia_core::impl_preprocessing_argument! {
-    indexer impl for ScaleIndexer {
+ia_core::impl_preprocessing_argument_indexer! {
+    impl for ScaleIndexer {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
             scaled_argument_id()
         }
@@ -836,8 +745,8 @@ ia_core::impl_preprocessing_argument! {
     }
 }
 
-ia_core::impl_preprocessing_argument! {
-    prover impl for ScaleProver {
+ia_core::impl_preprocessing_argument_prover! {
+    impl for ScaleProver {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
             scaled_argument_id()
         }
@@ -859,8 +768,8 @@ ia_core::impl_preprocessing_argument! {
     }
 }
 
-ia_core::impl_preprocessing_argument! {
-    verifier impl for ScaleVerifier {
+ia_core::impl_preprocessing_argument_verifier! {
+    impl for ScaleVerifier {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
             scaled_argument_id()
         }
@@ -890,7 +799,7 @@ Deployment wiring:
 
 ```rust
 let (pk, vk) = indexer
-    .preprocess_checked(&multiplier)
+    .preprocess(&multiplier)
     .expect("indexer emitted incompatible keys");
 
 // Send `pk` to the prover service and `vk` to the verifier service.
@@ -917,8 +826,8 @@ fn decrement_reduction_id() -> [u8; 32] {
 pub struct DecrementProver;
 pub struct DecrementVerifier;
 
-ia_core::impl_interactive_reduction! {
-    prover impl for DecrementProver {
+ia_core::impl_interactive_reduction_prover! {
+    impl for DecrementProver {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
             decrement_reduction_id()
         }
@@ -939,8 +848,8 @@ ia_core::impl_interactive_reduction! {
     }
 }
 
-ia_core::impl_interactive_reduction! {
-    verifier impl for DecrementVerifier {
+ia_core::impl_interactive_reduction_verifier! {
+    impl for DecrementVerifier {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
             decrement_reduction_id()
         }
@@ -998,8 +907,8 @@ pub struct OffsetIndexer;
 pub struct OffsetProver;
 pub struct OffsetVerifier;
 
-ia_core::impl_preprocessing_reduction! {
-    indexer impl for OffsetIndexer {
+ia_core::impl_preprocessing_reduction_indexer! {
+    impl for OffsetIndexer {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
             offset_reduction_id()
         }
@@ -1022,8 +931,8 @@ ia_core::impl_preprocessing_reduction! {
     }
 }
 
-ia_core::impl_preprocessing_reduction! {
-    prover impl for OffsetProver {
+ia_core::impl_preprocessing_reduction_prover! {
+    impl for OffsetProver {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
             offset_reduction_id()
         }
@@ -1049,8 +958,8 @@ ia_core::impl_preprocessing_reduction! {
     }
 }
 
-ia_core::impl_preprocessing_reduction! {
-    verifier impl for OffsetVerifier {
+ia_core::impl_preprocessing_reduction_verifier! {
+    impl for OffsetVerifier {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
             offset_reduction_id()
         }
@@ -1174,7 +1083,7 @@ Usage:
 
 ```rust
 let (pk, vk) = indexer
-    .preprocess_checked(&index)
+    .preprocess(&index)
     .expect("indexer emitted incompatible keys");
 
 let prover = dsfs::preprocessing_non_interactive_argument_prover::<_, Session, _>(
@@ -1442,10 +1351,12 @@ Before changing traits:
 
 ### Phase 2: Replace authoring macros
 
-1. Remove the token-muncher that splits one body at `fn verify`.
-2. Parse `prover`, `verifier`, and `indexer` role declarations independently.
-3. Add macro tests for generics, attributes, where clauses, and role-specific
-   associated types.
+1. Add shared pair/triple declarations that dispatch one source body into
+   independent role impls.
+2. Add role-specific suffix macros for separately bounded or separately housed
+   roles.
+3. Test generics, attributes, where clauses, shared field routing, and every
+   suffix form.
 4. Add compile-fail documentation tests showing that verifier roles have no
    witness or prover-key capability.
 

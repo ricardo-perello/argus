@@ -15,8 +15,8 @@ const ECHO_ID: &[u8] = b"asym-echo";
 struct EchoProver;
 struct EchoVerifier;
 
-ia_core::impl_interactive_argument! {
-    prover impl for EchoProver {
+ia_core::impl_interactive_argument_prover! {
+    impl for EchoProver {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
             pad_protocol_id(ECHO_ID)
         }
@@ -35,8 +35,8 @@ ia_core::impl_interactive_argument! {
     }
 }
 
-ia_core::impl_interactive_argument! {
-    verifier impl for EchoVerifier {
+ia_core::impl_interactive_argument_verifier! {
+    impl for EchoVerifier {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
             pad_protocol_id(ECHO_ID)
         }

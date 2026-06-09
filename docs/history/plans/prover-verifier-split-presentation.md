@@ -1,8 +1,14 @@
 # Prover / Verifier Split + Asymmetric DSFS Compilation
 
-**Status:** implemented on branch `feat/prover-verifier-trait-split` (Argus + spongefish). Whole
-workspace green; sigma-proofs golden vectors pass byte-for-byte. Not yet merged (cross-repo
-coordination pending — see §10).
+> **Superseded design record.** This document describes the intermediate
+> architecture implemented on `feat/prover-verifier-trait-split` on 2026-06-05.
+> It is not the current API. The production design adopted on 2026-06-08 removes
+> conjunction traits, role views, `CombinedIA`, and `CombinedNarg`, and authors
+> prover, verifier, and indexer roles natively. See
+> [Protocol Shapes](../../architecture/ia-ir.md) and the
+> [Role-First Architecture Record](../../architecture/role-first-protocol-architecture-plan.md).
+
+**Historical status:** superseded by the role-first architecture.
 
 **Decided:** 2026-06-05 meeting (Chiesa, Giacomo, Christian).
 

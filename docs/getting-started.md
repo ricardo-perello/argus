@@ -15,13 +15,13 @@ Run the smallest example as a DSFS-compiled non-interactive proof:
 cargo run -p argus-examples --bin schnorr
 ```
 
-Run the same Schnorr protocol with live prover and verifier threads:
+Run the same Schnorr conversation with live prover and verifier threads:
 
 ```bash
 cargo run -p argus-examples --bin schnorr -- --live
 ```
 
-Read the examples as an incremental ladder:
+The examples form an incremental ladder:
 
 ```bash
 cargo run -p argus-examples --bin dleq
@@ -31,16 +31,27 @@ cargo run -p argus-examples --bin composition
 cargo run -p argus-examples --bin multiparty_threads
 ```
 
-The full example map, including advanced protocol showcases, lives in
-`crates/argus-examples/README.md`.
+The full example map lives in `crates/argus-examples/README.md`.
 
 ## First Protocol Shape
 
-Most protocols start as an interactive argument:
+Argus models proving and verification as native, independent roles. A plain
+argument therefore starts with two concrete types:
 
-```rust
+```rust,ignore
+struct MyProver;
+struct MyVerifier;
+```
+
+When both roles share their generic bounds, author them together:
+
+```rust,ignore
 ia_core::impl_interactive_argument! {
-    impl InteractiveArgument for MyProtocol {
+    impl {
+        prover: MyProver,
+        verifier: MyVerifier,
+    }
+    {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
             ia_core::pad_protocol_id(b"my-protocol")
         }
@@ -48,65 +59,77 @@ ia_core::impl_interactive_argument! {
         type Instance = MyInstance;
         type Witness = MyWitness;
 
-        fn prove<P: ProverChannel<Unit = u8>>(
+        fn prove<C: ProverChannel<Unit = u8>>(
             &self,
-            ch: &mut P,
+            channel: &mut C,
             instance: &Self::Instance,
             witness: &Self::Witness,
         ) {
-            ch.send_prover_message(/* ... */);
-            let challenge = ch.read_verifier_message();
+            channel.send_prover_message(/* ... */);
+            let challenge = channel.read_verifier_message();
             /* continue the protocol */
         }
 
-        fn verify<V: VerifierChannel<Unit = u8>>(
+        fn verify<C: VerifierChannel<Unit = u8>>(
             &self,
-            ch: &mut V,
+            channel: &mut C,
             instance: &Self::Instance,
         ) -> VerificationResult<()> {
-            let message = ch.read_prover_message()?;
-            let challenge = ch.send_verifier_message();
-            /* check the transcript */
+            let message = channel.read_prover_message()?;
+            let challenge = channel.send_verifier_message();
+            /* check the conversation */
             Ok(())
         }
     }
 }
 ```
 
-The protocol body should read like the mathematical protocol. It should not
-instantiate sponges, absorb public input, derive Fiat-Shamir challenges, or
-inspect proof bytes.
+The macro emits two independent implementations. The verifier type still has
+no witness capability. Use the role-specific `_prover!` and `_verifier!` forms
+when the roles need different bounds. Protocol code uses only channel
+operations; it never instantiates a sponge, absorbs public input, derives a
+Fiat-Shamir challenge, or inspects proof bytes.
 
 ## Compile with DSFS
 
-```rust
-use ia_core::prelude::*;        // brings prove()/verify() (the role half-traits) into scope
+Compile each role independently:
+
+```rust,ignore
+use ia_core::prelude::*;
 use spongefish_dsfs as dsfs;
 
-let nia = dsfs::plain_non_interactive_argument(
-    MyProtocol,
+let prover = dsfs::plain_non_interactive_argument_prover(
+    MyProver,
+    dsfs::Keccak::default(),
+);
+let verifier = dsfs::plain_non_interactive_argument_verifier(
+    MyVerifier,
     dsfs::Keccak::default(),
 );
 
-let proof = nia.prove(&session, &instance, &witness);
-nia.verify(&session, &instance, &proof)?;
+let proof = prover.prove(&session, &instance, &witness);
+verifier.verify(&session, &instance, &proof)?;
 ```
 
-`.prove()` / `.verify()` live on the prover/verifier *half-traits* now, so the
-prelude (or the specific halves) must be in scope. Authoring the protocol is
-unchanged — the macro above still takes one block with both methods.
+For preprocessing protocols, indexing is a third independent role:
 
-For preprocessing protocols, the compiled object stores no keys:
+```rust,ignore
+let (pk, vk) = MyIndexer.preprocess(&index);
 
-```rust
-let pnia = dsfs::preprocessing_non_interactive_argument(
-    MyPreprocessedProtocol,
+let prover = dsfs::preprocessing_non_interactive_argument_prover(
+    MyPreprocessedProver,
+    dsfs::Keccak::default(),
+);
+let verifier = dsfs::preprocessing_non_interactive_argument_verifier(
+    MyPreprocessedVerifier,
     dsfs::Keccak::default(),
 );
 
-let (pk, vk) = pnia.preprocess(&index);
-let proof = pnia.prove(&pk, &session, &instance, &witness);
-pnia.verify(&vk, &session, &instance, &proof)?;
+let proof = prover.prove(&pk, &session, &instance, &witness);
+verifier.verify(&vk, &session, &instance, &proof)?;
 ```
+
+DSFS stores neither key and does not run indexing. It binds the committed index
+from the key supplied to each role before deriving the first challenge.
 
 Next: [Author Guide](author-guide/overview.md).

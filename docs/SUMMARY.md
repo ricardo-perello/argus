@@ -2,15 +2,12 @@
 
 [Home](index.md)
 [Getting Started](getting-started.md)
-[Final Report](final-report.md)
 
 # Architecture
 
 - [Overview](architecture/overview.md)
 - [Channel Model](architecture/channel-model.md)
 - [Protocol Shapes](architecture/ia-ir.md)
-- [Role-First Architecture Plan](architecture/role-first-protocol-architecture-plan.md)
-- [Previous Prover/Verifier Split](prover-verifier-split-presentation.md)
 - [Backends](architecture/backends.md)
 
 # Author Guide
@@ -54,5 +51,8 @@
   - [0001: Backend-Owned Transcripts](adr/0001-backend-owned-transcripts.md)
   - [0002: Preserve RBR Profiles](adr/0002-preserve-rbr-security-profiles.md)
   - [0003: Instance-Aware Security Metadata](adr/0003-instance-aware-security-metadata.md)
+- [Role-First Architecture Implementation Record](architecture/role-first-protocol-architecture-plan.md)
+- [Superseded Prover/Verifier Split Proposal](history/plans/prover-verifier-split-presentation.md)
+- [Final Report](final-report.md)
 - [Documentation History](history/README.md)
   - [WARP Implementation Notes](history/protocols/warp-implementation-notes.md)

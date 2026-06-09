@@ -2,124 +2,142 @@
 
 Preprocessing separates static relation data from per-claim data.
 
-Plain Schnorr carries the generator in every instance:
+For example, a preprocessed Schnorr-style relation may use:
 
 ```text
-Instance = (G, X)
-Witness  = x
-```
-
-Preprocessed Schnorr moves `G` into setup:
-
-```text
-Index    = G
-PK       = key containing G
-VK       = key containing G
-Instance = X
-Witness  = x
+Index    = generator G
+PK       = prover key containing G
+VK       = verifier key containing G
+Instance = public key X
+Witness  = secret x
 ```
 
 The message flow is unchanged. The difference is where static data lives.
 
-## Keys Are Inputs
+## Three Independent Roles
 
-Preprocessing protocols expose setup through `PreprocessingCore`:
-
-```text
-preprocess(index) -> (prover_key, verifier_key)
-```
-
-Execution remains keyed:
+A preprocessing protocol has an indexer plus two executable roles:
 
 ```text
-prove(ch, prover_key, instance, witness)
-verify(ch, verifier_key, instance)
+indexer.preprocess(index) -> (prover_key, verifier_key)
+prover.prove(channel, prover_key, instance, witness)
+verifier.verify(channel, verifier_key, instance)
 ```
 
-The compiled DSFS wrapper stores the protocol body and sponge configuration, but
-it stores no keys:
+When all three roles share their generic bounds, author them together:
 
-```rust
-use ia_core::prelude::*;   // PreprocessingCore (preprocess) + the keyed role half-traits
-use spongefish_dsfs as dsfs;
+```rust,ignore
+ia_core::impl_preprocessing_argument! {
+    impl {
+        indexer: MyIndexer,
+        prover: MyProver,
+        verifier: MyVerifier,
+    }
+    {
+        fn protocol_id(&self) -> impl AsRef<[u8]> {
+            ia_core::pad_protocol_id(b"my-preprocessed-protocol")
+        }
 
-let pnia = dsfs::preprocessing_non_interactive_argument(
-    MyProtocol,
-    dsfs::Keccak::default(),
-);
+        type Instance = MyInstance;
+        type Witness = MyWitness;
+        type Index = MyIndex;
+        type ProverKey = MyProverKey;
+        type VerifierKey = MyVerifierKey;
 
-let (pk, vk) = pnia.preprocess(&index);
-let proof = pnia.prove(&pk, &session, &instance, &witness);
-pnia.verify(&vk, &session, &instance, &proof)?;
+        fn preprocess(
+            &self,
+            index: &Self::Index,
+        ) -> (Self::ProverKey, Self::VerifierKey) {
+            /* derive matching keys */
+        }
+
+        fn prove<C: ProverChannel<Unit = u8>>(/* ... */) { /* ... */ }
+        fn verify<C: VerifierChannel<Unit = u8>>(/* ... */)
+            -> VerificationResult<()> { /* ... */ }
+    }
+}
 ```
 
-This is intentional. A prover receives the prover key; a verifier receives the
-verifier key. The protocol object itself is not a hidden store of setup
-material.
+The macro emits independent indexer, prover, and verifier implementations.
+Role-specific suffix macros remain available when their bounds or source
+locations differ.
 
-## Committed Index
+## Committed-Index Contract
 
 Both key types implement `CommittedIndex`:
 
-```rust
+```rust,ignore
 pub trait CommittedIndex {
     fn committed_index(&self) -> CommittedIndexBytes;
 }
 ```
 
-For keys produced by the same preprocessing call, the committed-index bytes must
-match:
+Indexing is direct:
 
-```text
+```rust,ignore
+let (pk, vk) = indexer.preprocess(&index);
+```
+
+Every `Indexer` implementation must guarantee:
+
+```rust,ignore
 pk.committed_index() == vk.committed_index()
 ```
 
-DSFS binds those bytes as public input before the first challenge. This lets a
-proof be tied to the indexed relation without requiring the verifier to hold the
-whole prover key or requiring protocol code to manually absorb setup data.
+Argus does not check this contract at runtime. If the commitments differ, the
+compiled prover and verifier bind different public inputs and verification
+fails. Protocol tests should assert equality for representative indexes.
 
-The provided `preprocess_checked(&ix)` helper calls `preprocess(&ix)` and
-debug-asserts that the two committed indexes agree. Backends use this helper
-when they run preprocessing.
+## DSFS Execution
+
+Indexing stays outside DSFS:
+
+```rust,ignore
+let (pk, vk) = indexer.preprocess(&index);
+
+let prover = dsfs::preprocessing_non_interactive_argument_prover(
+    MyProver,
+    dsfs::Keccak::default(),
+);
+let verifier = dsfs::preprocessing_non_interactive_argument_verifier(
+    MyVerifier,
+    dsfs::Keccak::default(),
+);
+
+let proof = prover.prove(&pk, &session, &instance, &witness);
+verifier.verify(&vk, &session, &instance, &proof)?;
+```
+
+DSFS binds `pk.committed_index()` on the proving path and
+`vk.committed_index()` on the verification path before the first challenge.
+The protocol roles never absorb setup data themselves.
 
 ## Asymmetric Keys
 
-Lookup-style protocols show why preprocessing is useful:
+Lookup protocols show why the split matters:
 
 ```text
-Index       = table T
-ProverKey   = T plus Merkle tree
+Index       = public table
+ProverKey   = table plus Merkle tree
 VerifierKey = Merkle root plus table length
 Instance    = (row, claimed value)
 Witness     = ()
 ```
 
-The prover key is large because it needs opening material. The verifier key is
-small because it only needs to check openings against the root. Both keys can
-derive the same committed-index bytes, usually through one shared helper.
+The prover receives opening material. The verifier receives only what it needs
+to check openings. Both keys derive identical committed-index bytes through a
+shared canonical encoding.
 
-```rust
-fn lookup_committed_index(root: &[u8; 32], n: u32) -> CommittedIndexBytes {
-    let mut out = Vec::new();
-    out.extend_from_slice(b"preprocessed-lookup:vk:v1");
-    out.extend_from_slice(root);
-    out.extend_from_slice(&n.to_le_bytes());
-    CommittedIndexBytes::new(out)
-}
-```
+## Security Metadata
 
-The protocol body still sends and receives typed messages through the channel.
-It does not absorb the Merkle root itself.
+Preprocessing security metadata belongs on the indexer:
 
-## When To Use Preprocessing
+- `PreprocessingArgumentSecurity`
+- `PreprocessingReductionSecurity`
 
-Use preprocessing when:
+This lets bounds depend on static index shape without granting the indexer any
+proving or verification capability.
 
-- many proofs share the same static relation data,
-- the verifier should keep a compact key,
-- the prover needs derived material such as tables, trees, bases, or oracles,
-- the transcript must bind an indexed relation separately from the per-claim
-  instance.
-
-Keep a protocol plain when setup would only move fields around without changing
-the relation structure or cost model.
+Use preprocessing when many claims share static data, the prover needs derived
+material, the verifier should keep a compact key, or security bounds depend on
+setup parameters.

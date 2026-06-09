@@ -105,33 +105,16 @@ pub trait Indexer: ProtocolCore {
     type VerifierKey: CommittedIndex;
 
     /// Deterministic indexer: derives `(prover_key, verifier_key)` from `ix`.
-    fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey);
-
-    /// Run [`preprocess`](Self::preprocess), then check that the two keys agree
-    /// on the committed index.
     ///
-    /// The compiled prover binds `pk.committed_index()` and the verifier binds
-    /// `vk.committed_index()` (see [`CommittedIndex`]). If the author's two impls
-    /// disagree for keys from the same `ix`, the prover and verifier transcripts
-    /// diverge and *every* proof fails to verify. This guard surfaces that author
-    /// error at preprocessing time, where both keys are in hand, instead of as an
-    /// opaque verification failure later. Deployment code should distribute keys
-    /// only after this method succeeds.
-    fn preprocess_checked(
-        &self,
-        ix: &Self::Index,
-    ) -> Result<(Self::ProverKey, Self::VerifierKey), IndexingError> {
-        let (pk, vk) = self.preprocess(ix);
-        if pk.committed_index() != vk.committed_index() {
-            return Err(IndexingError::CommittedIndexMismatch);
-        }
-        Ok((pk, vk))
-    }
-}
-
-/// Errors detected while deriving prover and verifier keys from an index.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IndexingError {
-    /// The two keys would bind different committed indices into their transcripts.
-    CommittedIndexMismatch,
+    /// Implementations must ensure that keys returned from the same index bind
+    /// the same committed index:
+    ///
+    /// ```text
+    /// prover_key.committed_index() == verifier_key.committed_index()
+    /// ```
+    ///
+    /// DSFS binds the prover-key commitment on the proving path and the
+    /// verifier-key commitment on the verification path. Violating this
+    /// contract makes the two transcripts diverge, so proofs fail to verify.
+    fn preprocess(&self, ix: &Self::Index) -> (Self::ProverKey, Self::VerifierKey);
 }

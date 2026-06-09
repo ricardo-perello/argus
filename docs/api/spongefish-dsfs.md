@@ -28,7 +28,7 @@ Reductions use `plain_non_interactive_reduction_prover` and
 Indexing remains outside DSFS:
 
 ```rust
-let (pk, vk) = indexer.preprocess_checked(&index)?;
+let (pk, vk) = indexer.preprocess(&index);
 
 let prover = spongefish_dsfs::preprocessing_non_interactive_argument_prover(
     argument_prover,

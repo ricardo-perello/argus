@@ -51,8 +51,8 @@ impl<C: CurveGroup> Default for SchnorrProver<C> {
     }
 }
 
-ia_core::impl_interactive_argument! {
-    prover impl<C> for SchnorrProver<C>
+ia_core::impl_interactive_argument_prover! {
+    impl<C> for SchnorrProver<C>
     where
         C: CurveGroup + PrimeGroup + Encoding + Deserialize,
         C::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
@@ -91,8 +91,8 @@ impl<C: CurveGroup> Default for SchnorrVerifier<C> {
     }
 }
 
-ia_core::impl_interactive_argument! {
-    verifier impl<C> for SchnorrVerifier<C>
+ia_core::impl_interactive_argument_verifier! {
+    impl<C> for SchnorrVerifier<C>
     where
         C: CurveGroup + PrimeGroup + Encoding + Deserialize,
         C::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
@@ -156,8 +156,8 @@ impl<C: CurveGroup> Default for DleqIndexer<C> {
     }
 }
 
-ia_core::impl_preprocessing_argument! {
-    indexer impl<C> for DleqIndexer<C>
+ia_core::impl_preprocessing_argument_indexer! {
+    impl<C> for DleqIndexer<C>
     where
         C: CurveGroup + Encoding,
     {
@@ -185,8 +185,8 @@ impl<C: CurveGroup> Default for DleqProver<C> {
     }
 }
 
-ia_core::impl_preprocessing_argument! {
-    prover impl<C> for DleqProver<C>
+ia_core::impl_preprocessing_argument_prover! {
+    impl<C> for DleqProver<C>
     where
         C: CurveGroup + PrimeGroup + Encoding + Deserialize,
         C::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
@@ -232,8 +232,8 @@ impl<C: CurveGroup> Default for DleqVerifier<C> {
     }
 }
 
-ia_core::impl_preprocessing_argument! {
-    verifier impl<C> for DleqVerifier<C>
+ia_core::impl_preprocessing_argument_verifier! {
+    impl<C> for DleqVerifier<C>
     where
         C: CurveGroup + PrimeGroup + Encoding + Deserialize,
         C::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
@@ -340,9 +340,7 @@ fn demo_three_machine_preprocessed() {
 
     // SETUP / INDEXER machine. Runs once, never touches witnesses.
     let setup = thread::spawn(move || {
-        let (prover_key, verifier_key) = DleqIndexer::<G>::default()
-            .preprocess_checked(&(g, h))
-            .expect("matching committed indices");
+        let (prover_key, verifier_key) = DleqIndexer::<G>::default().preprocess(&(g, h));
         let ci_hex = hex::encode(prover_key.committed_index().as_bytes());
         pk_tx.send(prover_key).expect("ship prover key");
         vk_tx.send(verifier_key).expect("ship verifier key");
@@ -469,9 +467,7 @@ mod tests {
         let h = g * x;
         let session = spongefish::session!("multiparty / preprocessed dleq role split");
 
-        let (pk, vk) = DleqIndexer::<G>::default()
-            .preprocess_checked(&(g, h))
-            .expect("matching committed indices");
+        let (pk, vk) = DleqIndexer::<G>::default().preprocess(&(g, h));
 
         let prover_pnia = dsfs::preprocessing_non_interactive_argument_prover::<_, [u8; 64], _>(
             DleqProver::<G>::default(),

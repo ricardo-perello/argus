@@ -1,5 +1,10 @@
 # WARP: Linear-Time Accumulation Scheme
 
+> **Historical implementation snapshot.** Type names and DSFS constructors in
+> this note predate the role-first architecture and are preserved for design
+> history. For current exports and usage, see
+> [WARP](../../protocols/warp.md).
+
 ## What is WARP
 
 WARP is a linear-time accumulation scheme for R1CS from [eprint 2025/753](https://eprint.iacr.org/2025/753). Given `l` R1CS instances (some fresh, some previously accumulated), WARP produces a single accumulated instance and witness. The verifier checks consistency of the reduction; the decider checks that the accumulated witness actually satisfies the accumulated instance.

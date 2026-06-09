@@ -24,6 +24,7 @@ iterations, abandoned approaches, review memos, and implementation snapshots.
 ## Rendered Archive Pages
 
 - [WARP implementation notes](protocols/warp-implementation-notes.md)
+- [Superseded prover/verifier split presentation](plans/prover-verifier-split-presentation.md)
 
 ## Other Archived Files
 

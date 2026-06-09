@@ -127,8 +127,8 @@ struct CommittedSumcheck;
 struct CommittedSumcheckProver;
 struct CommittedSumcheckVerifier;
 
-ia_core::impl_interactive_argument! {
-    prover impl for CommittedSumcheckProver {
+ia_core::impl_interactive_argument_prover! {
+    impl for CommittedSumcheckProver {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
             ia_core::pad_protocol_id(b"committed sumcheck sha256")
         }
@@ -189,8 +189,8 @@ ia_core::impl_interactive_argument! {
     }
 }
 
-ia_core::impl_interactive_argument! {
-    verifier impl for CommittedSumcheckVerifier {
+ia_core::impl_interactive_argument_verifier! {
+    impl for CommittedSumcheckVerifier {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
             ia_core::pad_protocol_id(b"committed sumcheck sha256")
         }

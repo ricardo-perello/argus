@@ -130,7 +130,11 @@ impl SumcheckVerifier {
 }
 
 ia_core::impl_interactive_argument! {
-    prover impl for SumcheckProver {
+    impl {
+        prover: SumcheckProver,
+        verifier: SumcheckVerifier,
+    }
+    {
         fn protocol_id(&self) -> impl AsRef<[u8]> {
             ia_core::pad_protocol_id(b"sumcheck proof")
         }
@@ -146,17 +150,6 @@ ia_core::impl_interactive_argument! {
         ) {
             Self::prove_sumcheck(ch, instance);
         }
-
-    }
-}
-
-ia_core::impl_interactive_argument! {
-    verifier impl for SumcheckVerifier {
-        fn protocol_id(&self) -> impl AsRef<[u8]> {
-            ia_core::pad_protocol_id(b"sumcheck proof")
-        }
-
-        type Instance = Instance;
 
         fn verify<V: VerifierChannel<Unit = u8>>(
             &self,

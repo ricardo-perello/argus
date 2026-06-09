@@ -60,7 +60,10 @@ impl<G: CurveGroup> Default for BulletproofIpaVerifier<G> {
 }
 
 ia_core::impl_interactive_argument! {
-    prover impl<G> for BulletproofIpaProver<G>
+    impl<G> {
+        prover: BulletproofIpaProver<G>,
+        verifier: BulletproofIpaVerifier<G>,
+    }
     where
         G: CurveGroup + PrimeGroup + Encoding + Deserialize,
         G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
@@ -87,21 +90,6 @@ ia_core::impl_interactive_argument! {
                 witness.b.clone(),
             );
         }
-
-    }
-}
-
-ia_core::impl_interactive_argument! {
-    verifier impl<G> for BulletproofIpaVerifier<G>
-    where
-        G: CurveGroup + PrimeGroup + Encoding + Deserialize,
-        G::ScalarField: PrimeField + Encoding + Decoding + Deserialize,
-    {
-        fn protocol_id(&self) -> impl AsRef<[u8]> {
-            ia_core::pad_protocol_id(b"bulletproofs-ipa")
-        }
-
-        type Instance = IpaInstance<G>;
 
         fn verify<V: VerifierChannel<Unit = u8>>(
             &self,

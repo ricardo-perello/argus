@@ -169,8 +169,8 @@ pub struct WarpSecurityParams {
 /// shape, with each field interpreted as a maximum over the instance family.
 pub type WarpSecurityBound = WarpSecurityParams;
 
-ia_core::impl_preprocessing_reduction! {
-indexer impl<F, P, C, MT> for WarpReductionIndexer<F, P, C, MT>
+ia_core::impl_preprocessing_reduction_indexer! {
+    impl<F, P, C, MT> for WarpReductionIndexer<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -200,8 +200,8 @@ where
 }
 }
 
-ia_core::impl_preprocessing_reduction! {
-prover impl<F, P, C, MT> for WarpReductionProver<F, P, C, MT>
+ia_core::impl_preprocessing_reduction_prover! {
+    impl<F, P, C, MT> for WarpReductionProver<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -249,8 +249,8 @@ where
 }
 }
 
-ia_core::impl_preprocessing_reduction! {
-verifier impl<F, P, C, MT> for WarpReductionVerifier<F, P, C, MT>
+ia_core::impl_preprocessing_reduction_verifier! {
+    impl<F, P, C, MT> for WarpReductionVerifier<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -528,8 +528,8 @@ impl<F, P, C, MT> Default for WarpDeciderVerifier<F, P, C, MT> {
     }
 }
 
-ia_core::impl_preprocessing_argument! {
-indexer impl<F, P, C, MT> for WarpDeciderIndexer<F, P, C, MT>
+ia_core::impl_preprocessing_argument_indexer! {
+    impl<F, P, C, MT> for WarpDeciderIndexer<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -562,8 +562,8 @@ where
 }
 }
 
-ia_core::impl_preprocessing_argument! {
-prover impl<F, P, C, MT> for WarpDeciderProver<F, P, C, MT>
+ia_core::impl_preprocessing_argument_prover! {
+    impl<F, P, C, MT> for WarpDeciderProver<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -602,8 +602,8 @@ where
 }
 }
 
-ia_core::impl_preprocessing_argument! {
-verifier impl<F, P, C, MT> for WarpDeciderVerifier<F, P, C, MT>
+ia_core::impl_preprocessing_argument_verifier! {
+    impl<F, P, C, MT> for WarpDeciderVerifier<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -812,8 +812,8 @@ impl<F, P, C, MT> Default for FullWarpVerifier<F, P, C, MT> {
     }
 }
 
-ia_core::impl_preprocessing_argument! {
-indexer impl<F, P, C, MT> for FullWarpIndexer<F, P, C, MT>
+ia_core::impl_preprocessing_argument_indexer! {
+    impl<F, P, C, MT> for FullWarpIndexer<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -842,8 +842,8 @@ where
 }
 }
 
-ia_core::impl_preprocessing_argument! {
-prover impl<F, P, C, MT> for FullWarpProver<F, P, C, MT>
+ia_core::impl_preprocessing_argument_prover! {
+    impl<F, P, C, MT> for FullWarpProver<F, P, C, MT>
 where
     F: Field
         + PrimeField
@@ -881,8 +881,8 @@ where
 }
 }
 
-ia_core::impl_preprocessing_argument! {
-verifier impl<F, P, C, MT> for FullWarpVerifier<F, P, C, MT>
+ia_core::impl_preprocessing_argument_verifier! {
+    impl<F, P, C, MT> for FullWarpVerifier<F, P, C, MT>
 where
     F: Field
         + PrimeField

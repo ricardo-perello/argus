@@ -56,87 +56,79 @@ struct AccumulateProver;
 struct AccumulateVerifier;
 
 ia_core::impl_interactive_reduction! {
-prover impl for AccumulateProver {
-    fn protocol_id(&self) -> impl AsRef<[u8]> {
-        ia_core::pad_protocol_id(b"warp-style rlc accumulator")
+    impl {
+        prover: AccumulateProver,
+        verifier: AccumulateVerifier,
     }
-
-    type SourceInstance = SourceInstance;
-    type TargetInstance = TargetInstance;
-    type SourceWitness = Vec<Fr>;
-    type TargetWitness = ();
-
-    fn prove<P: ProverChannel<Unit = u8>>(
-        &self,
-        ch: &mut P,
-        instance: &SourceInstance,
-        witness: &Vec<Fr>,
-    ) -> (TargetInstance, ()) {
-        for w_i in witness {
-            ch.send_prover_message(w_i);
-        }
-        let alpha: Fr = ch.read_verifier_message();
-
-        let mut acc_claim = Fr::ZERO;
-        let mut acc_value = Fr::ZERO;
-        let mut power = Fr::ONE;
-        for (claim_i, witness_i) in instance.claims.iter().zip(witness.iter()) {
-            acc_claim += power * claim_i;
-            acc_value += power * witness_i;
-            power *= alpha;
+    {
+        fn protocol_id(&self) -> impl AsRef<[u8]> {
+            ia_core::pad_protocol_id(b"warp-style rlc accumulator")
         }
 
-        (
-            TargetInstance {
+        type SourceInstance = SourceInstance;
+        type TargetInstance = TargetInstance;
+        type SourceWitness = Vec<Fr>;
+        type TargetWitness = ();
+
+        fn prove<P: ProverChannel<Unit = u8>>(
+            &self,
+            ch: &mut P,
+            instance: &SourceInstance,
+            witness: &Vec<Fr>,
+        ) -> (TargetInstance, ()) {
+            for w_i in witness {
+                ch.send_prover_message(w_i);
+            }
+            let alpha: Fr = ch.read_verifier_message();
+
+            let mut acc_claim = Fr::ZERO;
+            let mut acc_value = Fr::ZERO;
+            let mut power = Fr::ONE;
+            for (claim_i, witness_i) in instance.claims.iter().zip(witness.iter()) {
+                acc_claim += power * claim_i;
+                acc_value += power * witness_i;
+                power *= alpha;
+            }
+
+            (
+                TargetInstance {
+                    acc_claim,
+                    acc_value,
+                },
+                (),
+            )
+        }
+
+        fn verify<V: VerifierChannel<Unit = u8>>(
+            &self,
+            ch: &mut V,
+            instance: &SourceInstance,
+        ) -> VerificationResult<TargetInstance> {
+            let n = instance.claims.len();
+
+            let mut values = Vec::with_capacity(n);
+            for _ in 0..n {
+                let w_i: Fr = ch.read_prover_message()?;
+                values.push(w_i);
+            }
+
+            let alpha: Fr = ch.send_verifier_message();
+
+            let mut acc_claim = Fr::ZERO;
+            let mut acc_value = Fr::ZERO;
+            let mut power = Fr::ONE;
+            for (claim_i, value_i) in instance.claims.iter().zip(values.iter()) {
+                acc_claim += power * claim_i;
+                acc_value += power * value_i;
+                power *= alpha;
+            }
+
+            Ok(TargetInstance {
                 acc_claim,
                 acc_value,
-            },
-            (),
-        )
-    }
-
-}
-}
-
-ia_core::impl_interactive_reduction! {
-verifier impl for AccumulateVerifier {
-    fn protocol_id(&self) -> impl AsRef<[u8]> {
-        ia_core::pad_protocol_id(b"warp-style rlc accumulator")
-    }
-
-    type SourceInstance = SourceInstance;
-    type TargetInstance = TargetInstance;
-
-    fn verify<V: VerifierChannel<Unit = u8>>(
-        &self,
-        ch: &mut V,
-        instance: &SourceInstance,
-    ) -> VerificationResult<TargetInstance> {
-        let n = instance.claims.len();
-
-        let mut values = Vec::with_capacity(n);
-        for _ in 0..n {
-            let w_i: Fr = ch.read_prover_message()?;
-            values.push(w_i);
+            })
         }
-
-        let alpha: Fr = ch.send_verifier_message();
-
-        let mut acc_claim = Fr::ZERO;
-        let mut acc_value = Fr::ZERO;
-        let mut power = Fr::ONE;
-        for (claim_i, value_i) in instance.claims.iter().zip(values.iter()) {
-            acc_claim += power * claim_i;
-            acc_value += power * value_i;
-            power *= alpha;
-        }
-
-        Ok(TargetInstance {
-            acc_claim,
-            acc_value,
-        })
     }
-}
 }
 
 impl ReductionSecurity for AccumulateVerifier {

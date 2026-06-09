@@ -1,35 +1,42 @@
 # Compile with DSFS
 
-`spongefish-dsfs` turns an interactive channel program into a non-interactive
-proof.
+`spongefish-dsfs` compiles interactive roles into non-interactive roles while
+owning all transcript mechanics.
 
-For a plain argument:
+## Plain Arguments
 
-```rust
-use ia_core::prelude::*;   // .prove()/.verify() live on the role half-traits
+Compile the two roles independently:
+
+```rust,ignore
+use ia_core::prelude::*;
 use spongefish_dsfs as dsfs;
 
 let session = spongefish::session!("schnorr example");
-let nia = dsfs::plain_non_interactive_argument(
-    Schnorr::<G>::default(),
+let prover = dsfs::plain_non_interactive_argument_prover(
+    SchnorrProver::<G>::default(),
+    dsfs::Keccak::default(),
+);
+let verifier = dsfs::plain_non_interactive_argument_verifier(
+    SchnorrVerifier::<G>::default(),
     dsfs::Keccak::default(),
 );
 
-let proof = nia.prove(&session, &instance, &witness);
-nia.verify(&session, &instance, &proof)?;
+let proof = prover.prove(&session, &instance, &witness);
+verifier.verify(&session, &instance, &proof)?;
 ```
 
-The constructor consumes the interactive body and a sponge configuration. The
-returned value implements `NonInteractiveArgument`.
+The prover wrapper implements `NonInteractiveArgumentProver`; the verifier
+wrapper implements `NonInteractiveArgumentVerifier`. Neither wrapper contains
+the opposite interactive role.
 
 ## What DSFS Owns
 
 During proving, DSFS:
 
 - derives the transcript domain separator,
-- absorbs protocol/session/public input before the first challenge,
+- absorbs protocol, session, and public input before the first challenge,
 - records prover messages into the proof,
-- absorbs prover messages before squeezing challenges,
+- absorbs every prover message before squeezing the next challenge,
 - returns a `NargProof`.
 
 During verification, DSFS:
@@ -40,15 +47,13 @@ During verification, DSFS:
 - squeezes the same challenges,
 - rejects malformed or trailing proof bytes.
 
-The protocol body sees only the channel API.
+Protocol code sees only the channel API.
 
 ## Session
 
-The session is public context bound into the proof. Use it for application
-context such as batch identity, statement grouping, or higher-level protocol
-state.
+The session is public context bound into the proof:
 
-```rust
+```rust,ignore
 let session = spongefish::session!("my application session");
 ```
 
@@ -56,27 +61,51 @@ A proof for one session should not verify under another.
 
 ## Reductions
 
-Reductions compile the same way, but verification returns a target instance:
+Reductions use role-specific constructors too:
 
-```rust
-use ia_core::prelude::*;
-
-let nir = dsfs::plain_non_interactive_reduction(
-    reduction,
+```rust,ignore
+let prover = dsfs::plain_non_interactive_reduction_prover(
+    reduction_prover,
+    dsfs::Keccak::default(),
+);
+let verifier = dsfs::plain_non_interactive_reduction_verifier(
+    reduction_verifier,
     dsfs::Keccak::default(),
 );
 
 let (proof, target_instance, target_witness) =
-    nir.prove(&session, &source_instance, &source_witness);
+    prover.prove(&session, &source_instance, &source_witness);
 
 let verified_target =
-    nir.verify(&session, &source_instance, &proof)?;
+    verifier.verify(&session, &source_instance, &proof)?;
 ```
+
+## Preprocessing
+
+DSFS does not implement or forward `Indexer`. Run indexing separately:
+
+```rust,ignore
+let (pk, vk) = indexer.preprocess(&index);
+
+let prover = dsfs::preprocessing_non_interactive_argument_prover(
+    argument_prover,
+    dsfs::Keccak::default(),
+);
+let verifier = dsfs::preprocessing_non_interactive_argument_verifier(
+    argument_verifier,
+    dsfs::Keccak::default(),
+);
+
+let proof = prover.prove(&pk, &session, &instance, &witness);
+verifier.verify(&vk, &session, &instance, &proof)?;
+```
+
+The compiled roles store no keys. Each derives committed-index bytes from the
+key supplied to that role.
 
 ## Sponge Choice
 
-Argus's standard DSFS path uses Keccak.
-
-`StdHash` is available for explicit compatibility with external spongefish or
-`sigma-proofs` layouts. Do not silently change sponge choice for an existing
-proof format without reviewing protocol id, domain separation, and fixtures.
+Argus's standard DSFS path uses Keccak. `StdHash` is available only for explicit
+compatibility with external layouts such as selected `sigma-proofs` vectors.
+Changing sponge choice, salt policy, transcript initialization, or proof layout
+requires a protocol-id review.

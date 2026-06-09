@@ -1,6 +1,7 @@
 # Protocol Types
 
-Argus protocols are easiest to classify by verifier output and setup shape.
+Argus protocols are classified by verifier output and setup shape. Proving,
+verification, and indexing are independent capabilities.
 
 ## Arguments
 
@@ -11,29 +12,27 @@ R subset X x W
 
 public instance: x
 private witness: w
-claim:           (x, w) in R
 verifier output: accept/reject
 ```
 
-In Rust:
+The shared public shape lives on `ArgumentCore`:
 
-```rust
+```rust,ignore
 type Instance = X;
+```
+
+Only the prover extends that shape with `ArgumentProverCore`:
+
+```rust,ignore
 type Witness = W;
 ```
 
-Schnorr is the smallest example:
-
-```text
-R_schnorr = { ((G, X), x) : X = x * G }
-
-Instance = (G, X)
-Witness  = x
-```
+Schnorr uses `Instance = (G, X)` and `Witness = x` for the relation
+`X = x * G`.
 
 ## Reductions
 
-A reduction proves that one claim can be transformed into another claim:
+A reduction transforms one claim into another:
 
 ```text
 source relation: R0
@@ -45,22 +44,22 @@ verifier input:  x0
 verifier output: x1
 ```
 
-In Rust:
+`ReductionCore` contains only the public shape:
 
-```rust
+```rust,ignore
 type SourceInstance = X0;
-type SourceWitness = W0;
 type TargetInstance = X1;
+```
+
+`ReductionProverCore` adds the private shape:
+
+```rust,ignore
+type SourceWitness = W0;
 type TargetWitness = W1;
 ```
 
-The prover returns both the target instance and target witness because it may
-feed them into the next prover step. The verifier returns only the target
-instance because it must compute the next public claim without trusting the
-prover's copy.
-
-Use reductions for folding, accumulation, and protocols where "verification"
-means producing the next statement rather than deciding the final statement.
+The verifier computes the target instance independently. The target witness is
+available only to prover composition.
 
 ## Preprocessing
 
@@ -68,67 +67,73 @@ Preprocessing protocols describe indexed relation families:
 
 ```text
 { R_i } indexed by static data i
-preprocess(i) -> (pk_i, vk_i)
+indexer.preprocess(i) -> (pk_i, vk_i)
 ```
 
-The index is setup data. The ordinary instance is still per claim.
+The independent `Indexer` owns:
 
-```text
-prover input:    pk_i, x, w
-verifier input:  vk_i, x
-verifier output: accept/reject or target instance
-```
-
-In Rust:
-
-```rust
+```rust,ignore
 type Index = I;
 type ProverKey = PK;
 type VerifierKey = VK;
 ```
 
-Both keys implement `CommittedIndex`, allowing the backend to bind the indexed
-relation before the first challenge. For asymmetric protocols, the prover key
-may be large while the verifier key is compact.
+Each executable role owns only the key it consumes. Both key types implement
+`CommittedIndex`, allowing backends to bind the same indexed relation before the
+first challenge. The indexer must return keys with identical committed-index
+bytes; this is an authoring contract rather than a runtime check.
 
-## Interactive and Non-Interactive
+## Interactive and Non-Interactive Roles
 
-Authors normally implement the interactive shape. A backend provides the
-non-interactive view.
+Authors implement interactive roles. A backend produces corresponding
+non-interactive roles.
 
 Plain argument:
 
-```rust
-let nia = dsfs::plain_non_interactive_argument(body, dsfs::Keccak::default());
-let proof = nia.prove(&session, &instance, &witness);
-nia.verify(&session, &instance, &proof)?;
+```rust,ignore
+let prover = dsfs::plain_non_interactive_argument_prover(
+    argument_prover,
+    dsfs::Keccak::default(),
+);
+let verifier = dsfs::plain_non_interactive_argument_verifier(
+    argument_verifier,
+    dsfs::Keccak::default(),
+);
+
+let proof = prover.prove(&session, &instance, &witness);
+verifier.verify(&session, &instance, &proof)?;
 ```
 
 Preprocessing argument:
 
-```rust
-let pnia = dsfs::preprocessing_non_interactive_argument(body, dsfs::Keccak::default());
-let (pk, vk) = pnia.preprocess(&index);
-let proof = pnia.prove(&pk, &session, &instance, &witness);
-pnia.verify(&vk, &session, &instance, &proof)?;
+```rust,ignore
+let (pk, vk) = indexer.preprocess(&index);
+
+let prover = dsfs::preprocessing_non_interactive_argument_prover(
+    argument_prover,
+    dsfs::Keccak::default(),
+);
+let verifier = dsfs::preprocessing_non_interactive_argument_verifier(
+    argument_verifier,
+    dsfs::Keccak::default(),
+);
+
+let proof = prover.prove(&pk, &session, &instance, &witness);
+verifier.verify(&vk, &session, &instance, &proof)?;
 ```
 
-The preprocessing wrapper stores no keys. Keys are inputs to proving and
-verification.
+The compiled objects store neither keys nor an opposite executable role.
 
-## Prover and Verifier Roles
+## Security Ownership
 
-Each leaf trait above splits into a `…Prover` half and a `…Verifier` half, with
-the full trait as their conjunction. You still author one block with both methods
-(the macro emits the halves), but a *compiled* object can hold a single role:
+Plain security metadata lives on verifier types because it describes the
+verification algorithm and public statement:
 
-```rust
-use ia_core::prelude::*;   // .prove()/.verify() live on the halves
+- `ArgumentSecurity`
+- `ReductionSecurity`
 
-let prover = dsfs::plain_non_interactive_argument(body.into_prover(), dsfs::Keccak::default());
-// prover.prove(...)  — yes;  prover.verify(...)  — does not exist
-```
+Preprocessing security metadata lives on indexer types because its bounds may
+depend on static index parameters:
 
-`into_prover()` / `into_verifier()` are API-level role views over a full body; a
-natively one-sided body (implementing only `…Verifier`) drops the other algorithm
-entirely. See [Prover/Verifier Split](../prover-verifier-split-presentation.md).
+- `PreprocessingArgumentSecurity`
+- `PreprocessingReductionSecurity`

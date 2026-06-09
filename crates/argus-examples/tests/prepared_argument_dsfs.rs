@@ -135,9 +135,8 @@ fn preprocessed_dsfs_absorbs_committed_index_and_instance() {
     );
 
     // Prove under committed index [1,2,3] at instance [7].
-    let (pk, vk) = indexer
-        .preprocess_checked(&vec![1u8, 2, 3])
-        .expect("matching committed indices");
+    let (pk, vk) = indexer.preprocess(&vec![1u8, 2, 3]);
+    assert_eq!(pk.committed_index(), vk.committed_index());
     let proof = prover.prove(&pk, &session, &[7u8], &witness);
 
     // Same committed index, same instance -> verifies.
@@ -146,9 +145,7 @@ fn preprocessed_dsfs_absorbs_committed_index_and_instance() {
         .expect("same committed index and same instance verify");
 
     // Changing only the verifier-key commitment must change the transcript.
-    let (_pk_other, vk_other_index) = indexer
-        .preprocess_checked(&vec![9u8, 9, 9])
-        .expect("matching committed indices");
+    let (_pk_other, vk_other_index) = indexer.preprocess(&vec![9u8, 9, 9]);
     assert!(
         verifier
             .verify(&vk_other_index, &session, &[7u8], &proof)
