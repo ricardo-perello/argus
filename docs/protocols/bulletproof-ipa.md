@@ -63,7 +63,7 @@ example also expresses it that way:
 
 For `n = 8` these compose statically, mirroring the `composition` example:
 
-```rust
+```rust,ignore
 type IpaFold2Prover<G> =
     ChainedReduction<IpaFoldProver<G>, IpaFoldProver<G>>;
 type IpaFold3Prover<G> =
@@ -142,4 +142,4 @@ Unlike the bare IPA, the range proof **is** zero-knowledge: the blinding
 - The `SecurityProfile` per-round errors are coarse `O(1/|F|)` placeholders. The
   precise IPA knowledge-soundness bound (BCCGP16 / Bulletproofs §3, forking
   lemma over `2 log n + 1` transcripts) and the range proof's per-round
-  decomposition are left as TODOs in the source.
+  decomposition remain explicitly documented conservative limitations.

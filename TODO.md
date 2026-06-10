@@ -1,29 +1,23 @@
-# TODO
-Goal: **BCS[IOP, MT] = DSFS[IA] where IA = IBCS[IOP, MT]**
+# Roadmap
 
-## Warmup (start here)
-- [ ] Apply DSFS to the Schnorr protocol (use spongefish example as reference)
-- [ ] Apply DSFS to Sumcheck
+The role-first IA/IR interfaces, DSFS backend, live execution, protocol
+examples, sigma compatibility bridge, and WARP integration are implemented.
+Current work is stabilization rather than another interface redesign.
 
-## Subgoal 1: DSFS[IA]
-- [ ] Design a DSL/interface for an Interactive Argument (IA) (round structure, public-coin, deterministic replay)
-- [ ] Define the output NARG \(=\(P,V\)\) obtained by applying Fiat–Shamir to an IA
-- [ ] Decide **which FS** is being realized:
-  - [ ] “Ideal FS” model from the book (powerful oracles \(f_1,\dots,f_k\))
-  - [ ] Real FS via duplex sponges (DSFS), per `https://eprint.iacr.org/2025/536`
-- [ ] Study spongefish API (init / absorb / squeeze) and map it to Construction 4.3 needs
-- [ ] Implement **Construction 4.3** DSFS wrapper around the IA interface (DSFS is the only place sponge ops occur)
-- [ ] (TBD) Track/link to the relevant talk notes
+## Near Term
 
-## Subgoal 2: BCS[IOP, MT]
-- [ ] Specify IBCS[IOP, MT] as an IA (BCS expressed as an interactive argument)
-- [ ] Compile BCS via DSFS: DSFS[IA = IBCS[IOP, MT]]
+- Complete review and upstream integration of the role-first changes.
+- Move Argus to its eventual `arkworks-rs` repository.
+- Repoint `ark-codes` after its arkworks 0.6 support lands upstream.
+- Keep examples, mdBook documentation, and strict API documentation in sync.
 
-## References
-- DSFS paper: `https://eprint.iacr.org/2025/536`
-- Implementation: `https://github.com/arkworks-rs/spongefish`
+## Research Follow-Ups
 
-## People
-- Giacomo F
-- Michele O
+- Express IBCS as an Argus interactive argument and compile it through DSFS.
+- Tighten conservative WARP and Bulletproof security bounds where the analysis
+  is available.
+- Explore recursive or algebraic channel backends without exposing transcript
+  internals to protocol implementations.
 
+Historical implementation plans and completed interface iterations live under
+`docs/history/`.

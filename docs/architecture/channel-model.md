@@ -4,7 +4,7 @@ An Argus protocol is a channel program.
 
 The prover side can send prover messages and receive public verifier messages:
 
-```rust
+```rust,ignore
 ch.send_prover_message(&message);
 let challenge = ch.read_verifier_message();
 ```
@@ -12,7 +12,7 @@ let challenge = ch.read_verifier_message();
 The verifier side can receive prover messages and produce public verifier
 messages:
 
-```rust
+```rust,ignore
 let message = ch.read_prover_message()?;
 let challenge = ch.send_verifier_message();
 ```
@@ -39,7 +39,7 @@ The protocol body does not change between these executions.
 The verifier may inspect a prover message before deciding which public coin type
 comes next:
 
-```rust
+```rust,ignore
 let commitment: Commitment = ch.read_prover_message()?;
 
 if commitment.uses_small_domain() {

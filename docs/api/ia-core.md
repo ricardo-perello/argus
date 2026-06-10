@@ -42,7 +42,7 @@ are no full conjunction traits, role views, or recombination adapters.
 
 The short macros author related native roles from one shared declaration:
 
-```rust
+```rust,ignore
 ia_core::impl_interactive_argument! {
     impl {
         prover: MyProver,

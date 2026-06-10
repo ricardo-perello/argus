@@ -5,14 +5,14 @@ The DSFS backend evaluates NARG security from an instance-aware
 
 For arguments, use one of:
 
-```rust
+```rust,ignore
 dsfs::security_for_concrete_instance(&argument, &instance);
 dsfs::security_for_instance_bound(&argument, &bound);
 ```
 
 For reductions, use one of:
 
-```rust
+```rust,ignore
 dsfs::reduction_security_for_source_instance(&reduction, &source_instance);
 dsfs::reduction_security_for_source_bound(&reduction, &source_bound);
 ```

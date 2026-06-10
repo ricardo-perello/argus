@@ -4,14 +4,14 @@ The channel API is the whole protocol boundary.
 
 The prover side can:
 
-```rust
+```rust,ignore
 ch.send_prover_message(&message);
 let challenge = ch.read_verifier_message();
 ```
 
 The verifier side can:
 
-```rust
+```rust,ignore
 let message = ch.read_prover_message()?;
 let challenge = ch.send_verifier_message();
 ```
@@ -39,7 +39,7 @@ the transcript.
 
 The channel traits have two levels of typing:
 
-```rust
+```rust,ignore
 pub trait ProverChannel {
     type Unit;
 
@@ -59,7 +59,7 @@ element, field element, vector, Merkle path, or protocol-specific structure.
 `Unit` is the alphabet used by the whole channel. The current DSFS path is
 byte-oriented, so examples usually write:
 
-```rust
+```rust,ignore
 fn prove<P: ProverChannel<Unit = u8>>(...)
 fn verify<V: VerifierChannel<Unit = u8>>(...)
 ```
@@ -74,7 +74,7 @@ with a non-byte alphabet may motivate a smaller codec abstraction owned by
 The verifier may inspect a prover message before choosing the next public coin
 type:
 
-```rust
+```rust,ignore
 let commitment: Commitment = ch.read_prover_message()?;
 
 if commitment.uses_small_domain() {

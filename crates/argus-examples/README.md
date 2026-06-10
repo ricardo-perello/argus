@@ -28,7 +28,7 @@ domain separation.
 | 3 | `preprocessed_lookup` | Asymmetric keys: fat prover key, compact verifier key. |
 | 4 | `preprocessed_sumcheck` | Preprocessed `InteractiveReduction`, where verification outputs a target instance. |
 | 5 | `composition` | Sequential composition with `ChainedReduction` and `ReducedArgument`. |
-| 6 | `multiparty_threads` | Role views and keys-as-inputs across indexer, prover, and verifier parties. |
+| 6 | `multiparty_threads` | Native indexer, prover, and verifier roles distributed across separate parties. |
 
 Run them with:
 
@@ -60,7 +60,7 @@ path to learning the Argus interface.
 
 | Test | Focus |
 | --- | --- |
-| `tests/asymmetric_compile.rs` | Difference between `into_prover` / `into_verifier` role views over a full body and genuinely prover-only / verifier-only bodies for asymmetric DSFS compilation. |
+| `tests/asymmetric_compile.rs` | Independently bounded prover-only and verifier-only implementations compiled through DSFS. |
 
 Run the whole example test set with:
 

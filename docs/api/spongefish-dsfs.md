@@ -5,7 +5,7 @@ transcript mechanics.
 
 ## Plain Arguments
 
-```rust
+```rust,ignore
 let prover = spongefish_dsfs::plain_non_interactive_argument_prover(
     argument_prover,
     spongefish_dsfs::Keccak::default(),
@@ -27,7 +27,7 @@ Reductions use `plain_non_interactive_reduction_prover` and
 
 Indexing remains outside DSFS:
 
-```rust
+```rust,ignore
 let (pk, vk) = indexer.preprocess(&index);
 
 let prover = spongefish_dsfs::preprocessing_non_interactive_argument_prover(

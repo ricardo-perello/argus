@@ -1440,7 +1440,7 @@ Every implementation and review must confirm:
 7. DSFS Construction 4.3 ordering remains unchanged.
 8. Transcript logic is not duplicated between role wrappers.
 9. `ia-core` traits remain independent of sponge/transcript internals.
-10. Sponge operations remain exclusively in `spongefish::dsfs`.
+10. Sponge operations remain exclusively in `spongefish-dsfs`.
 11. Verification consumes the full expected proof and rejects trailing bytes.
 
 The expected result is byte-identical proofs before and after the refactor for

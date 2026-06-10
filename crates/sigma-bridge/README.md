@@ -1,14 +1,15 @@
 # sigma-bridge
 
 Turns any `SigmaProtocol` (from `sigma-proofs`) into a non-interactive proof
-through the Argus **DSFS** pipeline (`ia-core` channels backed by `spongefish::dsfs::SpongeProver` / `SpongeVerifier`).
+through the Argus **DSFS** pipeline (`ia-core` channels backed by
+`spongefish_dsfs::SpongeProver` / `SpongeVerifier`).
 
 ## Design
 
 - **Pure IA pipeline**: commitments and responses are sent via `send_prover_message`
   (absorb **and** append into the NARG string). The proof is the full spongefish NARG string.
 - **Batchable only**: compact proofs are not supported (per project direction).
-- **Sponge-generic**: defaults to Keccak; pass `spongefish::dsfs::StdHash` for SHAKE128.
+- **Sponge-generic**: defaults to Keccak; pass `spongefish_dsfs::StdHash` for SHAKE128.
 - **Not byte-identical to `sigma-proofs::Nizk`**: `Nizk::prove_batchable` uses `public_message`
   (absorb-only) for commitments and manually assembles the proof. This crate instead drives
   everything through `ProverChannel::send_prover_message`, yielding different NARG bytes but
