@@ -130,9 +130,7 @@ where
         );
     }
 
-    ch.state
-        .check_eof()
-        .map_err(|_| Error::VerificationFailure)?;
+    ch.check_eof().map_err(|_| Error::VerificationFailure)?;
 
     protocol.verifier(&commitment, &challenge, &response)
 }
@@ -171,9 +169,7 @@ where
         );
     }
 
-    ch.state
-        .check_eof()
-        .map_err(|_| Error::VerificationFailure)?;
+    ch.check_eof().map_err(|_| Error::VerificationFailure)?;
 
     protocol.verifier(&commitment, &challenge, &response)
 }

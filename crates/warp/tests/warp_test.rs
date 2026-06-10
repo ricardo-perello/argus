@@ -25,6 +25,7 @@ use spongefish_dsfs::{self as dsfs, Keccak, NargSecurity, STD_SPONGE_PARAMS};
 use warp::{
     config::WarpConfig,
     crypto::merkle::{blake3::Blake3MerkleTreeParams, parameters::MerkleTreeParams},
+    errors::WARPError,
     relations::{
         r1cs::{
             hashchain::{
@@ -288,6 +289,44 @@ fn warp_commitment_stable_for_same_index() {
     let ix_a = warp_index(r1cs.clone(), code.clone(), 4, 4);
     let ix_b = warp_index(r1cs, code, 4, 4);
     assert_eq!(committed_index(&ix_a), committed_index(&ix_b));
+}
+
+#[test]
+fn warp_commitment_matches_golden_bytes() {
+    let (r1cs, code, _, _) = deterministic_setup();
+    let ix = warp_index(r1cs, code, 4, 4);
+
+    assert_eq!(
+        committed_index(&ix),
+        vec![
+            97, 114, 103, 117, 115, 58, 119, 97, 114, 112, 58, 118, 107, 58, 118, 49, 151, 204,
+            105, 107, 74, 8, 252, 4, 93, 139, 224, 11, 229, 126, 113, 186, 63, 29, 5, 59, 72, 48,
+            24, 138, 206, 66, 78, 128, 98, 168, 4, 198,
+        ]
+    );
+}
+
+#[test]
+fn r1cs_description_is_stable_and_constraint_sensitive() {
+    let (r1cs, _, _, _) = deterministic_setup();
+    let changed = changed_relation_same_dimensions(&r1cs);
+
+    assert_eq!(r1cs.description(), r1cs.clone().description());
+    assert_ne!(r1cs.description(), changed.description());
+}
+
+#[test]
+fn r1cs_reports_malformed_evaluation_inputs() {
+    let (r1cs, _, _, _) = deterministic_setup();
+
+    assert!(matches!(
+        r1cs.eval_p_i(&[], 0),
+        Err(WARPError::R1CSWitnessSize(0, _))
+    ));
+    assert!(matches!(
+        r1cs.evaluate_bundled(&[], &vec![Fp::from(0u64); r1cs.n]),
+        Err(WARPError::ZeroEvaderSize(0, 0))
+    ));
 }
 
 #[test]

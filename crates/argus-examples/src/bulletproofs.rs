@@ -183,7 +183,8 @@ where
 /// in the challenge (`x^2 ... x^-2`), so clearing denominators gives a degree-4
 /// polynomial and a cheating prover survives with probability `<= 4/|F|`. This
 /// is a coarse bound; the precise knowledge-soundness analysis (BCCGP16 /
-/// Bulletproofs §3, forking lemma over `2 log n + 1` transcripts) is a TODO.
+/// Bulletproofs §3, forking lemma over `2 log n + 1` transcripts) is left as a
+/// documented conservative limitation until that analysis is implemented.
 pub fn ipa_round_error<F: PrimeField>() -> f64 {
     4.0 * 2_f64.powi(-(F::MODULUS_BIT_SIZE as i32))
 }

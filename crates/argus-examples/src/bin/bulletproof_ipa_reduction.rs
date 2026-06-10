@@ -3,9 +3,9 @@
 //! The monolithic IPA loop (see `bulletproof_ipa`) is exactly `log2(n)` copies
 //! of one reduction. This example expresses that directly:
 //!
-//! - [`IpaFold`] — an `InteractiveReduction` with `Source = Target =
+//! - `IpaFold` — an `InteractiveReduction` with `Source = Target =
 //!   IpaInstance<G>` performing one round (`n -> n/2`).
-//! - [`IpaBase`] — an `InteractiveArgument` that decides the size-1 statement.
+//! - `IpaBase` — an `InteractiveArgument` that decides the size-1 statement.
 //!
 //! For `n = 8` they compose statically (mirroring the `composition` example):
 //!

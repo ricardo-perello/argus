@@ -4,6 +4,8 @@ use ark_relations::gr1cs::{
 };
 use serde::Serialize;
 
+use super::r1cs::R1CSConstraints;
+
 #[derive(Serialize)]
 pub struct SerializableConstraintMatrices {
     pub num_instance_variables: usize,
@@ -66,6 +68,46 @@ impl SerializableConstraintMatrices {
             b: Self::serialize_nested_field(b),
             c: Self::serialize_nested_field(c),
         };
-        serde_json::to_string(&serializable).unwrap().into_bytes()
+        serializable.to_bytes()
+    }
+
+    pub fn from_sparse_r1cs<F: Field>(
+        num_instance_variables: usize,
+        num_witness_variables: usize,
+        constraints: &R1CSConstraints<F>,
+    ) -> Self {
+        let (a, bc): (Vec<_>, Vec<_>) = constraints
+            .iter()
+            .map(|(a, b, c)| {
+                (
+                    a.iter()
+                        .map(|(coefficient, column)| (*coefficient, *column))
+                        .collect(),
+                    (
+                        b.iter()
+                            .map(|(coefficient, column)| (*coefficient, *column))
+                            .collect(),
+                        c.iter()
+                            .map(|(coefficient, column)| (*coefficient, *column))
+                            .collect(),
+                    ),
+                )
+            })
+            .unzip();
+        let (b, c) = bc.into_iter().unzip();
+
+        Self {
+            num_instance_variables,
+            num_witness_variables,
+            num_constraints: constraints.len(),
+            a: Self::serialize_nested_field(a),
+            b: Self::serialize_nested_field(b),
+            c: Self::serialize_nested_field(c),
+        }
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        serde_json::to_vec(self)
+            .expect("serializing canonical R1CS constraint data to a byte vector cannot fail")
     }
 }

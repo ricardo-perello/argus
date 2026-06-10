@@ -405,7 +405,8 @@ fn warp_security_profile(params: &WarpSecurityParams) -> SecurityProfile {
     // Reed-Solomon code-specific bounds.
     // δ = 1 − k/n (relative minimum distance).
     let delta = 1.0 - params.k as f64 / params.n as f64;
-    // |Λ(C, δ)| ≤ n (conservative; TODO: tighten via Johnson bound).
+    // |Λ(C, δ)| ≤ n. This deliberately keeps the conservative bound until a
+    // reviewed Johnson-bound analysis is available.
     let list_size = params.n as f64;
     // err_PG(C, 2, δ) ≤ 3 · n² / |F|  (BCIKS20, degree 2 for quadratic R1CS, eprint §6.2).
     let err_pg = 3.0 * (params.n as f64).powi(2) * field_inv;

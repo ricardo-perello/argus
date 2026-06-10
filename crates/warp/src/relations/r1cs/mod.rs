@@ -8,7 +8,7 @@ use ark_relations::gr1cs::{
 use crate::errors::WARPError;
 use crate::utils::poly::Hypercube;
 
-use super::BundledPESAT;
+use super::{BundledPESAT, SerializableConstraintMatrices};
 
 pub type R1CSConstraints<F> = Vec<(Vec<(F, usize)>, Vec<(F, usize)>, Vec<(F, usize)>)>;
 
@@ -107,7 +107,12 @@ impl<F: Field> BundledPESAT<F> for R1CS<F> {
     }
 
     fn description(&self) -> Vec<u8> {
-        todo!()
+        SerializableConstraintMatrices::from_sparse_r1cs(
+            self.n.saturating_sub(self.k),
+            self.k,
+            &self.p,
+        )
+        .to_bytes()
     }
 
     fn constraints(&self) -> &Self::Constraints {

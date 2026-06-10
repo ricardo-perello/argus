@@ -30,6 +30,18 @@ pub enum WARPProverError {
     ArkError(#[from] ark_crypto_primitives::Error),
     #[error("Expected eval, got None")]
     EmptyEval,
+    #[error(
+        "expected {expected} source instances and witnesses, got {instances} instances and {witnesses} witnesses"
+    )]
+    InvalidInputCount {
+        expected: usize,
+        instances: usize,
+        witnesses: usize,
+    },
+    #[error("invalid WARP configuration: {0}")]
+    InvalidConfiguration(&'static str),
+    #[error("bundled relation evaluation failed")]
+    BundledEvaluation,
 }
 
 #[derive(Error, Debug)]

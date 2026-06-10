@@ -286,7 +286,8 @@ where
 /// Coarse range-proof profile. Challenges in order: `y, z, x, w`, then the
 /// `log2(n)` IPA rounds. Perfect SHVZK (`hvzk_error = 0`). The non-IPA rounds
 /// (degree-2 `t(X)` plus the bit constraints) carry more than the IPA's `4/|F|`;
-/// the precise per-round decomposition is a TODO — this is a placeholder bound.
+/// the precise per-round decomposition is not yet modeled, so this remains a
+/// conservative placeholder bound.
 fn range_profile<F: PrimeField>(n_bits: usize) -> SecurityProfile {
     let log_n = log2(n_bits) as usize;
     let per_round = ipa_round_error::<F>(); // coarse; see doc comment

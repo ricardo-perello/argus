@@ -36,6 +36,24 @@ macro_rules! __ia_core_parse_role_pair {
     (
         [$emit:ident] [$($generics:tt)*]
         {
+            prover: $prover:ty $(,)?
+        }
+        $($rest:tt)*
+    ) => {
+        compile_error!("paired role declaration is missing `verifier: VerifierType`");
+    };
+    (
+        [$emit:ident] [$($generics:tt)*]
+        {
+            verifier: $verifier:ty $(,)?
+        }
+        $($rest:tt)*
+    ) => {
+        compile_error!("paired role declaration is missing `prover: ProverType`");
+    };
+    (
+        [$emit:ident] [$($generics:tt)*]
+        {
             prover: $prover:ty,
             verifier: $verifier:ty $(,)?
         }
@@ -96,6 +114,36 @@ macro_rules! __ia_core_parse_role_pair_where {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __ia_core_parse_role_triple {
+    (
+        [$emit:ident] [$($generics:tt)*]
+        {
+            prover: $prover:ty,
+            verifier: $verifier:ty $(,)?
+        }
+        $($rest:tt)*
+    ) => {
+        compile_error!("preprocessing role declaration is missing `indexer: IndexerType`");
+    };
+    (
+        [$emit:ident] [$($generics:tt)*]
+        {
+            indexer: $indexer:ty,
+            prover: $prover:ty $(,)?
+        }
+        $($rest:tt)*
+    ) => {
+        compile_error!("preprocessing role declaration is missing `verifier: VerifierType`");
+    };
+    (
+        [$emit:ident] [$($generics:tt)*]
+        {
+            indexer: $indexer:ty,
+            verifier: $verifier:ty $(,)?
+        }
+        $($rest:tt)*
+    ) => {
+        compile_error!("preprocessing role declaration is missing `prover: ProverType`");
+    };
     (
         [$emit:ident] [$($generics:tt)*]
         {
@@ -162,8 +210,59 @@ macro_rules! __ia_core_parse_role_triple_where {
 }
 
 /// Implement both native roles of a plain interactive argument.
+///
+/// This is the usual authoring path when both roles share generic bounds:
+///
+/// ```text
+/// impl_interactive_argument! {
+///     impl<G> {
+///         prover: SchnorrProver<G>,
+///         verifier: SchnorrVerifier<G>,
+///     }
+///     where G: CurveGroup,
+///     {
+///         fn protocol_id(&self) -> impl AsRef<[u8]> { b"schnorr" }
+///         type Instance = [G; 2];
+///         type Witness = G::ScalarField;
+///         fn prove<C: ProverChannel<Unit = u8>>(&self, ch: &mut C, instance: &Self::Instance, witness: &Self::Witness) { ... }
+///         fn verify<C: VerifierChannel<Unit = u8>>(&self, ch: &mut C, instance: &Self::Instance) -> VerificationResult<()> { ... }
+///     }
+/// }
+/// ```
+///
+/// Use [`crate::impl_interactive_argument_prover!`] and
+/// [`crate::impl_interactive_argument_verifier!`] when the roles need
+/// independent bounds or live in different modules.
+///
+/// Obsolete role prefixes are rejected with a migration hint:
+///
+/// ```compile_fail
+/// ia_core::impl_interactive_argument! {
+///     prover impl for MyProver {}
+/// }
+/// ```
+///
+/// Paired declarations must name both roles:
+///
+/// ```compile_fail
+/// ia_core::impl_interactive_argument! {
+///     impl {
+///         prover: MyProver,
+///     } {}
+/// }
+/// ```
 #[macro_export]
 macro_rules! impl_interactive_argument {
+    (prover impl $($rest:tt)*) => {
+        compile_error!(
+            "role prefixes were removed; use `impl_interactive_argument_prover! { impl ... }`"
+        );
+    };
+    (verifier impl $($rest:tt)*) => {
+        compile_error!(
+            "role prefixes were removed; use `impl_interactive_argument_verifier! { impl ... }`"
+        );
+    };
     (impl $($rest:tt)*) => {
         $crate::__ia_core_parse_role_pair!([__ia_core_emit_argument_pair] [] $($rest)*);
     };
@@ -177,6 +276,9 @@ macro_rules! impl_interactive_argument {
 /// Implement the prover role of a plain interactive argument.
 #[macro_export]
 macro_rules! impl_interactive_argument_prover {
+    (prover impl $($rest:tt)*) => {
+        compile_error!("remove the obsolete `prover` prefix; this macro begins directly with `impl`");
+    };
     (impl $($rest:tt)*) => {
         $crate::__ia_core_parse_role!([__ia_core_emit_argument_prover] [] $($rest)*);
     };
@@ -190,6 +292,9 @@ macro_rules! impl_interactive_argument_prover {
 /// Implement the verifier role of a plain interactive argument.
 #[macro_export]
 macro_rules! impl_interactive_argument_verifier {
+    (verifier impl $($rest:tt)*) => {
+        compile_error!("remove the obsolete `verifier` prefix; this macro begins directly with `impl`");
+    };
     (impl $($rest:tt)*) => {
         $crate::__ia_core_parse_role!([__ia_core_emit_argument_verifier] [] $($rest)*);
     };
@@ -338,8 +443,23 @@ macro_rules! __ia_core_split_argument_methods {
 }
 
 /// Implement both native roles of a plain interactive reduction.
+///
+/// The body declares shared source/target instance types, prover-only
+/// source/target witness types, then `prove` and `verify`. Use the
+/// role-specific suffix macros when the two implementations need different
+/// bounds.
 #[macro_export]
 macro_rules! impl_interactive_reduction {
+    (prover impl $($rest:tt)*) => {
+        compile_error!(
+            "role prefixes were removed; use `impl_interactive_reduction_prover! { impl ... }`"
+        );
+    };
+    (verifier impl $($rest:tt)*) => {
+        compile_error!(
+            "role prefixes were removed; use `impl_interactive_reduction_verifier! { impl ... }`"
+        );
+    };
     (impl $($rest:tt)*) => {
         $crate::__ia_core_parse_role_pair!([__ia_core_emit_reduction_pair] [] $($rest)*);
     };
@@ -353,6 +473,9 @@ macro_rules! impl_interactive_reduction {
 /// Implement the prover role of a plain interactive reduction.
 #[macro_export]
 macro_rules! impl_interactive_reduction_prover {
+    (prover impl $($rest:tt)*) => {
+        compile_error!("remove the obsolete `prover` prefix; this macro begins directly with `impl`");
+    };
     (impl $($rest:tt)*) => {
         $crate::__ia_core_parse_role!([__ia_core_emit_reduction_prover] [] $($rest)*);
     };
@@ -366,6 +489,9 @@ macro_rules! impl_interactive_reduction_prover {
 /// Implement the verifier role of a plain interactive reduction.
 #[macro_export]
 macro_rules! impl_interactive_reduction_verifier {
+    (verifier impl $($rest:tt)*) => {
+        compile_error!("remove the obsolete `verifier` prefix; this macro begins directly with `impl`");
+    };
     (impl $($rest:tt)*) => {
         $crate::__ia_core_parse_role!([__ia_core_emit_reduction_verifier] [] $($rest)*);
     };
@@ -534,8 +660,28 @@ macro_rules! __ia_core_split_reduction_methods {
 }
 
 /// Implement all three native roles of a preprocessing interactive argument.
+///
+/// The shared form routes `preprocess` to the indexer, `Witness` and `prove`
+/// to the prover, and `verify` to the verifier. The `ProverKey` and
+/// `VerifierKey` declarations are also routed to their executable roles.
+/// Results returned by `preprocess` must have equal committed indexes.
 #[macro_export]
 macro_rules! impl_preprocessing_argument {
+    (indexer impl $($rest:tt)*) => {
+        compile_error!(
+            "role prefixes were removed; use `impl_preprocessing_argument_indexer! { impl ... }`"
+        );
+    };
+    (prover impl $($rest:tt)*) => {
+        compile_error!(
+            "role prefixes were removed; use `impl_preprocessing_argument_prover! { impl ... }`"
+        );
+    };
+    (verifier impl $($rest:tt)*) => {
+        compile_error!(
+            "role prefixes were removed; use `impl_preprocessing_argument_verifier! { impl ... }`"
+        );
+    };
     (impl $($rest:tt)*) => {
         $crate::__ia_core_parse_role_triple!(
             [__ia_core_emit_preprocessing_argument_triple] [] $($rest)*
@@ -551,6 +697,9 @@ macro_rules! impl_preprocessing_argument {
 /// Implement the indexer role of a preprocessing interactive argument.
 #[macro_export]
 macro_rules! impl_preprocessing_argument_indexer {
+    (indexer impl $($rest:tt)*) => {
+        compile_error!("remove the obsolete `indexer` prefix; this macro begins directly with `impl`");
+    };
     (impl $($rest:tt)*) => {
         $crate::__ia_core_parse_role!([__ia_core_emit_argument_indexer] [] $($rest)*);
     };
@@ -564,6 +713,9 @@ macro_rules! impl_preprocessing_argument_indexer {
 /// Implement the prover role of a preprocessing interactive argument.
 #[macro_export]
 macro_rules! impl_preprocessing_argument_prover {
+    (prover impl $($rest:tt)*) => {
+        compile_error!("remove the obsolete `prover` prefix; this macro begins directly with `impl`");
+    };
     (impl $($rest:tt)*) => {
         $crate::__ia_core_parse_role!([__ia_core_emit_preprocessing_argument_prover] [] $($rest)*);
     };
@@ -577,6 +729,9 @@ macro_rules! impl_preprocessing_argument_prover {
 /// Implement the verifier role of a preprocessing interactive argument.
 #[macro_export]
 macro_rules! impl_preprocessing_argument_verifier {
+    (verifier impl $($rest:tt)*) => {
+        compile_error!("remove the obsolete `verifier` prefix; this macro begins directly with `impl`");
+    };
     (impl $($rest:tt)*) => {
         $crate::__ia_core_parse_role!([__ia_core_emit_preprocessing_argument_verifier] [] $($rest)*);
     };
@@ -843,8 +998,27 @@ macro_rules! __ia_core_split_preprocessing_argument_prover {
 }
 
 /// Implement all three native roles of a preprocessing interactive reduction.
+///
+/// Prefer this form for co-located roles with shared bounds. Use the
+/// `*_indexer`, `*_prover`, and `*_verifier` suffix macros for asymmetric
+/// implementations.
 #[macro_export]
 macro_rules! impl_preprocessing_reduction {
+    (indexer impl $($rest:tt)*) => {
+        compile_error!(
+            "role prefixes were removed; use `impl_preprocessing_reduction_indexer! { impl ... }`"
+        );
+    };
+    (prover impl $($rest:tt)*) => {
+        compile_error!(
+            "role prefixes were removed; use `impl_preprocessing_reduction_prover! { impl ... }`"
+        );
+    };
+    (verifier impl $($rest:tt)*) => {
+        compile_error!(
+            "role prefixes were removed; use `impl_preprocessing_reduction_verifier! { impl ... }`"
+        );
+    };
     (impl $($rest:tt)*) => {
         $crate::__ia_core_parse_role_triple!(
             [__ia_core_emit_preprocessing_reduction_triple] [] $($rest)*
@@ -860,6 +1034,9 @@ macro_rules! impl_preprocessing_reduction {
 /// Implement the indexer role of a preprocessing interactive reduction.
 #[macro_export]
 macro_rules! impl_preprocessing_reduction_indexer {
+    (indexer impl $($rest:tt)*) => {
+        compile_error!("remove the obsolete `indexer` prefix; this macro begins directly with `impl`");
+    };
     (impl $($rest:tt)*) => {
         $crate::__ia_core_parse_role!([__ia_core_emit_reduction_indexer] [] $($rest)*);
     };
@@ -873,6 +1050,9 @@ macro_rules! impl_preprocessing_reduction_indexer {
 /// Implement the prover role of a preprocessing interactive reduction.
 #[macro_export]
 macro_rules! impl_preprocessing_reduction_prover {
+    (prover impl $($rest:tt)*) => {
+        compile_error!("remove the obsolete `prover` prefix; this macro begins directly with `impl`");
+    };
     (impl $($rest:tt)*) => {
         $crate::__ia_core_parse_role!([__ia_core_emit_preprocessing_reduction_prover] [] $($rest)*);
     };
@@ -886,6 +1066,9 @@ macro_rules! impl_preprocessing_reduction_prover {
 /// Implement the verifier role of a preprocessing interactive reduction.
 #[macro_export]
 macro_rules! impl_preprocessing_reduction_verifier {
+    (verifier impl $($rest:tt)*) => {
+        compile_error!("remove the obsolete `verifier` prefix; this macro begins directly with `impl`");
+    };
     (impl $($rest:tt)*) => {
         $crate::__ia_core_parse_role!([__ia_core_emit_preprocessing_reduction_verifier] [] $($rest)*);
     };

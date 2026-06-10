@@ -13,7 +13,7 @@ use ia_core::{CommittedIndexBytes, ProverChannel, VerifierChannel};
 
 use crate::config::WarpConfig;
 use crate::crypto::merkle::{build_codeword_leaves, compute_auth_paths};
-use crate::errors::WARPVerifierError;
+use crate::errors::{WARPProverError, WARPVerifierError};
 use crate::protocol::{batching_sumcheck, twin_sumcheck, WarpMerkle};
 use crate::relations::r1cs::R1CSConstraints;
 use crate::relations::BundledPESAT;
@@ -316,21 +316,39 @@ where
             AccumulatorWitnesses<F, MT>,
             WarpProofData<F, MT>,
         ),
-        crate::errors::WARPProverError,
+        WARPProverError,
     > {
-        debug_assert!(instances.len() > 1);
-        debug_assert_eq!(witnesses.len(), instances.len());
-
         let (l1, l) = (self.config.l1, self.config.l);
+        if instances.len() != l1 || witnesses.len() != l1 {
+            return Err(WARPProverError::InvalidInputCount {
+                expected: l1,
+                instances: instances.len(),
+                witnesses: witnesses.len(),
+            });
+        }
+        if l == 0 || !l.is_power_of_two() || l1 > l {
+            return Err(WARPProverError::InvalidConfiguration(
+                "`l` must be a non-zero power of two and at least `l1`",
+            ));
+        }
         let _l2 = l - l1;
-        debug_assert!(l.is_power_of_two());
 
         // ---- Phase 1: Parsing ----
         #[allow(non_snake_case)]
         let (M, N, k) = pk.dimensions().as_tuple();
+        if M == 0 || N == 0 || k > N || !M.is_power_of_two() {
+            return Err(WARPProverError::InvalidConfiguration(
+                "relation dimensions require non-zero, power-of-two `M` and `k <= N`",
+            ));
+        }
         #[allow(non_snake_case)]
         let (log_M, log_l) = (log2(M) as usize, log2(l) as usize);
         let n = self.code.code_len();
+        if n == 0 || !n.is_power_of_two() {
+            return Err(WARPProverError::InvalidConfiguration(
+                "the code length must be a non-zero power of two",
+            ));
+        }
         let log_n = log2(n) as usize;
 
         // The source statement (l1 instances + accumulators) is public input:
@@ -408,13 +426,13 @@ where
         debug_assert_eq!(gamma.len(), log_l);
 
         // e. new oracle and target
-        let (f, z, zeta_0, beta_tau) = evals.get_last_evals().unwrap();
+        let (f, z, zeta_0, beta_tau) = evals.get_last_evals().ok_or(WARPProverError::EmptyEval)?;
 
         let beta_eq_evals: Vec<F> = (0..M).map(|i| eq_poly(&beta_tau, i)).collect();
         let eta = self
             .relation
             .evaluate_bundled(&beta_eq_evals, &z)
-            .expect("bundled evaluation failed");
+            .map_err(|_| WARPProverError::BundledEvaluation)?;
 
         let (x_part, w_part) = z.split_at(N - k);
         let beta = (vec![beta_tau.clone()], vec![x_part.to_vec()]);

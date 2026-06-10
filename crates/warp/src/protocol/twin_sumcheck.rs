@@ -50,8 +50,13 @@ fn protogalaxy_trick<F: Field + Send + Sync>(
             })
             .collect();
     }
-    assert_eq!(q.len(), 1);
-    q.pop().unwrap()
+    assert_eq!(
+        q.len(),
+        1,
+        "protogalaxy folding must leave exactly one polynomial"
+    );
+    q.pop()
+        .expect("the preceding length assertion guarantees one polynomial")
 }
 
 /// Twin constraint pseudo-batching sumcheck prover.
