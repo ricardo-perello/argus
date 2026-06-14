@@ -340,11 +340,11 @@ fn main() {
     let witness = RangeWitness { v, gamma };
 
     let session = spongefish::session!("bulletproofs range example");
-    let prover = dsfs::plain_non_interactive_argument_prover(
+    let prover = dsfs::argument_prover(
         RangeProofProver::new(params.clone()),
         dsfs::Keccak::default(),
     );
-    let verifier = dsfs::plain_non_interactive_argument_verifier(
+    let verifier = dsfs::argument_verifier(
         RangeProofVerifier::new(params),
         dsfs::Keccak::default(),
     );
@@ -376,11 +376,11 @@ mod tests {
         let witness = RangeWitness { v, gamma };
 
         let session = spongefish::session!("bulletproofs range test");
-        let prover = dsfs::plain_non_interactive_argument_prover(
+        let prover = dsfs::argument_prover(
             RangeProofProver::new(params.clone()),
             dsfs::Keccak::default(),
         );
-        let verifier = dsfs::plain_non_interactive_argument_verifier(
+        let verifier = dsfs::argument_verifier(
             RangeProofVerifier::new(params),
             dsfs::Keccak::default(),
         );
@@ -412,11 +412,11 @@ mod tests {
         let witness = RangeWitness { v: 100, gamma };
 
         let session = spongefish::session!("bulletproofs range test");
-        let prover = dsfs::plain_non_interactive_argument_prover(
+        let prover = dsfs::argument_prover(
             RangeProofProver::new(params.clone()),
             dsfs::Keccak::default(),
         );
-        let verifier = dsfs::plain_non_interactive_argument_verifier(
+        let verifier = dsfs::argument_verifier(
             RangeProofVerifier::new(params),
             dsfs::Keccak::default(),
         );

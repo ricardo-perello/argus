@@ -46,11 +46,11 @@ fn sigmaia_composed_and_dsfs_roundtrip() {
     let sigma_witness = (witness, commit_seed);
 
     let session = spongefish::session!("composed-relation-smoke");
-    let prover = dsfs::plain_non_interactive_argument_prover(
+    let prover = dsfs::argument_prover(
         SigmaIAProver::new(&ia),
         dsfs::Keccak::default(),
     );
-    let verifier = dsfs::plain_non_interactive_argument_verifier(
+    let verifier = dsfs::argument_verifier(
         SigmaIAVerifier::new(&ia),
         dsfs::Keccak::default(),
     );

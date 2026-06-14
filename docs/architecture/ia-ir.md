@@ -92,5 +92,7 @@ VerifierKey = (First::VerifierKey, Second::VerifierKey)
 Mixed plain and preprocessing composition uses role-specific trivial-index
 adapters.
 
-Exact signatures, macro forms, DSFS wrappers, and migration rationale are in the
-[role-first architecture plan](role-first-protocol-architecture-plan.md).
+Current signatures, macro forms, and DSFS wrappers are in
+[Role-First Architecture](role-first.md). The migration history and rationale
+that produced this shape are in the archived
+[Role-First Architecture Record](../history/plans/role-first-protocol-architecture-plan.md).

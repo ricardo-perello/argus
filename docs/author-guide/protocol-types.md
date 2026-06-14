@@ -91,11 +91,11 @@ non-interactive roles.
 Plain argument:
 
 ```rust,ignore
-let prover = dsfs::plain_non_interactive_argument_prover(
+let prover = dsfs::argument_prover(
     argument_prover,
     dsfs::Keccak::default(),
 );
-let verifier = dsfs::plain_non_interactive_argument_verifier(
+let verifier = dsfs::argument_verifier(
     argument_verifier,
     dsfs::Keccak::default(),
 );
@@ -109,11 +109,11 @@ Preprocessing argument:
 ```rust,ignore
 let (pk, vk) = indexer.preprocess(&index);
 
-let prover = dsfs::preprocessing_non_interactive_argument_prover(
+let prover = dsfs::preprocessing::argument_prover(
     argument_prover,
     dsfs::Keccak::default(),
 );
-let verifier = dsfs::preprocessing_non_interactive_argument_verifier(
+let verifier = dsfs::preprocessing::argument_verifier(
     argument_verifier,
     dsfs::Keccak::default(),
 );

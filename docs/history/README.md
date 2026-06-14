@@ -52,4 +52,5 @@ These files are kept in the repository but are not rendered as mdBook chapters:
 - `docs/history/plans/preprocessing-indexed-relations.md`
 - `docs/history/plans/preprocessing-indexed-relations-v2.md`
 - `docs/history/plans/argument-prover-verifier-trait-split.md`
+- `docs/history/plans/role-first-protocol-architecture-plan.md`
 - `docs/history/plans/report-notes.md`

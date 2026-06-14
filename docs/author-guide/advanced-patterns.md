@@ -47,11 +47,11 @@ Production code does not wrap a complete body and hide one method. It authors
 the desired capability on a concrete type:
 
 ```rust,ignore
-let prover = dsfs::plain_non_interactive_argument_prover(
+let prover = dsfs::argument_prover(
     native_prover_body,
     dsfs::Keccak::default(),
 );
-let verifier = dsfs::plain_non_interactive_argument_verifier(
+let verifier = dsfs::argument_verifier(
     native_verifier_body,
     dsfs::Keccak::default(),
 );

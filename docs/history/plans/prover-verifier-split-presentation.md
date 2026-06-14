@@ -6,7 +6,7 @@
 > conjunction traits, role views, `CombinedIA`, and `CombinedNarg`, and authors
 > prover, verifier, and indexer roles natively. See
 > [Protocol Shapes](../../architecture/ia-ir.md) and the
-> [Role-First Architecture Record](../../architecture/role-first-protocol-architecture-plan.md).
+> [Role-First Architecture Record](role-first-protocol-architecture-plan.md).
 
 **Historical status:** superseded by the role-first architecture.
 

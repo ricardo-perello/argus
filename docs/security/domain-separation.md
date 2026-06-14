@@ -50,6 +50,43 @@ IndexedInstanceRef {
 The protocol body receives the bare instance and key. It does not construct or
 absorb this wrapper itself.
 
+### Prefix-free instance framing
+
+For the statement binding to be unambiguous, the absorbed instance bytes must be
+**prefix-free**: no instance's encoding may be a prefix of another's. The sponge
+absorbs a flat byte stream
+
+```text
+domsep(64) || instance || salt || prover messages...
+```
+
+with no implicit boundary after the instance, so a non-prefix-free encoding —
+the identity encoding of `Vec<u8>` / `&[u8]`, whose length is not self-described,
+is the classic example — could let two distinct statements share a transcript.
+
+`spongefish` documents prefix-freeness as the caller's responsibility. Rather
+than rely on every protocol author to choose a prefix-free `Instance` encoding,
+**both** DSFS paths frame the instance with a tag and a `u64` length prefix
+before absorbing it:
+
+- the preprocessing path via `IndexedInstanceRef` (shown above), and
+- the plain path via an internal `dsfs:plain-instance:v1`-tagged wrapper.
+
+This makes the two paths consistent and the plain path robust by construction
+regardless of the instance type.
+
+**Tradeoff.** Framing is *absorb-only*: it changes nothing in the Argus
+interfaces — the `Instance` type, the role traits, the `Dsfs*` constructors, and
+every call site are untouched; only the bytes fed to the sponge change. The costs
+are a few extra absorbed bytes per proof and a one-time transcript-format change.
+The plain-path **tag itself versions the format**, so this change is deliberately
+*not* tied to a `SPONGE_INFO` bump: `SPONGE_INFO` is keyed by sponge, so bumping
+it would also re-version the preprocessing path and the `StdHash` σ-proofs interop
+path, which do not go through these helpers and must stay byte-stable. The
+low-level `SpongeProver` / `SpongeVerifier` channels do **not** frame for you;
+callers that bypass the semantic constructors (e.g. σ-proofs byte-compat layouts)
+own their instance encoding.
+
 ## Sponge Choice and Proof Layout
 
 The DSFS-level protocol identity must change when any of these change:

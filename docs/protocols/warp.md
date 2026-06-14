@@ -50,11 +50,11 @@ material into the prover role.
 
 ```rust,ignore
 let indexer = FullWarpIndexer::<Fp, R1CS<Fp>, RS, MT>::default();
-let prover = spongefish_dsfs::preprocessing_non_interactive_argument_prover(
+let prover = spongefish_dsfs::preprocessing::argument_prover(
     FullWarpProver::<Fp, R1CS<Fp>, RS, MT>::default(),
     spongefish_dsfs::Keccak::default(),
 );
-let verifier = spongefish_dsfs::preprocessing_non_interactive_argument_verifier(
+let verifier = spongefish_dsfs::preprocessing::argument_verifier(
     FullWarpVerifier::<Fp, R1CS<Fp>, RS, MT>::default(),
     spongefish_dsfs::Keccak::default(),
 );
@@ -68,11 +68,11 @@ verifier.verify(&vk, &session, &instance, &proof)?;
 
 ```rust,ignore
 let indexer = WarpReductionIndexer::<Fp, R1CS<Fp>, RS, MT>::default();
-let prover = spongefish_dsfs::preprocessing_non_interactive_reduction_prover(
+let prover = spongefish_dsfs::preprocessing::reduction_prover(
     WarpReductionProver::<Fp, R1CS<Fp>, RS, MT>::default(),
     spongefish_dsfs::Keccak::default(),
 );
-let verifier = spongefish_dsfs::preprocessing_non_interactive_reduction_verifier(
+let verifier = spongefish_dsfs::preprocessing::reduction_verifier(
     WarpReductionVerifier::<Fp, R1CS<Fp>, RS, MT>::default(),
     spongefish_dsfs::Keccak::default(),
 );

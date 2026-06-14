@@ -125,11 +125,11 @@ fn preprocessed_dsfs_absorbs_committed_index_and_instance() {
     let witness = [0xABu8];
 
     let indexer = ChallengeEchoIndexer;
-    let prover = dsfs::preprocessing_non_interactive_argument_prover::<_, [u8; 64], _>(
+    let prover = dsfs::preprocessing::argument_prover::<_, [u8; 64], _>(
         ChallengeEchoProver,
         dsfs::Keccak::default(),
     );
-    let verifier = dsfs::preprocessing_non_interactive_argument_verifier::<_, [u8; 64], _>(
+    let verifier = dsfs::preprocessing::argument_verifier::<_, [u8; 64], _>(
         ChallengeEchoVerifier,
         dsfs::Keccak::default(),
     );

@@ -12,11 +12,11 @@ use ia_core::prelude::*;
 use spongefish_dsfs as dsfs;
 
 let session = spongefish::session!("schnorr example");
-let prover = dsfs::plain_non_interactive_argument_prover(
+let prover = dsfs::argument_prover(
     SchnorrProver::<G>::default(),
     dsfs::Keccak::default(),
 );
-let verifier = dsfs::plain_non_interactive_argument_verifier(
+let verifier = dsfs::argument_verifier(
     SchnorrVerifier::<G>::default(),
     dsfs::Keccak::default(),
 );
@@ -64,11 +64,11 @@ A proof for one session should not verify under another.
 Reductions use role-specific constructors too:
 
 ```rust,ignore
-let prover = dsfs::plain_non_interactive_reduction_prover(
+let prover = dsfs::reduction_prover(
     reduction_prover,
     dsfs::Keccak::default(),
 );
-let verifier = dsfs::plain_non_interactive_reduction_verifier(
+let verifier = dsfs::reduction_verifier(
     reduction_verifier,
     dsfs::Keccak::default(),
 );
@@ -87,11 +87,11 @@ DSFS does not implement or forward `Indexer`. Run indexing separately:
 ```rust,ignore
 let (pk, vk) = indexer.preprocess(&index);
 
-let prover = dsfs::preprocessing_non_interactive_argument_prover(
+let prover = dsfs::preprocessing::argument_prover(
     argument_prover,
     dsfs::Keccak::default(),
 );
-let verifier = dsfs::preprocessing_non_interactive_argument_verifier(
+let verifier = dsfs::preprocessing::argument_verifier(
     argument_verifier,
     dsfs::Keccak::default(),
 );

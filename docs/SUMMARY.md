@@ -8,6 +8,8 @@
 - [Overview](architecture/overview.md)
 - [Channel Model](architecture/channel-model.md)
 - [Protocol Shapes](architecture/ia-ir.md)
+- [Role-First Architecture](architecture/role-first.md)
+- [Compile, then Prove](author-guide/compile-and-prove.md)
 - [Backends](architecture/backends.md)
 
 # Author Guide
@@ -51,5 +53,6 @@
   - [0001: Backend-Owned Transcripts](adr/0001-backend-owned-transcripts.md)
   - [0002: Preserve RBR Profiles](adr/0002-preserve-rbr-security-profiles.md)
   - [0003: Instance-Aware Security Metadata](adr/0003-instance-aware-security-metadata.md)
+  - [0004: StdHash Transcript Init Is Legacy](adr/0004-stdhash-transcript-init-legacy.md)
 - [Final Report](final-report.md)
 - [Documentation History](history/README.md)

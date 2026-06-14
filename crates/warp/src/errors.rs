@@ -22,6 +22,8 @@ pub enum WARPError {
     UnsatisfiedMultiConstraints(bool, bool),
     #[error("f.len() is {0}, but tried accessing at {1}")]
     CodewordSize(usize, usize),
+    #[error("degenerate R1CS dimension: log2 is undefined for {0}")]
+    DegenerateR1CSDimensions(usize),
 }
 
 #[derive(Error, Debug)]

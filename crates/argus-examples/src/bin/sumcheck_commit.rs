@@ -321,11 +321,11 @@ fn run_dsfs(instance: &Instance, evals: &Vec<Fr>) {
     println!("=== Committed Sumcheck (DSFS / non-interactive) ===\n");
 
     let session = spongefish::session!("argus warmup: committed sumcheck");
-    let prover = dsfs::plain_non_interactive_argument_prover(
+    let prover = dsfs::argument_prover(
         CommittedSumcheckProver,
         dsfs::Keccak::default(),
     );
-    let verifier = dsfs::plain_non_interactive_argument_verifier(
+    let verifier = dsfs::argument_verifier(
         CommittedSumcheckVerifier,
         dsfs::Keccak::default(),
     );

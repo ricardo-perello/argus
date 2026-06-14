@@ -288,7 +288,7 @@ fn demo_two_machine_plain() {
     // PROVER machine. Holds the witness `x`. Builds its own prover-only compiled
     // NIA from the public body + sponge config.
     let prover = thread::spawn(move || {
-        let nia = dsfs::plain_non_interactive_argument_prover(
+        let nia = dsfs::argument_prover(
             SchnorrProver::<G>::default(),
             dsfs::Keccak::default(),
         );
@@ -300,7 +300,7 @@ fn demo_two_machine_plain() {
 
     // VERIFIER machine. Holds no witness. Same body + sponge config, verifier-only view.
     let verifier = thread::spawn(move || {
-        let nia = dsfs::plain_non_interactive_argument_verifier(
+        let nia = dsfs::argument_verifier(
             SchnorrVerifier::<G>::default(),
             dsfs::Keccak::default(),
         );
@@ -352,7 +352,7 @@ fn demo_three_machine_preprocessed() {
     // prover-only body, so the compiled object has no verify
     // method; the proving key is passed explicitly on each `prove` call.
     let prover = thread::spawn(move || {
-        let pnia = dsfs::preprocessing_non_interactive_argument_prover::<_, [u8; 64], _>(
+        let pnia = dsfs::preprocessing::argument_prover::<_, [u8; 64], _>(
             DleqProver::<G>::default(),
             dsfs::Keccak::default(),
         );
@@ -374,7 +374,7 @@ fn demo_three_machine_preprocessed() {
     // verifier-only body, so the compiled object has no `prove`
     // method; the verifier key is passed explicitly on each `verify` call.
     let verifier = thread::spawn(move || {
-        let pnia = dsfs::preprocessing_non_interactive_argument_verifier::<_, [u8; 64], _>(
+        let pnia = dsfs::preprocessing::argument_verifier::<_, [u8; 64], _>(
             DleqVerifier::<G>::default(),
             dsfs::Keccak::default(),
         );
@@ -440,11 +440,11 @@ mod tests {
         let instance = [g, h];
         let session = spongefish::session!("multiparty / plain schnorr role split");
 
-        let prover = dsfs::plain_non_interactive_argument_prover(
+        let prover = dsfs::argument_prover(
             SchnorrProver::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let verifier = dsfs::plain_non_interactive_argument_verifier(
+        let verifier = dsfs::argument_verifier(
             SchnorrVerifier::<G>::default(),
             dsfs::Keccak::default(),
         );
@@ -469,11 +469,11 @@ mod tests {
 
         let (pk, vk) = DleqIndexer::<G>::default().preprocess(&(g, h));
 
-        let prover_pnia = dsfs::preprocessing_non_interactive_argument_prover::<_, [u8; 64], _>(
+        let prover_pnia = dsfs::preprocessing::argument_prover::<_, [u8; 64], _>(
             DleqProver::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let verifier_pnia = dsfs::preprocessing_non_interactive_argument_verifier::<_, [u8; 64], _>(
+        let verifier_pnia = dsfs::preprocessing::argument_verifier::<_, [u8; 64], _>(
             DleqVerifier::<G>::default(),
             dsfs::Keccak::default(),
         );

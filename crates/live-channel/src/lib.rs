@@ -3,6 +3,24 @@
 //! Provides `LiveProverChannel` and `LiveVerifierChannel` that implement
 //! ia-core's `ProverChannel` and `VerifierChannel` traits over
 //! `std::sync::mpsc`, enabling truly interactive protocol execution.
+//!
+//! # Error model
+//!
+//! The `ia-core` channel traits are infallible except for
+//! [`VerifierChannel::read_prover_message`], which returns
+//! [`VerificationResult`]. This crate therefore surfaces failures as follows:
+//!
+//! - **Verifier reading a prover message** (the one fallible operation): a
+//!   disconnected prover, a malformed message, or trailing bytes are reported as
+//!   [`VerificationError`] — never a panic. This is the security-relevant path
+//!   (adversarial prover), so it must stay recoverable.
+//! - **Every other operation** (prover/verifier sends, and the prover reading a
+//!   challenge) is infallible by trait signature. The only failure modes are
+//!   *environmental* — the peer thread dropped its end of the channel, or sent a
+//!   wrong-length challenge — which leave no correct value to return and no error
+//!   channel to use. These **panic** with a descriptive message (documented per
+//!   method below). A fully fallible surface here would require changing the
+//!   `ia-core` channel traits themselves.
 
 use std::sync::mpsc;
 
@@ -33,6 +51,11 @@ impl LiveProverChannel {
 impl ia_core::ProverChannel for LiveProverChannel {
     type Unit = u8;
 
+    /// # Panics
+    ///
+    /// Panics if the verifier end of the channel has been dropped (the
+    /// interactive session cannot continue and the trait signature is
+    /// infallible).
     fn send_prover_message<M: Encoding + NargSerialize>(&mut self, msg: &M) {
         let bytes = msg.encode();
         self.to_verifier
@@ -40,6 +63,11 @@ impl ia_core::ProverChannel for LiveProverChannel {
             .expect("live verifier disconnected while receiving a prover message");
     }
 
+    /// # Panics
+    ///
+    /// Panics if the verifier end of the channel has been dropped before sending
+    /// its challenge, or if the challenge bytes have the wrong encoded length for
+    /// `C`. Both are unrecoverable for an infallible read.
     fn read_verifier_message<C: Decoding>(&mut self) -> C {
         let bytes = self
             .from_verifier
@@ -77,6 +105,11 @@ impl LiveVerifierChannel {
 impl ia_core::VerifierChannel for LiveVerifierChannel {
     type Unit = u8;
 
+    /// Reads and decodes the next prover message.
+    ///
+    /// This is the only fallible channel operation: a disconnected prover, a
+    /// message that fails to deserialize, or trailing bytes after a valid message
+    /// all return [`VerificationError`] rather than panicking.
     fn read_prover_message<M: Encoding + Deserialize>(&mut self) -> VerificationResult<M> {
         let bytes = self.from_prover.recv().map_err(|_| VerificationError)?;
         let mut buf = bytes.as_slice();
@@ -88,6 +121,10 @@ impl ia_core::VerifierChannel for LiveVerifierChannel {
         }
     }
 
+    /// # Panics
+    ///
+    /// Panics if the prover end of the channel has been dropped before receiving
+    /// the challenge (the trait signature is infallible).
     fn send_verifier_message<C: Decoding>(&mut self) -> C {
         let mut repr = C::Repr::default();
         OsRng.fill_bytes(repr.as_mut());

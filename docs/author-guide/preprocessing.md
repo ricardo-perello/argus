@@ -95,11 +95,11 @@ Indexing stays outside DSFS:
 ```rust,ignore
 let (pk, vk) = indexer.preprocess(&index);
 
-let prover = dsfs::preprocessing_non_interactive_argument_prover(
+let prover = dsfs::preprocessing::argument_prover(
     MyProver,
     dsfs::Keccak::default(),
 );
-let verifier = dsfs::preprocessing_non_interactive_argument_verifier(
+let verifier = dsfs::preprocessing::argument_verifier(
     MyVerifier,
     dsfs::Keccak::default(),
 );

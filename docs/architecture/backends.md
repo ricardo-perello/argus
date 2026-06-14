@@ -8,11 +8,11 @@ Backends execute Argus channel programs.
 non-interactive proof artifacts.
 
 ```rust,ignore
-let prover = spongefish_dsfs::plain_non_interactive_argument_prover(
+let prover = spongefish_dsfs::argument_prover(
     argument_prover,
     sponge.clone(),
 );
-let verifier = spongefish_dsfs::plain_non_interactive_argument_verifier(
+let verifier = spongefish_dsfs::argument_verifier(
     argument_verifier,
     sponge,
 );
@@ -22,11 +22,11 @@ For preprocessing protocols, indexing remains outside DSFS:
 
 ```rust,ignore
 let (pk, vk) = indexer.preprocess(&index);
-let prover = spongefish_dsfs::preprocessing_non_interactive_argument_prover(
+let prover = spongefish_dsfs::preprocessing::argument_prover(
     prover_body,
     sponge.clone(),
 );
-let verifier = spongefish_dsfs::preprocessing_non_interactive_argument_verifier(
+let verifier = spongefish_dsfs::preprocessing::argument_verifier(
     verifier_body,
     sponge,
 );

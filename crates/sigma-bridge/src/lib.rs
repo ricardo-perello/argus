@@ -10,9 +10,11 @@ extern crate alloc;
 mod fiat_shamir;
 pub mod ia;
 pub mod session;
+mod transcript;
 
 pub use fiat_shamir::{prove, prove_with_protocol_domain, verify, verify_with_protocol_domain};
 pub use ia::{SigmaIA, SigmaIAProver, SigmaIAVerifier};
 pub use session::derive_session_id;
+pub use transcript::TranscriptSponge;
 
 pub use sigma_proofs::traits::{ScalarRng, SigmaProtocol};

@@ -13,9 +13,10 @@ This document is the implementation record and migration rationale for the
 role-first architecture. Sections that discuss `PreprocessingCore`, role views,
 conjunction traits, `CombinedIA`, or `CombinedNarg` describe the superseded
 baseline that motivated the migration, not the current API. For concise current
-usage, see [Protocol Shapes](ia-ir.md), the
-[Author Guide](../author-guide/overview.md), and the
-[`ia-core` API](../api/ia-core.md).
+usage, see [Protocol Shapes](../../architecture/ia-ir.md),
+[Role-First Architecture](../../architecture/role-first.md), the
+[Author Guide](../../author-guide/overview.md), and the
+[`ia-core` API](../../api/ia-core.md).
 
 The implementation replaced the "full protocol body with optional role views"
 model with native, independently authored prover, verifier, and indexer roles.

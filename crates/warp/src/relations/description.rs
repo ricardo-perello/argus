@@ -26,7 +26,9 @@ impl SerializableConstraintMatrices {
                 row.into_iter()
                     .map(|(coeff, col_idx)| {
                         let mut buf = Vec::new();
-                        coeff.serialize_uncompressed(&mut buf).unwrap();
+                        coeff
+                            .serialize_uncompressed(&mut buf)
+                            .expect("CanonicalSerialize to an in-memory Vec is infallible");
                         (buf, col_idx)
                     })
                     .collect()
@@ -44,14 +46,16 @@ impl SerializableConstraintMatrices {
         let constraint_system = ConstraintSystem::<F>::new_ref();
         constraint_synthesizer
             .generate_constraints(constraint_system.clone())
-            .unwrap();
+            .expect("constraint synthesis for the index description must succeed");
         constraint_system.finalize();
 
         let num_instance_variables = constraint_system.num_instance_variables();
         let num_witness_variables = constraint_system.num_witness_variables();
         let num_constraints = constraint_system.num_constraints();
 
-        let mut per_predicate = constraint_system.to_matrices().unwrap();
+        let mut per_predicate = constraint_system
+            .to_matrices()
+            .expect("R1CS constraint matrices are available after finalize");
         let mut abc = per_predicate
             .remove(R1CS_PREDICATE_LABEL)
             .expect("R1CS predicate present")

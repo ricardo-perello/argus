@@ -38,11 +38,11 @@ prover while the verifier keeps no witness capability.
 DSFS compiles them with:
 
 ```rust,ignore
-let prover = spongefish_dsfs::plain_non_interactive_argument_prover(
+let prover = spongefish_dsfs::argument_prover(
     SchnorrProver::<G>::default(),
     spongefish_dsfs::Keccak::default(),
 );
-let verifier = spongefish_dsfs::plain_non_interactive_argument_verifier(
+let verifier = spongefish_dsfs::argument_verifier(
     SchnorrVerifier::<G>::default(),
     spongefish_dsfs::Keccak::default(),
 );

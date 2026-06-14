@@ -274,8 +274,8 @@ fn main() {
     // The indexer builds the tree once and returns the bare prover/verifier keys.
     let indexer = LookupIndexer;
     let prover =
-        dsfs::preprocessing_non_interactive_argument_prover(LookupProver, dsfs::Keccak::default());
-    let verifier = dsfs::preprocessing_non_interactive_argument_verifier(
+        dsfs::preprocessing::argument_prover(LookupProver, dsfs::Keccak::default());
+    let verifier = dsfs::preprocessing::argument_verifier(
         LookupVerifier,
         dsfs::Keccak::default(),
     );
@@ -331,11 +331,11 @@ mod tests {
         let session = spongefish::session!("preprocessed lookup test");
         let table = sample_table();
         let indexer = LookupIndexer;
-        let prover = dsfs::preprocessing_non_interactive_argument_prover::<_, [u8; 64], _>(
+        let prover = dsfs::preprocessing::argument_prover::<_, [u8; 64], _>(
             LookupProver,
             dsfs::Keccak::default(),
         );
-        let verifier = dsfs::preprocessing_non_interactive_argument_verifier::<_, [u8; 64], _>(
+        let verifier = dsfs::preprocessing::argument_verifier::<_, [u8; 64], _>(
             LookupVerifier,
             dsfs::Keccak::default(),
         );
@@ -356,11 +356,11 @@ mod tests {
         let session = spongefish::session!("preprocessed lookup test");
         let table = sample_table();
         let indexer = LookupIndexer;
-        let prover = dsfs::preprocessing_non_interactive_argument_prover::<_, [u8; 64], _>(
+        let prover = dsfs::preprocessing::argument_prover::<_, [u8; 64], _>(
             LookupProver,
             dsfs::Keccak::default(),
         );
-        let verifier = dsfs::preprocessing_non_interactive_argument_verifier::<_, [u8; 64], _>(
+        let verifier = dsfs::preprocessing::argument_verifier::<_, [u8; 64], _>(
             LookupVerifier,
             dsfs::Keccak::default(),
         );
@@ -382,11 +382,11 @@ mod tests {
         table_b[0] = table_b[0].wrapping_add(1); // perturb one entry
 
         let indexer = LookupIndexer;
-        let prover = dsfs::preprocessing_non_interactive_argument_prover(
+        let prover = dsfs::preprocessing::argument_prover(
             LookupProver,
             dsfs::Keccak::default(),
         );
-        let verifier = dsfs::preprocessing_non_interactive_argument_verifier(
+        let verifier = dsfs::preprocessing::argument_verifier(
             LookupVerifier,
             dsfs::Keccak::default(),
         );
@@ -411,11 +411,11 @@ mod tests {
         let table = sample_table();
         let (pk, vk) = LookupIndexer.preprocess(&table);
 
-        let prover_nia = dsfs::preprocessing_non_interactive_argument_prover(
+        let prover_nia = dsfs::preprocessing::argument_prover(
             LookupProver,
             dsfs::Keccak::default(),
         );
-        let verifier_nia = dsfs::preprocessing_non_interactive_argument_verifier(
+        let verifier_nia = dsfs::preprocessing::argument_verifier(
             LookupVerifier,
             dsfs::Keccak::default(),
         );

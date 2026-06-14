@@ -462,11 +462,11 @@ fn proof_rejects_with_wrong_verifier_key_same_dimensions() {
 
     let session = spongefish::session!("warp wrong verifier key test");
     let indexer = WarpReductionIndexer::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
-    let prover = dsfs::preprocessing_non_interactive_reduction_prover(
+    let prover = dsfs::preprocessing::reduction_prover(
         WarpReductionProver::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default(),
         Keccak::default(),
     );
-    let verifier = dsfs::preprocessing_non_interactive_reduction_verifier(
+    let verifier = dsfs::preprocessing::reduction_verifier(
         WarpReductionVerifier::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default(),
         Keccak::default(),
     );
@@ -500,11 +500,11 @@ fn proof_rejects_with_wrong_source_instance_same_index() {
 
     let session = spongefish::session!("warp wrong source instance test");
     let indexer = WarpReductionIndexer::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
-    let prover = dsfs::preprocessing_non_interactive_reduction_prover(
+    let prover = dsfs::preprocessing::reduction_prover(
         WarpReductionProver::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default(),
         Keccak::default(),
     );
-    let verifier = dsfs::preprocessing_non_interactive_reduction_verifier(
+    let verifier = dsfs::preprocessing::reduction_verifier(
         WarpReductionVerifier::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default(),
         Keccak::default(),
     );
@@ -538,7 +538,7 @@ fn build_accumulator(
     let ix = warp_index(r1cs.clone(), code.clone(), l1, l1); // l = l1, l2 = 0
     let session = spongefish::session!("warp accumulator build");
     let indexer = WarpReductionIndexer::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
-    let prover = dsfs::preprocessing_non_interactive_reduction_prover(
+    let prover = dsfs::preprocessing::reduction_prover(
         WarpReductionProver::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default(),
         Keccak::default(),
     );
@@ -603,11 +603,11 @@ fn warp_reduction_accumulation_l2_nonzero() {
     let ix = warp_index(r1cs, code, 4, 2); // l = 4, l1 = 2 -> l2 = 2
     let session = spongefish::session!("warp l2 accumulation test");
     let indexer = WarpReductionIndexer::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
-    let prover = dsfs::preprocessing_non_interactive_reduction_prover(
+    let prover = dsfs::preprocessing::reduction_prover(
         WarpReductionProver::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default(),
         Keccak::default(),
     );
-    let verifier = dsfs::preprocessing_non_interactive_reduction_verifier(
+    let verifier = dsfs::preprocessing::reduction_verifier(
         WarpReductionVerifier::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default(),
         Keccak::default(),
     );
@@ -640,11 +640,11 @@ fn warp_ir_dsfs_prove_verify() {
 
     let session = spongefish::session!("warp IR test");
     let indexer = WarpReductionIndexer::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::new();
-    let prover = dsfs::preprocessing_non_interactive_reduction_prover(
+    let prover = dsfs::preprocessing::reduction_prover(
         WarpReductionProver::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default(),
         Keccak::default(),
     );
-    let verifier = dsfs::preprocessing_non_interactive_reduction_verifier(
+    let verifier = dsfs::preprocessing::reduction_verifier(
         WarpReductionVerifier::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default(),
         Keccak::default(),
     );
@@ -687,11 +687,11 @@ fn full_warp_dsfs_roundtrip() {
 
     let session = spongefish::session!("warp FullWarp test");
     let indexer = FullWarpIndexer::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default();
-    let prover = dsfs::preprocessing_non_interactive_argument_prover(
+    let prover = dsfs::preprocessing::argument_prover(
         FullWarpProver::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default(),
         Keccak::default(),
     );
-    let verifier = dsfs::preprocessing_non_interactive_argument_verifier(
+    let verifier = dsfs::preprocessing::argument_verifier(
         FullWarpVerifier::<Fp, R1CS<Fp>, ReedSolomon<Fp>, MT>::default(),
         Keccak::default(),
     );

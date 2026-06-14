@@ -385,11 +385,11 @@ fn main() {
     println!("=== ChainedReduction: FoldPairs . FoldPairs (IR . IR -> IR) ===");
     println!("    8 values -> 4 -> 2\n");
 
-    let prover = dsfs::plain_non_interactive_reduction_prover(
+    let prover = dsfs::reduction_prover(
         TwoFoldsProver::default(),
         dsfs::Keccak::default(),
     );
-    let verifier = dsfs::plain_non_interactive_reduction_verifier(
+    let verifier = dsfs::reduction_verifier(
         TwoFoldsVerifier::default(),
         dsfs::Keccak::default(),
     );
@@ -412,11 +412,11 @@ fn main() {
     println!("=== ReducedArgument: (Fold . Fold . Accumulate) . EqualityCheck ===");
     println!("    8 values -> 4 -> 2 -> AccPair -> accept/reject\n");
 
-    let prover = dsfs::plain_non_interactive_argument_prover(
+    let prover = dsfs::argument_prover(
         FullProtocolProver::default(),
         dsfs::Keccak::default(),
     );
-    let verifier = dsfs::plain_non_interactive_argument_verifier(
+    let verifier = dsfs::argument_verifier(
         FullProtocolVerifier::default(),
         dsfs::Keccak::default(),
     );
@@ -461,11 +461,11 @@ mod tests {
         let witness = Values(values);
 
         let session = spongefish::session!("argus example: composition");
-        let prover = dsfs::plain_non_interactive_argument_prover(
+        let prover = dsfs::argument_prover(
             FullProtocolProver::default(),
             dsfs::Keccak::default(),
         );
-        let verifier = dsfs::plain_non_interactive_argument_verifier(
+        let verifier = dsfs::argument_verifier(
             FullProtocolVerifier::default(),
             dsfs::Keccak::default(),
         );
@@ -474,11 +474,11 @@ mod tests {
             .verify(&session, &instance, &proof)
             .expect("verification failed");
 
-        let reduction_prover = dsfs::plain_non_interactive_reduction_prover::<_, [u8; 64], _>(
+        let reduction_prover = dsfs::reduction_prover::<_, [u8; 64], _>(
             TwoFoldsProver::default(),
             dsfs::Keccak::default(),
         );
-        let reduction_verifier = dsfs::plain_non_interactive_reduction_verifier::<_, [u8; 64], _>(
+        let reduction_verifier = dsfs::reduction_verifier::<_, [u8; 64], _>(
             TwoFoldsVerifier::default(),
             dsfs::Keccak::default(),
         );
@@ -494,11 +494,11 @@ mod tests {
         let witness = Values(values);
 
         let session = spongefish::session!("argus example: composition role split");
-        let prover = dsfs::plain_non_interactive_argument_prover(
+        let prover = dsfs::argument_prover(
             FullProtocolProver::default(),
             dsfs::Keccak::default(),
         );
-        let verifier = dsfs::plain_non_interactive_argument_verifier(
+        let verifier = dsfs::argument_verifier(
             FullProtocolVerifier::default(),
             dsfs::Keccak::default(),
         );
@@ -522,11 +522,11 @@ mod tests {
         let witness = Values(values);
 
         let session = spongefish::session!("argus example: composition reduction role split");
-        let prover = dsfs::plain_non_interactive_reduction_prover::<_, [u8; 64], _>(
+        let prover = dsfs::reduction_prover::<_, [u8; 64], _>(
             TwoFoldsProver::default(),
             dsfs::Keccak::default(),
         );
-        let verifier = dsfs::plain_non_interactive_reduction_verifier::<_, [u8; 64], _>(
+        let verifier = dsfs::reduction_verifier::<_, [u8; 64], _>(
             TwoFoldsVerifier::default(),
             dsfs::Keccak::default(),
         );

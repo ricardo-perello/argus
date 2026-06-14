@@ -142,11 +142,11 @@ fn run_dsfs(instance: &[ark_curve25519::EdwardsProjective; 2], sk: &ark_curve255
 
     let session = spongefish::session!("spongefish examples");
 
-    let prover = dsfs::plain_non_interactive_argument_prover(
+    let prover = dsfs::argument_prover(
         SchnorrProver::<G>::default(),
         dsfs::Keccak::default(),
     );
-    let verifier = dsfs::plain_non_interactive_argument_verifier(
+    let verifier = dsfs::argument_verifier(
         SchnorrVerifier::<G>::default(),
         dsfs::Keccak::default(),
     );
@@ -330,11 +330,11 @@ mod tests {
         let instance = [generator, pk];
 
         let session = spongefish::session!("spongefish examples");
-        let prover = dsfs::plain_non_interactive_argument_prover(
+        let prover = dsfs::argument_prover(
             SchnorrProver::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let verifier = dsfs::plain_non_interactive_argument_verifier(
+        let verifier = dsfs::argument_verifier(
             SchnorrVerifier::<G>::default(),
             dsfs::Keccak::default(),
         );
@@ -352,11 +352,11 @@ mod tests {
         let instance = [generator, pk];
 
         let session = spongefish::session!("spongefish examples");
-        let prover = dsfs::plain_non_interactive_argument_prover(
+        let prover = dsfs::argument_prover(
             SchnorrProver::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let verifier = dsfs::plain_non_interactive_argument_verifier(
+        let verifier = dsfs::argument_verifier(
             SchnorrVerifier::<G>::default(),
             dsfs::Keccak::default(),
         );
@@ -380,11 +380,11 @@ mod tests {
         let instance = [generator, pk];
 
         let session = spongefish::session!("spongefish examples");
-        let prover = dsfs::plain_non_interactive_argument_prover(
+        let prover = dsfs::argument_prover(
             SchnorrProver::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let verifier = dsfs::plain_non_interactive_argument_verifier(
+        let verifier = dsfs::argument_verifier(
             SchnorrVerifier::<G>::default(),
             dsfs::Keccak::default(),
         );

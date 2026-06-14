@@ -293,11 +293,11 @@ fn main() {
     println!("=== Composed IPA: ReducedArgument<Fold.Fold.Fold, Base>, n = {n} ===\n");
     let (instance, witness) = random_statement::<Demo>(n, &mut OsRng);
     let session = spongefish::session!("bulletproofs ipa reduction example");
-    let prover = dsfs::plain_non_interactive_argument_prover(
+    let prover = dsfs::argument_prover(
         ComposedIpaProver::<Demo>::default(),
         dsfs::Keccak::default(),
     );
-    let verifier = dsfs::plain_non_interactive_argument_verifier(
+    let verifier = dsfs::argument_verifier(
         ComposedIpaVerifier::<Demo>::default(),
         dsfs::Keccak::default(),
     );
@@ -323,11 +323,11 @@ mod tests {
     fn composed_ipa_roundtrip() {
         let (instance, witness) = random_statement::<G>(8, &mut OsRng);
         let session = spongefish::session!("bulletproofs ipa reduction test");
-        let prover = dsfs::plain_non_interactive_argument_prover(
+        let prover = dsfs::argument_prover(
             ComposedIpaProver::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let verifier = dsfs::plain_non_interactive_argument_verifier(
+        let verifier = dsfs::argument_verifier(
             ComposedIpaVerifier::<G>::default(),
             dsfs::Keccak::default(),
         );
@@ -342,11 +342,11 @@ mod tests {
         let (mut instance, witness) = random_statement::<G>(8, &mut OsRng);
         instance.p += G::generator();
         let session = spongefish::session!("bulletproofs ipa reduction test");
-        let prover = dsfs::plain_non_interactive_argument_prover(
+        let prover = dsfs::argument_prover(
             ComposedIpaProver::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let verifier = dsfs::plain_non_interactive_argument_verifier(
+        let verifier = dsfs::argument_verifier(
             ComposedIpaVerifier::<G>::default(),
             dsfs::Keccak::default(),
         );

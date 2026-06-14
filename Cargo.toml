@@ -8,6 +8,33 @@ members = [
 ]
 resolver = "2"
 
+# Mirrors the spongefish fork's lint bar so both halves of the codebase are held
+# to the same standard. All groups are `warn` (non-fatal); the allow-list matches
+# spongefish's curated exceptions.
+[workspace.lints.clippy]
+# all lints that are on by default (correctness, suspicious, style, complexity, perf)
+all = { level = "warn", priority = -1 }
+# new lints that are still under development
+nursery = { level = "warn", priority = -1 }
+# lints which are rather strict or have occasional false positives
+pedantic = { level = "warn", priority = -1 }
+# curated exceptions (match spongefish)
+doc_markdown = "allow"
+cast_possible_truncation = "allow"
+cast_precision_loss = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+default_trait_access = "allow"
+module_name_repetitions = "allow"
+missing_safety_doc = "allow"
+many_single_char_names = "allow"
+should_panic_without_expect = "allow"
+similar_names = "allow"
+too_long_first_doc_paragraph = "allow"
+doc_lazy_continuation = "allow"
+tuple_array_conversions = "allow"
+naive_bytecount = "allow"
+
 [workspace.dependencies]
 ark-ff = "0.6.0"
 ark-ec = "0.6.0"
@@ -30,8 +57,8 @@ blake3 = "1.5"
 
 [patch.crates-io]
 ark-crypto-primitives = { git = "https://github.com/arkworks-rs/crypto-primitives.git", branch = "release/0.6.0" }
-spongefish = { git = "https://github.com/ricardo-perello/spongefish.git", rev = "7ea7c7c5a0b7db6ff7919459f1a66fda9cc3a833" }
-spongefish-dsfs = { git = "https://github.com/ricardo-perello/spongefish.git", rev = "7ea7c7c5a0b7db6ff7919459f1a66fda9cc3a833" }
+spongefish = { git = "https://github.com/ricardo-perello/spongefish.git", rev = "60087a62982ce18d1629715a70389f0e1f2fd7d2" }
+spongefish-dsfs = { git = "https://github.com/ricardo-perello/spongefish.git", rev = "60087a62982ce18d1629715a70389f0e1f2fd7d2" }
 
 [patch."https://github.com/ricardo-perello/argus.git"]
 ia-core = { path = "crates/ia-core" }

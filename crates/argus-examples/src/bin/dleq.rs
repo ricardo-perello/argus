@@ -234,11 +234,11 @@ fn main() {
     // The indexer derives both keys once. The prover and verifier roles are
     // compiled independently and receive only their own key.
     let indexer = DleqIndexer::<G>::default();
-    let prover = dsfs::preprocessing_non_interactive_argument_prover(
+    let prover = dsfs::preprocessing::argument_prover(
         DleqProver::<G>::default(),
         dsfs::Keccak::default(),
     );
-    let verifier = dsfs::preprocessing_non_interactive_argument_verifier(
+    let verifier = dsfs::preprocessing::argument_verifier(
         DleqVerifier::<G>::default(),
         dsfs::Keccak::default(),
     );
@@ -302,11 +302,11 @@ mod tests {
         let session = spongefish::session!("dleq test");
         let (g, x, h) = keygen();
         let indexer = DleqIndexer::<G>::default();
-        let prover = dsfs::preprocessing_non_interactive_argument_prover::<_, [u8; 64], _>(
+        let prover = dsfs::preprocessing::argument_prover::<_, [u8; 64], _>(
             DleqProver::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let verifier = dsfs::preprocessing_non_interactive_argument_verifier::<_, [u8; 64], _>(
+        let verifier = dsfs::preprocessing::argument_verifier::<_, [u8; 64], _>(
             DleqVerifier::<G>::default(),
             dsfs::Keccak::default(),
         );
@@ -327,11 +327,11 @@ mod tests {
         let indexer = DleqIndexer::<G>::default();
         let (pk, vk) = indexer.preprocess(&(g, h));
 
-        let prover_nia = dsfs::preprocessing_non_interactive_argument_prover(
+        let prover_nia = dsfs::preprocessing::argument_prover(
             DleqProver::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let verifier_nia = dsfs::preprocessing_non_interactive_argument_verifier(
+        let verifier_nia = dsfs::preprocessing::argument_verifier(
             DleqVerifier::<G>::default(),
             dsfs::Keccak::default(),
         );
@@ -361,11 +361,11 @@ mod tests {
         let (_, _x_bob, h_bob) = keygen();
 
         let indexer = DleqIndexer::<G>::default();
-        let prover = dsfs::preprocessing_non_interactive_argument_prover(
+        let prover = dsfs::preprocessing::argument_prover(
             DleqProver::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let verifier = dsfs::preprocessing_non_interactive_argument_verifier(
+        let verifier = dsfs::preprocessing::argument_verifier(
             DleqVerifier::<G>::default(),
             dsfs::Keccak::default(),
         );
@@ -394,11 +394,11 @@ mod tests {
         let session = spongefish::session!("dleq test");
         let (g, x, h) = keygen();
         let indexer = DleqIndexer::<G>::default();
-        let prover = dsfs::preprocessing_non_interactive_argument_prover(
+        let prover = dsfs::preprocessing::argument_prover(
             DleqProver::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let verifier = dsfs::preprocessing_non_interactive_argument_verifier(
+        let verifier = dsfs::preprocessing::argument_verifier(
             DleqVerifier::<G>::default(),
             dsfs::Keccak::default(),
         );

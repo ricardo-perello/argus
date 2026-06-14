@@ -8,7 +8,9 @@ pub type FastMap<F> = HashMap<usize, F, nohash_hasher::BuildNoHashHasher<usize>>
 
 pub fn chunk_size<F: Field + PrimeField>() -> usize {
     let mut buf = Vec::new();
-    F::zero().serialize_uncompressed(&mut buf).unwrap();
+    F::zero()
+        .serialize_uncompressed(&mut buf)
+        .expect("CanonicalSerialize to an in-memory Vec is infallible");
     buf.len()
 }
 

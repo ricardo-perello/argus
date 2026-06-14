@@ -38,8 +38,19 @@ impl<F: Field> TryFrom<ConstraintSystemRef<F>> for R1CS<F> {
         let n = num_instance + num_witness;
         let k = num_witness;
 
-        let log_m = m.ilog2().try_into().unwrap();
-        let log_n = n.ilog2().try_into().unwrap();
+        // `n = instance + witness` can legitimately be zero for a degenerate
+        // constraint system; `ilog2` would panic, so surface a typed error
+        // instead. (`m` is `next_power_of_two`, hence always >= 1.)
+        let log_m = usize::try_from(
+            m.checked_ilog2()
+                .ok_or(WARPError::DegenerateR1CSDimensions(m))?,
+        )
+        .expect("log2 of a usize always fits in usize");
+        let log_n = usize::try_from(
+            n.checked_ilog2()
+                .ok_or(WARPError::DegenerateR1CSDimensions(n))?,
+        )
+        .expect("log2 of a usize always fits in usize");
 
         let mut per_predicate = cs.to_matrices().map_err(|_| WARPError::R1CSNonExistingLC)?;
         let mut abc = per_predicate

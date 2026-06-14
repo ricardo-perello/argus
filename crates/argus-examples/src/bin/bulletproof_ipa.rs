@@ -152,11 +152,11 @@ fn run_dsfs(n: usize) {
     println!("=== Bulletproofs IPA (DSFS / non-interactive), n = {n} ===\n");
     let (instance, witness) = random_statement::<Demo>(n, &mut OsRng);
     let session = spongefish::session!("bulletproofs ipa example");
-    let prover = dsfs::plain_non_interactive_argument_prover(
+    let prover = dsfs::argument_prover(
         BulletproofIpaProver::<Demo>::default(),
         dsfs::Keccak::default(),
     );
-    let verifier = dsfs::plain_non_interactive_argument_verifier(
+    let verifier = dsfs::argument_verifier(
         BulletproofIpaVerifier::<Demo>::default(),
         dsfs::Keccak::default(),
     );
@@ -222,11 +222,11 @@ mod tests {
         for &n in &[1usize, 2, 4, 8, 16] {
             let (instance, witness) = random_statement::<G>(n, &mut OsRng);
             let session = spongefish::session!("bulletproofs ipa test");
-            let prover = dsfs::plain_non_interactive_argument_prover(
+            let prover = dsfs::argument_prover(
                 BulletproofIpaProver::<G>::default(),
                 dsfs::Keccak::default(),
             );
-            let verifier = dsfs::plain_non_interactive_argument_verifier(
+            let verifier = dsfs::argument_verifier(
                 BulletproofIpaVerifier::<G>::default(),
                 dsfs::Keccak::default(),
             );
@@ -242,11 +242,11 @@ mod tests {
         let (mut instance, witness) = random_statement::<G>(8, &mut OsRng);
         instance.p += G::generator();
         let session = spongefish::session!("bulletproofs ipa test");
-        let prover = dsfs::plain_non_interactive_argument_prover(
+        let prover = dsfs::argument_prover(
             BulletproofIpaProver::<G>::default(),
             dsfs::Keccak::default(),
         );
-        let verifier = dsfs::plain_non_interactive_argument_verifier(
+        let verifier = dsfs::argument_verifier(
             BulletproofIpaVerifier::<G>::default(),
             dsfs::Keccak::default(),
         );

@@ -98,11 +98,11 @@ Compile each role independently:
 use ia_core::prelude::*;
 use spongefish_dsfs as dsfs;
 
-let prover = dsfs::plain_non_interactive_argument_prover(
+let prover = dsfs::argument_prover(
     MyProver,
     dsfs::Keccak::default(),
 );
-let verifier = dsfs::plain_non_interactive_argument_verifier(
+let verifier = dsfs::argument_verifier(
     MyVerifier,
     dsfs::Keccak::default(),
 );
@@ -116,11 +116,11 @@ For preprocessing protocols, indexing is a third independent role:
 ```rust,ignore
 let (pk, vk) = MyIndexer.preprocess(&index);
 
-let prover = dsfs::preprocessing_non_interactive_argument_prover(
+let prover = dsfs::preprocessing::argument_prover(
     MyPreprocessedProver,
     dsfs::Keccak::default(),
 );
-let verifier = dsfs::preprocessing_non_interactive_argument_verifier(
+let verifier = dsfs::preprocessing::argument_verifier(
     MyPreprocessedVerifier,
     dsfs::Keccak::default(),
 );
