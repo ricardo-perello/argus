@@ -18,10 +18,6 @@ use spongefish_dsfs as dsfs;
 
 #[serde_as]
 #[derive(Debug, Deserialize, Serialize)]
-struct HexBytes(#[serde_as(as = "hex::Hex")] Vec<u8>);
-
-#[serde_as]
-#[derive(Debug, Deserialize, Serialize)]
 struct StdHashVector {
     #[serde(rename = "Relation")]
     relation: String,

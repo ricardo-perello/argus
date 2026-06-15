@@ -74,7 +74,7 @@ ia_core::impl_interactive_reduction_prover! {
         witness: &Values,
     ) -> (Claims, Values) {
         let n = instance.0.len();
-        assert!(n % 2 == 0 && n >= 2);
+        assert!(n.is_multiple_of(2) && n >= 2);
 
         for w_i in &witness.0 {
             ch.send_prover_message(w_i);
