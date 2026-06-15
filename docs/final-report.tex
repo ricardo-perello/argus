@@ -144,7 +144,8 @@ where applicable, and the instance are bound before the first challenge. Every
 prover message is absorbed before the following challenge is squeezed.
 Verification is deterministic. After the protocol finishes, the verifier checks
 that no proof bytes remain unread; the test suite explicitly rejects proofs
-with an appended byte. Sponge operations occur only in the backend.
+with an appended byte, and malformed proof bytes are reported as verification
+errors rather than causing a panic. Sponge operations occur only in the backend.
 
 Channels do not prove that a protocol is secure. They impose an implementation
 discipline: protocol authors specify the message flow, while one reviewed
@@ -226,8 +227,13 @@ requires keys derived from the same index to expose identical bytes; Argus does
 not perform a runtime check. A violation makes prover and verifier initialize
 different transcripts, so verification fails. During execution, DSFS binds the
 relevant key commitment together with the ordinary instance before the first
-challenge. DSFS compiles executable roles only; it neither stores nor forwards
-the indexer.
+challenge. To keep this binding unambiguous, DSFS absorbs the instance---and,
+for preprocessed protocols, the committed index---under a prefix-free,
+length-prefixed encoding. Prefix-freeness is a Spongefish requirement on
+absorbed values; framing them in the backend makes it hold for any
+\texttt{Instance} type instead of becoming a contract that each protocol author
+must satisfy in their own encoding. DSFS compiles executable roles only; it
+neither stores nor forwards the indexer.
 
 \section{Composition}
 
@@ -261,8 +267,10 @@ sequential rather than a general protocol-DAG language.
 
 Argus implements the IA/IR trait layer, a live backend, the
 \texttt{spongefish-dsfs} compiler backend, composition adapters, security
-metadata, examples, and larger case studies. Schnorr and sumcheck demonstrate
-the basic channel model. Bulletproofs exercises both a direct logarithmic
+metadata, examples, and larger case studies. Within the backend, every compiled
+role---argument or reduction, plain or preprocessed---runs through two shared
+transcript combinators, so the Fiat--Shamir ordering and replay logic is written
+once. Schnorr and sumcheck demonstrate the basic channel model. Bulletproofs exercises both a direct logarithmic
 inner-product argument and the same computation expressed as a one-round
 reduction composed to a size-one decider~\cite{bulletproofs}.
 
@@ -277,10 +285,12 @@ messages. A general IOP-to-IA compiler should generate this layer instead.
 The role-first migration covers argument and reduction roles in plain and
 preprocessed settings, with independent DSFS constructors and live execution.
 Tests check role-specific composition, indexing failures, deterministic replay,
-EOF rejection, and transcript compatibility. Existing proof fixtures remain
-byte-identical, including the sigma-proofs SHAKE128 vectors. The migration
-therefore changed the type structure and dependencies without changing the underlying
-DSFS transcript.
+EOF rejection, and transcript compatibility. Proof fixtures from this migration
+remain byte-identical, including the sigma-proofs SHAKE128 vectors, so the
+migration changed the type structure and dependencies without altering the DSFS
+transcript. The prefix-free instance framing described above is a separate,
+deliberately versioned DSFS change: it alters the plain-path proof bytes while
+leaving the preprocessing and sigma-proofs paths byte-identical.
 
 The sigma bridge is a smaller compatibility experiment. It rewrites the
 non-interactive pipeline used by \texttt{sigma-proofs} in the Argus style.
@@ -302,11 +312,22 @@ one crate provide type-level isolation but not crate-level dependency
 isolation; demanding deployments may need separate format, prover, verifier,
 and indexer crates.
 
-The codec boundary remains close to Spongefish's serialization vocabulary. It
-is open whether \texttt{ia-core} should define smaller encoding traits and how
-field-element transcript alphabets should fit beside the current byte-oriented
-DSFS proof machinery. Deeply nested composition types and preprocessing tuples
-also remain ergonomically heavy.
+The codec boundary remains close to Spongefish's serialization vocabulary.
+\texttt{ia-core} re-exports Spongefish's encoding, decoding, and NARG
+serialization traits rather than defining its own, so although protocol code
+depends only on \texttt{ia-core}, its message types are transitively bound to
+one backend's codec model. Two consequences follow. First, the channel alphabet
+(\texttt{Unit}) is generic and anticipates field-element transcripts for
+recursion, yet the DSFS proof artifact is a byte string and its NARG
+serialization is byte-oriented; how an algebraic, field-element alphabet fits
+beside this byte-oriented proof machinery is unresolved. Second, the prefix-free
+and known-length obligations Spongefish places on absorbed values still reach
+the protocol author for ordinary prover messages---even though the backend now
+frames the instance---so message encodings must remain unambiguous. Smaller,
+backend-neutral encoding traits in \texttt{ia-core}, split per role, could
+decouple the interface from one backend and make these obligations explicit.
+Deeply nested composition types and preprocessing tuples also remain
+ergonomically heavy.
 
 \section{Conclusion}
 
