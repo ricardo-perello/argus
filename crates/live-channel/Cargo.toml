@@ -3,9 +3,6 @@ name = "live-channel"
 version = "0.1.0"
 edition = "2024"
 
-[lints]
-workspace = true
-
 [dependencies]
 ia-core = { path = "../ia-core" }
 rand = "0.8"

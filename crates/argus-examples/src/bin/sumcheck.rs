@@ -177,10 +177,8 @@ fn main() {
     };
 
     let session = spongefish::session!("argus examples");
-    let prover =
-        dsfs::argument_prover(SumcheckProver, dsfs::Keccak::default());
-    let verifier =
-        dsfs::argument_verifier(SumcheckVerifier, dsfs::Keccak::default());
+    let prover = dsfs::argument_prover(SumcheckProver, dsfs::Keccak::default());
+    let verifier = dsfs::argument_verifier(SumcheckVerifier, dsfs::Keccak::default());
     let proof = prover.prove(&session, &instance, &());
 
     println!("Sumcheck proof bytes:\n{}", hex::encode(proof.as_bytes()));
@@ -208,12 +206,8 @@ mod tests {
         };
 
         let session = spongefish::session!("argus examples");
-        let prover =
-            dsfs::argument_prover(SumcheckProver, dsfs::Keccak::default());
-        let verifier = dsfs::argument_verifier(
-            SumcheckVerifier,
-            dsfs::Keccak::default(),
-        );
+        let prover = dsfs::argument_prover(SumcheckProver, dsfs::Keccak::default());
+        let verifier = dsfs::argument_verifier(SumcheckVerifier, dsfs::Keccak::default());
         let proof = prover.prove(&session, &instance, &());
 
         verifier
@@ -235,12 +229,8 @@ mod tests {
         };
 
         let session = spongefish::session!("argus examples");
-        let prover =
-            dsfs::argument_prover(SumcheckProver, dsfs::Keccak::default());
-        let verifier = dsfs::argument_verifier(
-            SumcheckVerifier,
-            dsfs::Keccak::default(),
-        );
+        let prover = dsfs::argument_prover(SumcheckProver, dsfs::Keccak::default());
+        let verifier = dsfs::argument_verifier(SumcheckVerifier, dsfs::Keccak::default());
         let proof = prover.prove(&session, &instance, &());
 
         let bad_instance = Instance {

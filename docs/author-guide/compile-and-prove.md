@@ -28,7 +28,7 @@ compiled one *calls* yours.
 
 ## Phase 1 — Compile
 
-```rust
+```rust,ignore
 let prover = dsfs::preprocessing::argument_prover::<_, [u8; 64], _>(
     DleqProver::<G>::default(),   // the interactive algorithm (a ZST)
     dsfs::Keccak::default(),      // an EMPTY sponge — the sponge choice
@@ -55,7 +55,7 @@ That is all DSFS ever sees of the protocol.
 work**: it does not run the protocol, does not derive a domain separator, and
 **does not initialise the sponge**. It just moves the two values into one struct:
 
-```rust
+```rust,ignore
 // crates' view of what gets built (spongefish-dsfs/src/compile.rs)
 preprocessing::ArgumentProver {
     argument:      DleqProver,            // your algorithm, stored as-is
@@ -71,14 +71,14 @@ The stored sponge is a **template**: empty, immutable, reused across every proof
 `prover` now implements `PreprocessingNonInteractiveArgumentProver`, so the app
 gains a channel-free method that returns a proof artifact:
 
-```rust
+```rust,ignore
 // NEW API (no `ch`, returns bytes)
 prove(&self, pk: &DleqKey, session: &[u8; 64], inst: &(G, G), wit: &F) -> NargProof
 ```
 
 The verifier compiles the same way into `preprocessing::ArgumentVerifier`, giving:
 
-```rust
+```rust,ignore
 verify(&self, vk: &DleqKey, session: &[u8; 64], inst: &(G, G), proof: &NargProof)
     -> VerificationResult<()>
 ```
@@ -101,7 +101,7 @@ flowchart LR
 
 ## Phase 2 — Prove
 
-```rust
+```rust,ignore
 let proof = prover.prove(&pk, &session, &(u, v), &x);   // -> NargProof
 ```
 

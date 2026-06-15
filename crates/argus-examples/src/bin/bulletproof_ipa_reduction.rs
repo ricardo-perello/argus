@@ -323,14 +323,10 @@ mod tests {
     fn composed_ipa_roundtrip() {
         let (instance, witness) = random_statement::<G>(8, &mut OsRng);
         let session = spongefish::session!("bulletproofs ipa reduction test");
-        let prover = dsfs::argument_prover(
-            ComposedIpaProver::<G>::default(),
-            dsfs::Keccak::default(),
-        );
-        let verifier = dsfs::argument_verifier(
-            ComposedIpaVerifier::<G>::default(),
-            dsfs::Keccak::default(),
-        );
+        let prover =
+            dsfs::argument_prover(ComposedIpaProver::<G>::default(), dsfs::Keccak::default());
+        let verifier =
+            dsfs::argument_verifier(ComposedIpaVerifier::<G>::default(), dsfs::Keccak::default());
         let narg = prover.prove(&session, &instance, &witness);
         verifier
             .verify(&session, &instance, &narg)
@@ -342,14 +338,10 @@ mod tests {
         let (mut instance, witness) = random_statement::<G>(8, &mut OsRng);
         instance.p += G::generator();
         let session = spongefish::session!("bulletproofs ipa reduction test");
-        let prover = dsfs::argument_prover(
-            ComposedIpaProver::<G>::default(),
-            dsfs::Keccak::default(),
-        );
-        let verifier = dsfs::argument_verifier(
-            ComposedIpaVerifier::<G>::default(),
-            dsfs::Keccak::default(),
-        );
+        let prover =
+            dsfs::argument_prover(ComposedIpaProver::<G>::default(), dsfs::Keccak::default());
+        let verifier =
+            dsfs::argument_verifier(ComposedIpaVerifier::<G>::default(), dsfs::Keccak::default());
         let narg = prover.prove(&session, &instance, &witness);
         assert!(verifier.verify(&session, &instance, &narg).is_err());
     }

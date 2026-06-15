@@ -273,12 +273,8 @@ fn main() {
 
     // The indexer builds the tree once and returns the bare prover/verifier keys.
     let indexer = LookupIndexer;
-    let prover =
-        dsfs::preprocessing::argument_prover(LookupProver, dsfs::Keccak::default());
-    let verifier = dsfs::preprocessing::argument_verifier(
-        LookupVerifier,
-        dsfs::Keccak::default(),
-    );
+    let prover = dsfs::preprocessing::argument_prover(LookupProver, dsfs::Keccak::default());
+    let verifier = dsfs::preprocessing::argument_verifier(LookupVerifier, dsfs::Keccak::default());
     let (proving_key, verifier_key) = indexer.preprocess(&table);
 
     // The asymmetry, straight off the keys: the prover key holds the full
@@ -382,14 +378,9 @@ mod tests {
         table_b[0] = table_b[0].wrapping_add(1); // perturb one entry
 
         let indexer = LookupIndexer;
-        let prover = dsfs::preprocessing::argument_prover(
-            LookupProver,
-            dsfs::Keccak::default(),
-        );
-        let verifier = dsfs::preprocessing::argument_verifier(
-            LookupVerifier,
-            dsfs::Keccak::default(),
-        );
+        let prover = dsfs::preprocessing::argument_prover(LookupProver, dsfs::Keccak::default());
+        let verifier =
+            dsfs::preprocessing::argument_verifier(LookupVerifier, dsfs::Keccak::default());
         let (pk_a, _vk_a) = indexer.preprocess(&table_a);
         let (_pk_b, vk_b) = indexer.preprocess(&table_b);
         assert_ne!(pk_a.committed_index(), vk_b.committed_index());
@@ -411,14 +402,10 @@ mod tests {
         let table = sample_table();
         let (pk, vk) = LookupIndexer.preprocess(&table);
 
-        let prover_nia = dsfs::preprocessing::argument_prover(
-            LookupProver,
-            dsfs::Keccak::default(),
-        );
-        let verifier_nia = dsfs::preprocessing::argument_verifier(
-            LookupVerifier,
-            dsfs::Keccak::default(),
-        );
+        let prover_nia =
+            dsfs::preprocessing::argument_prover(LookupProver, dsfs::Keccak::default());
+        let verifier_nia =
+            dsfs::preprocessing::argument_verifier(LookupVerifier, dsfs::Keccak::default());
 
         assert_preprocessed_prover(&prover_nia);
         assert_preprocessed_verifier(&verifier_nia);

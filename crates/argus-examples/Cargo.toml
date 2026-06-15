@@ -4,9 +4,6 @@ version = "0.1.0"
 edition = "2024"
 default-run = "argus-examples"
 
-[lints]
-workspace = true
-
 [dependencies]
 ia-core = { path = "../ia-core" }
 live-channel = { path = "../live-channel" }

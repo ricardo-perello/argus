@@ -385,14 +385,8 @@ fn main() {
     println!("=== ChainedReduction: FoldPairs . FoldPairs (IR . IR -> IR) ===");
     println!("    8 values -> 4 -> 2\n");
 
-    let prover = dsfs::reduction_prover(
-        TwoFoldsProver::default(),
-        dsfs::Keccak::default(),
-    );
-    let verifier = dsfs::reduction_verifier(
-        TwoFoldsVerifier::default(),
-        dsfs::Keccak::default(),
-    );
+    let prover = dsfs::reduction_prover(TwoFoldsProver::default(), dsfs::Keccak::default());
+    let verifier = dsfs::reduction_verifier(TwoFoldsVerifier::default(), dsfs::Keccak::default());
     let (proof, target, _) = prover.prove(&session, &instance, &witness);
     println!(
         "  proof ({} bytes): {}",
@@ -412,14 +406,9 @@ fn main() {
     println!("=== ReducedArgument: (Fold . Fold . Accumulate) . EqualityCheck ===");
     println!("    8 values -> 4 -> 2 -> AccPair -> accept/reject\n");
 
-    let prover = dsfs::argument_prover(
-        FullProtocolProver::default(),
-        dsfs::Keccak::default(),
-    );
-    let verifier = dsfs::argument_verifier(
-        FullProtocolVerifier::default(),
-        dsfs::Keccak::default(),
-    );
+    let prover = dsfs::argument_prover(FullProtocolProver::default(), dsfs::Keccak::default());
+    let verifier =
+        dsfs::argument_verifier(FullProtocolVerifier::default(), dsfs::Keccak::default());
     let proof = prover.prove(&session, &instance, &witness);
     println!(
         "  proof ({} bytes): {}",
@@ -461,14 +450,9 @@ mod tests {
         let witness = Values(values);
 
         let session = spongefish::session!("argus example: composition");
-        let prover = dsfs::argument_prover(
-            FullProtocolProver::default(),
-            dsfs::Keccak::default(),
-        );
-        let verifier = dsfs::argument_verifier(
-            FullProtocolVerifier::default(),
-            dsfs::Keccak::default(),
-        );
+        let prover = dsfs::argument_prover(FullProtocolProver::default(), dsfs::Keccak::default());
+        let verifier =
+            dsfs::argument_verifier(FullProtocolVerifier::default(), dsfs::Keccak::default());
         let proof = prover.prove(&session, &instance, &witness);
         verifier
             .verify(&session, &instance, &proof)
@@ -494,14 +478,9 @@ mod tests {
         let witness = Values(values);
 
         let session = spongefish::session!("argus example: composition role split");
-        let prover = dsfs::argument_prover(
-            FullProtocolProver::default(),
-            dsfs::Keccak::default(),
-        );
-        let verifier = dsfs::argument_verifier(
-            FullProtocolVerifier::default(),
-            dsfs::Keccak::default(),
-        );
+        let prover = dsfs::argument_prover(FullProtocolProver::default(), dsfs::Keccak::default());
+        let verifier =
+            dsfs::argument_verifier(FullProtocolVerifier::default(), dsfs::Keccak::default());
 
         assert_narg_prover(&prover);
         assert_narg_verifier(&verifier);

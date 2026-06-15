@@ -42,14 +42,9 @@ fn sigmaia_dsfs_roundtrip() {
     let sigma_witness = (witness, commit_seed);
 
     let session = spongefish::session!("sigmaia-roundtrip-test");
-    let prover = dsfs::argument_prover(
-        SigmaIAProver::new(&instance),
-        dsfs::Keccak::default(),
-    );
-    let verifier = dsfs::argument_verifier(
-        SigmaIAVerifier::new(&instance),
-        dsfs::Keccak::default(),
-    );
+    let prover = dsfs::argument_prover(SigmaIAProver::new(&instance), dsfs::Keccak::default());
+    let verifier =
+        dsfs::argument_verifier(SigmaIAVerifier::new(&instance), dsfs::Keccak::default());
 
     let proof = prover.prove(&session, &instance, &sigma_witness);
     verifier

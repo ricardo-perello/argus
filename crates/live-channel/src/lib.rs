@@ -7,7 +7,7 @@
 //! # Error model
 //!
 //! The `ia-core` channel traits are infallible except for
-//! [`VerifierChannel::read_prover_message`], which returns
+//! `VerifierChannel::read_prover_message`, which returns
 //! [`VerificationResult`]. This crate therefore surfaces failures as follows:
 //!
 //! - **Verifier reading a prover message** (the one fallible operation): a

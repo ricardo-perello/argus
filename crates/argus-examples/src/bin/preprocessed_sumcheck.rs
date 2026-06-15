@@ -285,14 +285,9 @@ fn main() {
 
     // The independent indexer derives keys before the two stateless DSFS roles run.
     let indexer = SumcheckIndexer;
-    let prover = dsfs::preprocessing::reduction_prover(
-        SumcheckProver,
-        dsfs::Keccak::default(),
-    );
-    let verifier = dsfs::preprocessing::reduction_verifier(
-        SumcheckVerifier,
-        dsfs::Keccak::default(),
-    );
+    let prover = dsfs::preprocessing::reduction_prover(SumcheckProver, dsfs::Keccak::default());
+    let verifier =
+        dsfs::preprocessing::reduction_verifier(SumcheckVerifier, dsfs::Keccak::default());
     let (proving_key, verifier_key) = indexer.preprocess(&coeffs);
 
     // Inspect the verifier key + committed index directly.
@@ -387,14 +382,10 @@ mod tests {
         let t = sum_over_hypercube(&coeffs);
         let (pk, vk) = SumcheckIndexer.preprocess(&coeffs);
 
-        let prover_nir = dsfs::preprocessing::reduction_prover(
-            SumcheckProver,
-            dsfs::Keccak::default(),
-        );
-        let verifier_nir = dsfs::preprocessing::reduction_verifier(
-            SumcheckVerifier,
-            dsfs::Keccak::default(),
-        );
+        let prover_nir =
+            dsfs::preprocessing::reduction_prover(SumcheckProver, dsfs::Keccak::default());
+        let verifier_nir =
+            dsfs::preprocessing::reduction_verifier(SumcheckVerifier, dsfs::Keccak::default());
 
         assert_preprocessed_reduction_prover(&prover_nir);
         assert_preprocessed_reduction_verifier(&verifier_nir);
@@ -422,14 +413,9 @@ mod tests {
         let fake_t = real_t + Fr::from(1u64);
 
         let indexer = SumcheckIndexer;
-        let prover = dsfs::preprocessing::reduction_prover(
-            SumcheckProver,
-            dsfs::Keccak::default(),
-        );
-        let verifier = dsfs::preprocessing::reduction_verifier(
-            SumcheckVerifier,
-            dsfs::Keccak::default(),
-        );
+        let prover = dsfs::preprocessing::reduction_prover(SumcheckProver, dsfs::Keccak::default());
+        let verifier =
+            dsfs::preprocessing::reduction_verifier(SumcheckVerifier, dsfs::Keccak::default());
         let (pk, vk) = indexer.preprocess(&coeffs);
 
         // Prover honestly runs on (its true) `coeffs`. But the caller
@@ -451,14 +437,9 @@ mod tests {
         coeffs_b[C11] += Fr::from(1u64); // perturb one coefficient
 
         let indexer = SumcheckIndexer;
-        let prover = dsfs::preprocessing::reduction_prover(
-            SumcheckProver,
-            dsfs::Keccak::default(),
-        );
-        let verifier = dsfs::preprocessing::reduction_verifier(
-            SumcheckVerifier,
-            dsfs::Keccak::default(),
-        );
+        let prover = dsfs::preprocessing::reduction_prover(SumcheckProver, dsfs::Keccak::default());
+        let verifier =
+            dsfs::preprocessing::reduction_verifier(SumcheckVerifier, dsfs::Keccak::default());
         let (pk_a, _vk_a) = indexer.preprocess(&coeffs_a);
         let (_pk_b, vk_b) = indexer.preprocess(&coeffs_b);
         assert_ne!(pk_a.committed_index(), vk_b.committed_index());

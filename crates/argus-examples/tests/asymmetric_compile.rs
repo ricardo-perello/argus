@@ -6,9 +6,7 @@
 
 use ia_core::prelude::*;
 use ia_core::{VerificationError, VerificationResult, pad_protocol_id};
-use spongefish_dsfs::{
-    Keccak, argument_prover, argument_verifier,
-};
+use spongefish_dsfs::{Keccak, argument_prover, argument_verifier};
 
 const ECHO_ID: &[u8] = b"asym-echo";
 
@@ -67,12 +65,8 @@ fn assert_narg_verifier<N: NonInteractiveArgumentVerifier>(_: &N) {}
 
 #[test]
 fn native_roles_compile_and_roundtrip_independently() {
-    let prover =
-        argument_prover::<_, [u8; 1], Keccak>(EchoProver, Keccak::default());
-    let verifier = argument_verifier::<_, [u8; 1], Keccak>(
-        EchoVerifier,
-        Keccak::default(),
-    );
+    let prover = argument_prover::<_, [u8; 1], Keccak>(EchoProver, Keccak::default());
+    let verifier = argument_verifier::<_, [u8; 1], Keccak>(EchoVerifier, Keccak::default());
 
     assert_narg_prover(&prover);
     assert_narg_verifier(&verifier);
@@ -87,8 +81,7 @@ fn native_roles_compile_and_roundtrip_independently() {
 
 #[test]
 fn native_role_proof_is_deterministic() {
-    let prover =
-        argument_prover::<_, [u8; 1], Keccak>(EchoProver, Keccak::default());
+    let prover = argument_prover::<_, [u8; 1], Keccak>(EchoProver, Keccak::default());
     let first = prover.prove(&SESSION, &INSTANCE, &WITNESS);
     let second = prover.prove(&SESSION, &INSTANCE, &WITNESS);
     assert_eq!(first.as_bytes(), second.as_bytes());

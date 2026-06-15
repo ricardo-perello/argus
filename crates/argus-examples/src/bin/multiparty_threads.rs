@@ -288,10 +288,7 @@ fn demo_two_machine_plain() {
     // PROVER machine. Holds the witness `x`. Builds its own prover-only compiled
     // NIA from the public body + sponge config.
     let prover = thread::spawn(move || {
-        let nia = dsfs::argument_prover(
-            SchnorrProver::<G>::default(),
-            dsfs::Keccak::default(),
-        );
+        let nia = dsfs::argument_prover(SchnorrProver::<G>::default(), dsfs::Keccak::default());
         let proof = nia.prove(&session, &[g, h], &x);
         let n = proof.as_bytes().len();
         proof_tx.send(proof).expect("ship proof");
@@ -300,10 +297,7 @@ fn demo_two_machine_plain() {
 
     // VERIFIER machine. Holds no witness. Same body + sponge config, verifier-only view.
     let verifier = thread::spawn(move || {
-        let nia = dsfs::argument_verifier(
-            SchnorrVerifier::<G>::default(),
-            dsfs::Keccak::default(),
-        );
+        let nia = dsfs::argument_verifier(SchnorrVerifier::<G>::default(), dsfs::Keccak::default());
         let proof = proof_rx.recv().expect("recv proof");
         nia.verify(&session, &[g, h], &proof)
             .expect("verifier accepts honest proof");
@@ -440,14 +434,9 @@ mod tests {
         let instance = [g, h];
         let session = spongefish::session!("multiparty / plain schnorr role split");
 
-        let prover = dsfs::argument_prover(
-            SchnorrProver::<G>::default(),
-            dsfs::Keccak::default(),
-        );
-        let verifier = dsfs::argument_verifier(
-            SchnorrVerifier::<G>::default(),
-            dsfs::Keccak::default(),
-        );
+        let prover = dsfs::argument_prover(SchnorrProver::<G>::default(), dsfs::Keccak::default());
+        let verifier =
+            dsfs::argument_verifier(SchnorrVerifier::<G>::default(), dsfs::Keccak::default());
 
         assert_narg_prover(&prover);
         assert_narg_verifier(&verifier);

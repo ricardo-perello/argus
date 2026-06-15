@@ -142,14 +142,9 @@ fn run_dsfs(instance: &[ark_curve25519::EdwardsProjective; 2], sk: &ark_curve255
 
     let session = spongefish::session!("spongefish examples");
 
-    let prover = dsfs::argument_prover(
-        SchnorrProver::<G>::default(),
-        dsfs::Keccak::default(),
-    );
-    let verifier = dsfs::argument_verifier(
-        SchnorrVerifier::<G>::default(),
-        dsfs::Keccak::default(),
-    );
+    let prover = dsfs::argument_prover(SchnorrProver::<G>::default(), dsfs::Keccak::default());
+    let verifier =
+        dsfs::argument_verifier(SchnorrVerifier::<G>::default(), dsfs::Keccak::default());
     let narg_string = prover.prove(&session, instance, sk);
     println!("Proof:\n{}", hex::encode(narg_string.as_bytes()));
 
@@ -330,14 +325,9 @@ mod tests {
         let instance = [generator, pk];
 
         let session = spongefish::session!("spongefish examples");
-        let prover = dsfs::argument_prover(
-            SchnorrProver::<G>::default(),
-            dsfs::Keccak::default(),
-        );
-        let verifier = dsfs::argument_verifier(
-            SchnorrVerifier::<G>::default(),
-            dsfs::Keccak::default(),
-        );
+        let prover = dsfs::argument_prover(SchnorrProver::<G>::default(), dsfs::Keccak::default());
+        let verifier =
+            dsfs::argument_verifier(SchnorrVerifier::<G>::default(), dsfs::Keccak::default());
         let narg = prover.prove(&session, &instance, &sk);
         verifier
             .verify(&session, &instance, &narg)
@@ -352,14 +342,9 @@ mod tests {
         let instance = [generator, pk];
 
         let session = spongefish::session!("spongefish examples");
-        let prover = dsfs::argument_prover(
-            SchnorrProver::<G>::default(),
-            dsfs::Keccak::default(),
-        );
-        let verifier = dsfs::argument_verifier(
-            SchnorrVerifier::<G>::default(),
-            dsfs::Keccak::default(),
-        );
+        let prover = dsfs::argument_prover(SchnorrProver::<G>::default(), dsfs::Keccak::default());
+        let verifier =
+            dsfs::argument_verifier(SchnorrVerifier::<G>::default(), dsfs::Keccak::default());
 
         assert_narg_prover(&prover);
         assert_narg_verifier(&verifier);
@@ -380,14 +365,9 @@ mod tests {
         let instance = [generator, pk];
 
         let session = spongefish::session!("spongefish examples");
-        let prover = dsfs::argument_prover(
-            SchnorrProver::<G>::default(),
-            dsfs::Keccak::default(),
-        );
-        let verifier = dsfs::argument_verifier(
-            SchnorrVerifier::<G>::default(),
-            dsfs::Keccak::default(),
-        );
+        let prover = dsfs::argument_prover(SchnorrProver::<G>::default(), dsfs::Keccak::default());
+        let verifier =
+            dsfs::argument_verifier(SchnorrVerifier::<G>::default(), dsfs::Keccak::default());
         assert_narg_prover(&prover);
         assert_narg_verifier(&verifier);
 

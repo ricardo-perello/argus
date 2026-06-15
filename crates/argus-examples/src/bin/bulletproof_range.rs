@@ -344,10 +344,8 @@ fn main() {
         RangeProofProver::new(params.clone()),
         dsfs::Keccak::default(),
     );
-    let verifier = dsfs::argument_verifier(
-        RangeProofVerifier::new(params),
-        dsfs::Keccak::default(),
-    );
+    let verifier =
+        dsfs::argument_verifier(RangeProofVerifier::new(params), dsfs::Keccak::default());
     let narg = prover.prove(&session, &instance, &witness);
     println!("Proof: {} bytes", narg.as_bytes().len());
     verifier
@@ -380,10 +378,8 @@ mod tests {
             RangeProofProver::new(params.clone()),
             dsfs::Keccak::default(),
         );
-        let verifier = dsfs::argument_verifier(
-            RangeProofVerifier::new(params),
-            dsfs::Keccak::default(),
-        );
+        let verifier =
+            dsfs::argument_verifier(RangeProofVerifier::new(params), dsfs::Keccak::default());
         let narg = prover.prove(&session, &instance, &witness);
         verifier
             .verify(&session, &instance, &narg)
@@ -416,10 +412,8 @@ mod tests {
             RangeProofProver::new(params.clone()),
             dsfs::Keccak::default(),
         );
-        let verifier = dsfs::argument_verifier(
-            RangeProofVerifier::new(params),
-            dsfs::Keccak::default(),
-        );
+        let verifier =
+            dsfs::argument_verifier(RangeProofVerifier::new(params), dsfs::Keccak::default());
         let narg = prover.prove(&session, &honest, &witness);
         assert!(verifier.verify(&session, &tampered, &narg).is_err());
     }

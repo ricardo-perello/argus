@@ -5,9 +5,6 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Sigma-protocol → Interactive-Argument bridge via Argus DSFS pipeline"
 
-[lints]
-workspace = true
-
 [dependencies]
 ia-core = { path = "../ia-core" }
 spongefish.workspace = true

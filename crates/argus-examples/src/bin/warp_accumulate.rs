@@ -185,10 +185,8 @@ fn main() {
     let witness = values;
 
     let session = spongefish::session!("argus example: warp accumulate");
-    let prover =
-        dsfs::reduction_prover(AccumulateProver, dsfs::Keccak::default());
-    let verifier =
-        dsfs::reduction_verifier(AccumulateVerifier, dsfs::Keccak::default());
+    let prover = dsfs::reduction_prover(AccumulateProver, dsfs::Keccak::default());
+    let verifier = dsfs::reduction_verifier(AccumulateVerifier, dsfs::Keccak::default());
 
     let (proof, _, _) = prover.prove(&session, &instance, &witness);
     println!(
@@ -227,12 +225,8 @@ mod tests {
         let witness = values;
 
         let session = spongefish::session!("argus example: warp accumulate");
-        let prover =
-            dsfs::reduction_prover(AccumulateProver, dsfs::Keccak::default());
-        let verifier = dsfs::reduction_verifier(
-            AccumulateVerifier,
-            dsfs::Keccak::default(),
-        );
+        let prover = dsfs::reduction_prover(AccumulateProver, dsfs::Keccak::default());
+        let verifier = dsfs::reduction_verifier(AccumulateVerifier, dsfs::Keccak::default());
         let (proof, _, _) = prover.prove(&session, &instance, &witness);
         let target = verifier
             .verify(&session, &instance, &proof)

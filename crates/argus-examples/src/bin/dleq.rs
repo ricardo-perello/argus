@@ -234,10 +234,8 @@ fn main() {
     // The indexer derives both keys once. The prover and verifier roles are
     // compiled independently and receive only their own key.
     let indexer = DleqIndexer::<G>::default();
-    let prover = dsfs::preprocessing::argument_prover(
-        DleqProver::<G>::default(),
-        dsfs::Keccak::default(),
-    );
+    let prover =
+        dsfs::preprocessing::argument_prover(DleqProver::<G>::default(), dsfs::Keccak::default());
     let verifier = dsfs::preprocessing::argument_verifier(
         DleqVerifier::<G>::default(),
         dsfs::Keccak::default(),
